@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Workflow & Ecosystem Twin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'wf-indigo': '#4F46E5', 'wf-emerald': '#10B981', 'wf-amber': '#F59E0B',   
+                        'wf-base': '#F8FAFC', 'wf-wire': '#CBD5E1'
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'], },
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        /* ================= ANIMATIONS & EFFECTS ================= */
+        .bottleneck-glow { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2), 0 0 20px rgba(245, 158, 11, 0.4); animation: pulse-amber 1.5s infinite; }
+        @keyframes pulse-amber {
+            0% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2), 0 0 15px rgba(245, 158, 11, 0.3); }
+            50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.4), 0 0 25px rgba(245, 158, 11, 0.6); }
+            100% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2), 0 0 15px rgba(245, 158, 11, 0.3); }
+        }
+
+        .blueprint-bg { background-image: radial-gradient(#CBD5E1 1px, transparent 1px); background-size: 24px 24px; }
+
+        /* ================= START PAGE STYLES ================= */
+        .glass-panel { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(0,0,0,0.05); }
+        .dashed-border { border: 2px dashed #CBD5E1; transition: all 0.3s ease; }
+        .dashed-border:hover { border-color: #4F46E5; background: rgba(79, 70, 229, 0.05); }
+
+        /* ================= BASELINE MAP (CIRCLES) ================= */
+        .neural-node {
+            position: absolute; width: 56px; height: 56px; background: white; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); z-index: 20; border: 2px solid #4F46E5; 
+            transition: border-color 0.5s ease, opacity 0.5s ease, box-shadow 0.5s ease;
+            cursor: grab; user-select: none;
+        }
+        .neural-node:active { cursor: grabbing; }
+        .neural-node .node-label {
+            position: absolute; top: 65px; white-space: nowrap; background: rgba(255, 255, 255, 0.95);
+            padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; color: #334155;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #E2E8F0; text-align: center; pointer-events: none;
+        }
+
+        /* ================= ECOSYSTEM HUB MAP (SQUIRCLES) ================= */
+        .eco-node {
+            position: absolute; width: 56px; height: 56px; background: white; border-radius: 14px;
+            display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.15); z-index: 20; border: 2px solid #0EA5E9; color: #0284C7;
+            transition: border-color 0.5s ease, opacity 0.5s ease, box-shadow 0.5s ease;
+            cursor: grab; user-select: none;
+        }
+        .eco-node:active { cursor: grabbing; }
+        .eco-node .node-label {
+            position: absolute; top: 65px; white-space: nowrap; background: #F0F9FF;
+            padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 600; color: #0F172A;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #BAE6FD; text-align: center; pointer-events: none;
+        }
+
+        /* ================= WIRES, PULSES & HITBOXES ================= */
+        .wire-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+        
+        .neural-wire, .eco-wire {
+            position: absolute; transform-origin: 0 0; cursor: pointer; pointer-events: auto;
+            transition: opacity 0.5s ease, filter 0.2s ease, box-shadow 0.2s ease;
+        }
+        .neural-wire { height: 2px; background-color: #CBD5E1; }
+        .eco-wire { height: 3px; background-color: #E0F2FE; }
+
+        /* Invisible expanded hitbox so users can easily click thin wires */
+        .neural-wire::before, .eco-wire::before {
+            content: ''; position: absolute; top: -12px; bottom: -12px; left: 0; right: 0; z-index: 5;
+        }
+
+        /* Hover glows for connections */
+        .neural-wire:hover { filter: brightness(0.8); box-shadow: 0 0 8px rgba(79, 70, 229, 0.5); z-index: 30; }
+        .eco-wire:hover { filter: brightness(0.9); box-shadow: 0 0 10px rgba(14, 165, 233, 0.6); z-index: 30; }
+
+        .electric-pulse { position: absolute; top: 0; width: 40px; height: 100%; pointer-events: none; background: linear-gradient(90deg, transparent, #4F46E5, transparent); animation: shoot-signal 2s linear infinite; }
+        .electric-pulse-green { position: absolute; top: 0; width: 40px; height: 100%; pointer-events: none; background: linear-gradient(90deg, transparent, #10B981, transparent); animation: shoot-signal 1.2s linear infinite; }
+        .electric-pulse-sky { position: absolute; top: 0; width: 40px; height: 100%; pointer-events: none; background: linear-gradient(90deg, transparent, #0EA5E9, transparent); animation: shoot-signal 2s linear infinite; }
+
+        @keyframes shoot-signal { 0% { left: -40px; } 100% { left: 100%; } }
+
+        /* ================= IMPROVEMENTS LOGIC ================= */
+        .wire-improvement { opacity: 0; pointer-events: none; }
+        body.show-improvements .wire-improvement { opacity: 1; pointer-events: auto; }
+        
+        body.show-improvements .node-deprecated { border-color: #E2E8F0 !important; color: #94A3B8 !important; box-shadow: none !important; animation: none !important; opacity: 0.3; }
+        body.show-improvements .node-deprecated .node-label { color: #94A3B8 !important; border-color: #F1F5F9; }
+        body.show-improvements .wire-deprecated { opacity: 0.15; pointer-events: none; } /* Disable clicking on deprecated lines */
+        body.show-improvements .node-upgraded { border-color: #10B981 !important; color: #10B981 !important; }
+
+        body.show-improvements .eco-node.node-deprecated { border-color: #E2E8F0 !important; color: #94A3B8 !important; box-shadow: none !important; animation: none !important; opacity: 0.3; }
+        body.show-improvements .eco-node.node-deprecated .node-label { color: #94A3B8 !important; border-color: #F1F5F9; background: white;}
+        body.show-improvements .eco-wire.wire-deprecated { opacity: 0.2; pointer-events: none; }
+
+        /* ================= TOOLTIP ================= */
+        #hover-tooltip { pointer-events: none; transition: opacity 0.2s ease; z-index: 100; }
+    </style>
+</head>
+<body class="bg-wf-base font-sans text-gray-800 h-screen overflow-hidden antialiased">
+
+    <div id="start-screen" class="absolute inset-0 z-[100] flex items-center justify-center bg-wf-base blueprint-bg" style="background-size: 30px 30px;">
+        <div class="glass-panel w-full max-w-2xl rounded-3xl p-10 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] flex flex-col gap-6">
+            <div class="text-center mb-2">
+                <h1 class="text-3xl font-bold text-gray-900 tracking-tight flex items-center justify-center gap-3">
+                    <svg class="w-8 h-8 text-wf-indigo" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Ecosystem Data Engine
+                </h1>
+                <p class="text-gray-500 mt-2 text-sm">Input workflow logic and attach supporting files to generate the digital twin.</p>
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Workflow Instructions</label>
+                <textarea rows="4" class="w-full bg-white border border-gray-300 rounded-xl p-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-wf-indigo focus:ring-1 focus:ring-wf-indigo resize-none shadow-sm" placeholder="e.g., Xingye gets input from NAV back office, uses script to parse data..."></textarea>
+            </div>
+
+            <div class="dashed-border rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer bg-gray-50/50 text-gray-500 group">
+                <svg class="w-10 h-10 mb-3 text-gray-400 group-hover:text-wf-indigo transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                <span class="font-medium text-sm group-hover:text-gray-700">Drag & Drop files here</span>
+                <span class="text-xs mt-1">or click to browse (PDF, CSV, DOCX)</span>
+            </div>
+
+            <button onclick="startApp()" class="mt-4 w-full bg-wf-indigo hover:bg-indigo-500 text-white font-bold py-4 rounded-xl shadow-[0_4px_14px_0_rgba(79,70,229,0.39)] transition-all flex justify-center items-center gap-2">
+                Generate Ecosystem Model
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="app-screen" class="hidden flex flex-col h-screen relative bg-wf-base">
+        
+        <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-50 shadow-sm relative">
+            <div class="flex items-center gap-3">
+                <svg class="w-7 h-7 text-wf-indigo" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <h1 class="text-xl font-bold tracking-tight">Ridgeview <span class="text-wf-indigo">Workflow Twin</span></h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <button id="btn-toggle-improvements" onclick="toggleImprovements()" class="text-sm font-semibold px-4 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-gray-400" id="indicator-imp"></span> Improvements: Off
+                </button>
+                <div class="h-6 w-px bg-gray-300"></div>
+                <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center font-bold text-wf-indigo border border-indigo-100">XY</div>
+            </div>
+        </header>
+
+        <div class="flex flex-1 overflow-hidden relative">
+            <aside class="w-80 bg-white border-r border-gray-200 p-6 flex flex-col gap-6 z-40 relative shadow-sm">
+                <section>
+                    <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Network Scenarios</h2>
+                    <div class="space-y-3">
+                        <button id="btn-current" class="w-full text-left p-4 rounded-2xl border-2 border-wf-indigo bg-indigo-50/50 shadow-sm transition group" onclick="setScenario('current')">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <span class="font-bold text-sm text-wf-indigo">Baseline Workflow</span>
+                            </div>
+                            <p class="text-xs text-gray-500 leading-relaxed">Xingye compiles data via Tools, gets Mary's OK, then Edward's OK before Dashboard.</p>
+                        </button>
+                        <button id="btn-optimized" class="w-full text-left p-4 rounded-2xl border-2 border-gray-100 bg-white hover:border-wf-emerald/40 transition group" onclick="setScenario('optimized')">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <span class="font-bold text-sm text-gray-600 group-hover:text-wf-emerald">Automated Check</span>
+                            </div>
+                            <p class="text-xs text-gray-500 leading-relaxed">Edward bypassed. Once Mary approves, Ridgeview Dashboard generates directly.</p>
+                        </button>
+                    </div>
+                </section>
+                <section class="mt-auto">
+                    <p class="text-xs text-gray-400 italic text-center border-t border-gray-100 pt-4">Tip: Drag nodes to rearrange. Click nodes or connecting lines for analysis.</p>
+                </section>
+            </aside>
+
+            <main class="flex-1 relative bg-[#F8FAFC] overflow-hidden" id="graph-canvas">
+                
+                <div id="view-baseline" class="absolute inset-0 w-full h-full transition-opacity duration-500 z-20">
+                    <div class="absolute inset-0 z-0 opacity-40 blueprint-bg pointer-events-none"></div>
+                    <div class="wire-layer" id="wires-baseline"></div>
+                    
+                    <div id="base-nav" class="neural-node text-gray-600 border-gray-300" style="left: 80px; top: 250px;">NB<div class="node-label">NAV Back Office</div></div>
+                    <div id="base-script" class="neural-node text-gray-500 border-gray-200" style="left: 280px; top: 80px;">&lt;/&gt;<div class="node-label">Parsing Script</div></div>
+                    <div id="base-db" class="neural-node text-gray-500 border-gray-200" style="left: 280px; top: 420px;">DB<div class="node-label">Database</div></div>
+                    <div id="base-xy" class="neural-node text-wf-indigo" style="left: 280px; top: 250px;">XY<div class="node-label">Xingye</div></div>
+                    <div id="base-mary" class="neural-node text-gray-600 border-gray-300" style="left: 480px; top: 250px;">MM<div class="node-label">Mary</div></div>
+                    <div id="base-ed" class="neural-node text-wf-amber border-wf-amber bottleneck-glow node-deprecated" style="left: 680px; top: 150px;">EC<div class="node-label text-wf-amber">Edward<br><span class="text-[9px]">Queue: 2.3 Days</span></div></div>
+                    <div id="base-cy" class="neural-node text-gray-600 border-gray-300 node-upgraded" style="left: 880px; top: 250px;">RV<div class="node-label">Ridgeview Dashboard</div></div>
+                </div>
+
+                <div id="view-overview" class="absolute inset-0 w-full h-full hidden opacity-0 transition-opacity duration-500 z-10 bg-wf-base">
+                    <div class="absolute inset-0 z-0 opacity-40 blueprint-bg pointer-events-none"></div>
+                    <div class="wire-layer" id="wires-overview"></div>
+                    
+                    <div id="over-nav" class="eco-node" style="left: 200px; top: 250px;">NB<div class="node-label">NAV Back Office<br><span class="text-[9px] font-normal text-sky-500">External</span></div></div>
+                    <div id="over-xy" class="eco-node" style="left: 450px; top: 250px; border-width: 3px;">XY<div class="node-label">Xingye<br><span class="text-[9px] font-normal text-sky-500">Hub</span></div></div>
+                    <div id="over-mary" class="eco-node" style="left: 700px; top: 150px;">MM<div class="node-label">Mary<br><span class="text-[9px] font-normal text-sky-500">Collaborator</span></div></div>
+                    <div id="over-ed" class="eco-node node-deprecated bottleneck-glow" style="left: 700px; top: 350px; border-color: #F59E0B; color: #F59E0B;">EC<div class="node-label" style="border-color: #FDE68A;">Edward<br><span class="text-[9px] font-normal text-amber-500">Manager</span></div></div>
+                </div>
+
+                <div class="absolute bottom-6 left-6 z-50 bg-white/90 backdrop-blur-md border border-gray-200 rounded-full shadow-lg flex gap-1 p-1.5 items-center">
+                    <button id="btn-toggle-view" onclick="toggleView()" class="px-4 py-2 hover:bg-gray-100 rounded-full text-gray-700 flex items-center gap-2 font-semibold text-sm transition-all duration-300">
+                        <svg class="w-5 h-5 text-wf-indigo" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        Switch to Human Ecosystem (Hub)
+                    </button>
+                </div>
+            </main>
+
+            <aside id="analysis-panel" class="absolute right-0 top-0 w-80 h-full bg-white border-l border-gray-200 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
+                <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                    <h3 id="ap-header-title" class="font-bold text-gray-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-wf-indigo" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        Node Analysis
+                    </h3>
+                    <button onclick="closeAnalysisPanel()" class="text-gray-400 hover:text-gray-700">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-6 overflow-y-auto flex-1">
+                    <div class="mb-5">
+                        <div id="ap-title-label" class="text-xs text-gray-500 uppercase font-semibold mb-1">Entity Name</div>
+                        <div id="ap-name" class="text-xl font-bold text-gray-900">Name</div>
+                    </div>
+                    <div class="mb-5">
+                        <div id="ap-role-label" class="text-xs text-gray-500 uppercase font-semibold mb-1">Role / Type</div>
+                        <div id="ap-role" class="inline-block bg-indigo-50 text-wf-indigo px-3 py-1 rounded-full text-sm font-medium">Role</div>
+                    </div>
+                    <div class="mb-5">
+                        <div class="text-xs text-gray-500 uppercase font-semibold mb-1">System Status</div>
+                        <div id="ap-status" class="text-sm font-semibold">-</div>
+                    </div>
+                    <div class="mb-6">
+                        <div class="text-xs text-gray-500 uppercase font-semibold mb-1">Summary</div>
+                        <p id="ap-summary" class="text-sm text-gray-600 leading-relaxed">-</p>
+                    </div>
+                    <div class="mb-6">
+                        <div id="ap-list-label-1" class="text-xs text-gray-500 uppercase font-semibold mb-2 border-b pb-1">Assigned Processes</div>
+                        <ul id="ap-list-1" class="text-sm text-gray-700 space-y-2"></ul>
+                    </div>
+                    <div>
+                        <div id="ap-list-label-2" class="text-xs text-gray-500 uppercase font-semibold mb-2 border-b pb-1">Connections</div>
+                        <ul id="ap-list-2" class="text-sm text-gray-700 space-y-2 flex flex-wrap gap-2"></ul>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <div id="hover-tooltip" class="absolute opacity-0 bg-slate-800 text-white text-xs rounded-lg py-2 px-3 shadow-xl max-w-[200px]">
+        <div id="tt-title" class="font-bold text-wf-indigo mb-1"></div>
+        <div id="tt-desc" class="text-gray-300 leading-tight"></div>
+    </div>
+
+    <script>
+        // ================= DATA DICTIONARIES =================
+        const nodeData = {
+            'nav': { name: 'NAV Back Office', role: 'External Partner', status: 'Active', summary: 'Provides initial raw data for the fund.', processes: ['Data Export', 'File Transfer'], connections: ['Xingye'] },
+            'script': { name: 'Parsing Script', role: 'Automation Tool', status: 'Operational', summary: 'Parses raw NAV data into standardized formats.', processes: ['Data Cleaning', 'Formatting'], connections: ['Xingye'] },
+            'db': { name: 'Database', role: 'Storage System', status: 'Operational', summary: 'Stores historical records and references.', processes: ['Query Execution', 'Data Retrieval'], connections: ['Xingye'] },
+            'xy': { name: 'Xingye', role: 'Central Hub / Coordinator', status: 'Active', summary: 'Compiles inputs and routes data for approval.', processes: ['Data Compilation', 'Workflow Routing', 'Monitoring'], connections: ['NAV', 'Script', 'Database', 'Mary'] },
+            'mary': { name: 'Mary', role: 'Collaborator', status: 'Active', summary: 'Provides initial review and approval.', processes: ['Data Review', 'Initial Sign-off'], connections: ['Xingye', 'Edward', 'Dashboard (Optimized)'] },
+            'ed': { name: 'Edward', role: 'Manager', status: 'Bottleneck (Queue: 2.3 Days)', statusColor: 'text-amber-500', summary: 'Final manual review queue holding up the pipeline.', processes: ['Final Approval', 'Delay Generation'], connections: ['Mary', 'Dashboard'] },
+            'cy': { name: 'Ridgeview Dashboard', role: 'Output Artifact', status: 'Pending Generation', summary: 'Final generated report for the fund.', processes: ['Data Visualization', 'Client Export'], connections: ['Edward', 'Mary (Automated)'] }
+        };
+
+        const edgeData = {
+            'nav-xy': { name: 'Data Ingestion', role: 'Input Feed', status: 'Active', summary: 'Raw NAV data transferred to Xingye.', processes: ['Secure FTP', 'Email Attachment'], connections: ['NAV', 'Xingye'] },
+            'script-xy': { name: 'Script Execution', role: 'Processing', status: 'Automated', summary: 'Script parses raw data into usable formats.', processes: ['Regex matching', 'Data mapping'], connections: ['Script', 'Xingye'] },
+            'db-xy': { name: 'Historical Query', role: 'Database Fetch', status: 'Active', summary: 'Pulls past records to match with new NAV.', processes: ['SQL Query', 'Data Merge'], connections: ['Database', 'Xingye'] },
+            'xy-mary': { name: 'Draft Submission', role: 'Review Request', status: 'Active', summary: 'Xingye submits compiled report to Mary.', processes: ['Drafting', 'Internal Routing'], connections: ['Xingye', 'Mary'] },
+            'mary-ed': { name: 'Escalation', role: 'Manager Review', status: 'Bottleneck', statusColor: 'text-amber-500', summary: 'Mary forwards to Edward for final sign-off.', processes: ['Manual Reading', 'Approval'], connections: ['Mary', 'Edward'] },
+            'ed-cy': { name: 'Publishing', role: 'Deployment', status: 'Delayed', statusColor: 'text-amber-500', summary: 'Edward approves and generates the dashboard.', processes: ['System Upload', 'Client Notification'], connections: ['Edward', 'Dashboard'] },
+            'mary-cy': { name: 'Automated Publishing', role: 'Direct Deployment', status: 'Optimized', statusColor: 'text-emerald-500', summary: 'Direct publish to dashboard, bypassing Edward.', processes: ['API Integration', 'Instant Refresh'], connections: ['Mary', 'Dashboard'] }
+        };
+
+        // ================= WIRE DATA MAP =================
+        const baseEdges = [
+            { id: 'nav-xy', from: 'nav', to: 'xy', class: 'neural-wire' },
+            { id: 'script-xy', from: 'script', to: 'xy', class: 'neural-wire' },
+            { id: 'db-xy', from: 'db', to: 'xy', class: 'neural-wire' },
+            { id: 'xy-mary', from: 'xy', to: 'mary', class: 'neural-wire' },
+            { id: 'mary-ed', from: 'mary', to: 'ed', class: 'neural-wire wire-deprecated' },
+            { id: 'ed-cy', from: 'ed', to: 'cy', class: 'neural-wire wire-deprecated' },
+            { id: 'mary-cy', from: 'mary', to: 'cy', class: 'neural-wire wire-improvement', pulse: 'electric-pulse-green', wireBg: 'rgba(16, 185, 129, 0.3)' } 
+        ];
+
+        const overEdges = [
+            { id: 'nav-xy', from: 'nav', to: 'xy', class: 'eco-wire', pulse: 'electric-pulse-sky' },
+            { id: 'xy-mary', from: 'xy', to: 'mary', class: 'eco-wire', pulse: 'electric-pulse-sky' },
+            { id: 'mary-ed', from: 'mary', to: 'ed', class: 'eco-wire wire-deprecated', pulse: 'electric-pulse-sky' }
+        ];
+
+        let isOverview = false;
+        let showImprovements = false;
+
+        // ================= APP INIT & RENDERING =================
+        function startApp() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+            redrawWires();
+        }
+
+        function redrawWires() {
+            if (isOverview) renderWires('wires-overview', 'over-', overEdges);
+            else renderWires('wires-baseline', 'base-', baseEdges);
+        }
+
+        function renderWires(containerId, prefix, edgesArray) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = ''; 
+            const NODE_RADIUS = 28;
+
+            edgesArray.forEach(edge => {
+                const startNode = document.getElementById(prefix + edge.from);
+                const endNode = document.getElementById(prefix + edge.to);
+                if(!startNode || !endNode) return;
+
+                const startX = parseInt(startNode.style.left) + NODE_RADIUS;
+                const startY = parseInt(startNode.style.top) + NODE_RADIUS;
+                const endX = parseInt(endNode.style.left) + NODE_RADIUS;
+                const endY = parseInt(endNode.style.top) + NODE_RADIUS;
+
+                const length = Math.hypot(endX - startX, endY - startY);
+                const angle = Math.atan2(endY - startY, endX - startX) * (180 / Math.PI);
+
+                const wire = document.createElement('div');
+                wire.className = edge.class;
+                wire.style.width = `${length}px`;
+                wire.style.left = `${startX}px`;
+                wire.style.top = `${startY}px`;
+                wire.style.transform = `rotate(${angle}deg)`;
+                wire.dataset.edgeId = edge.id; // Store ID for clicking
+                if(edge.wireBg) wire.style.backgroundColor = edge.wireBg;
+
+                const pulse = document.createElement('div');
+                pulse.className = edge.pulse || 'electric-pulse';
+                pulse.style.animationDelay = `${Math.random() * 2}s`;
+                wire.appendChild(pulse);
+
+                container.appendChild(wire);
+            });
+        }
+
+        // ================= DRAG & DROP ENGINE =================
+        let isDragging = false;
+        let currentDragNode = null;
+        let dragOffsetX, dragOffsetY;
+        let dragHasMoved = false; 
+
+        document.addEventListener('mousedown', (e) => {
+            const node = e.target.closest('.neural-node, .eco-node');
+            if (!node) return;
+            
+            isDragging = true;
+            dragHasMoved = false;
+            currentDragNode = node;
+            
+            const nodeRect = node.getBoundingClientRect();
+            dragOffsetX = e.clientX - nodeRect.left;
+            dragOffsetY = e.clientY - nodeRect.top;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            const tooltip = document.getElementById('hover-tooltip');
+            if(!isDragging && tooltip.style.opacity === '1') {
+                tooltip.style.left = (e.pageX + 15) + 'px';
+                tooltip.style.top = (e.pageY + 15) + 'px';
+            }
+
+            if (!isDragging || !currentDragNode) return;
+            dragHasMoved = true;
+            tooltip.style.opacity = '0';
+            
+            const parentRect = currentDragNode.parentElement.getBoundingClientRect();
+            let newX = e.clientX - parentRect.left - dragOffsetX;
+            let newY = e.clientY - parentRect.top - dragOffsetY;
+            
+            currentDragNode.style.left = `${newX}px`;
+            currentDragNode.style.top = `${newY}px`;
+
+            redrawWires(); 
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            setTimeout(() => { currentDragNode = null; }, 10);
+        });
+
+        // ================= HOVER & CLICK (ANALYSIS) =================
+        document.addEventListener('mouseover', (e) => {
+            if(isDragging) return;
+            const node = e.target.closest('.neural-node, .eco-node');
+            const wire = e.target.closest('.neural-wire, .eco-wire');
+            
+            let data = null;
+            if (node) data = nodeData[node.id.split('-')[1]];
+            else if (wire) data = edgeData[wire.dataset.edgeId];
+
+            if(data) {
+                document.getElementById('tt-title').innerText = data.name;
+                document.getElementById('tt-desc').innerText = data.summary;
+                document.getElementById('hover-tooltip').style.opacity = '1';
+            }
+        });
+
+        document.addEventListener('mouseout', (e) => {
+            const node = e.target.closest('.neural-node, .eco-node');
+            const wire = e.target.closest('.neural-wire, .eco-wire');
+            if (node || wire) document.getElementById('hover-tooltip').style.opacity = '0';
+        });
+
+        document.addEventListener('click', (e) => {
+            if(dragHasMoved) return; 
+
+            const node = e.target.closest('.neural-node, .eco-node');
+            const wire = e.target.closest('.neural-wire, .eco-wire');
+
+            if (node) openAnalysisPanel(node.id.split('-')[1], 'node');
+            else if (wire) openAnalysisPanel(wire.dataset.edgeId, 'edge');
+            else if (!e.target.closest('#analysis-panel') && !e.target.closest('.bg-white')) closeAnalysisPanel();
+        });
+
+        function openAnalysisPanel(id, type) {
+            const data = type === 'node' ? nodeData[id] : edgeData[id];
+            if(!data) return;
+
+            // Header Icon & Title
+            document.getElementById('ap-header-title').innerHTML = type === 'node' 
+                ? `<svg class="w-5 h-5 text-wf-indigo" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg> Node Analysis`
+                : `<svg class="w-5 h-5 text-wf-indigo" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg> Connection Flow Analysis`;
+
+            // Labels
+            document.getElementById('ap-title-label').innerText = type === 'node' ? 'Entity Name' : 'Connection Name';
+            document.getElementById('ap-role-label').innerText = type === 'node' ? 'Role / Type' : 'Data Transfer Method';
+            document.getElementById('ap-list-label-1').innerText = type === 'node' ? 'Assigned Processes' : 'Active Protocols';
+            document.getElementById('ap-list-label-2').innerText = type === 'node' ? 'Direct Connections' : 'Connected Nodes';
+
+            // Data Mapping
+            document.getElementById('ap-name').innerText = data.name;
+            document.getElementById('ap-role').innerText = data.role;
+            
+            const statusEl = document.getElementById('ap-status');
+            statusEl.innerText = data.status;
+            statusEl.className = `text-sm font-bold ${data.statusColor || 'text-wf-indigo'}`;
+            
+            document.getElementById('ap-summary').innerText = data.summary;
+            
+            document.getElementById('ap-list-1').innerHTML = data.processes.map(p => 
+                `<li class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-wf-indigo"></div>${p}</li>`
+            ).join('');
+
+            document.getElementById('ap-list-2').innerHTML = data.connections.map(c => 
+                `<li class="bg-gray-100 border border-gray-200 px-2 py-1 rounded text-xs font-medium">${c}</li>`
+            ).join('');
+
+            document.getElementById('analysis-panel').classList.remove('translate-x-full');
+        }
+
+        function closeAnalysisPanel() {
+            document.getElementById('analysis-panel').classList.add('translate-x-full');
+        }
+
+        // ================= UI CONTROLS =================
+        function toggleImprovements(forceState = null) {
+            showImprovements = forceState !== null ? forceState : !showImprovements;
+            
+            const btn = document.getElementById('btn-toggle-improvements');
+            const indicator = document.getElementById('indicator-imp');
+            const btnCurrent = document.getElementById('btn-current');
+            const btnOptimized = document.getElementById('btn-optimized');
+            
+            if (showImprovements) {
+                document.body.classList.add('show-improvements');
+                btn.classList.add('border-wf-emerald', 'bg-emerald-50', 'text-wf-emerald');
+                btn.classList.remove('border-gray-300', 'text-gray-600');
+                indicator.classList.replace('bg-gray-400', 'bg-wf-emerald');
+                btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-wf-emerald shadow-[0_0_8px_#10B981]"></span> Improvements: On`;
+                
+                btnCurrent.className = 'w-full text-left p-4 rounded-2xl border-2 border-gray-100 bg-white transition group';
+                btnOptimized.className = 'w-full text-left p-4 rounded-2xl border-2 border-wf-emerald bg-emerald-50/50 shadow-sm transition group';
+            } else {
+                document.body.classList.remove('show-improvements');
+                btn.classList.remove('border-wf-emerald', 'bg-emerald-50', 'text-wf-emerald');
+                btn.classList.add('border-gray-300', 'text-gray-600');
+                btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-gray-400"></span> Improvements: Off`;
+                
+                btnOptimized.className = 'w-full text-left p-4 rounded-2xl border-2 border-gray-100 bg-white hover:border-wf-emerald/40 transition group';
+                btnCurrent.className = 'w-full text-left p-4 rounded-2xl border-2 border-wf-indigo bg-indigo-50/50 shadow-sm transition group';
+            }
+        }
+
+        function setScenario(type) { toggleImprovements(type === 'optimized'); }
+
+        function toggleView() {
+            closeAnalysisPanel();
+            const viewBase = document.getElementById('view-baseline');
+            const viewOver = document.getElementById('view-overview');
+            const btnToggle = document.getElementById('btn-toggle-view');
+
+            isOverview = !isOverview;
+
+            if (isOverview) {
+                viewBase.classList.add('opacity-0');
+                viewBase.style.zIndex = 10; viewOver.style.zIndex = 20;
+                setTimeout(() => { viewBase.classList.add('hidden'); viewOver.classList.remove('hidden'); redrawWires(); }, 500);
+                setTimeout(() => { viewOver.classList.remove('opacity-0'); }, 550);
+                btnToggle.innerHTML = `<svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg> Switch to Process Map`;
+            } else {
+                viewOver.classList.add('opacity-0');
+                viewOver.style.zIndex = 10; viewBase.style.zIndex = 20;
+                setTimeout(() => { viewOver.classList.add('hidden'); viewBase.classList.remove('hidden'); redrawWires(); }, 500);
+                setTimeout(() => { viewBase.classList.remove('opacity-0'); }, 550);
+                btnToggle.innerHTML = `<svg class="w-5 h-5 text-wf-indigo" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> Switch to Human Ecosystem`;
+            }
+        }
+    </script>
+</body>
+</html>
