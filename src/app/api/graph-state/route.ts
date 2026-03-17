@@ -18,8 +18,19 @@ import {
   type GlobalSettings,
 } from '@/lib/serverState';
 
-export async function GET() {
-  return NextResponse.json(getGraphState());
+// Performance: client can pass ?since=<lastUpdated> to get a lightweight
+// unchanged response instead of the full payload, reducing parse/render overhead.
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const since = Number(searchParams.get("since") ?? "0");
+  const state = getGraphState();
+
+  // If nothing changed since the client's last known timestamp, return minimal response
+  if (since > 0 && state.lastUpdated <= since) {
+    return NextResponse.json({ lastUpdated: state.lastUpdated, unchanged: true });
+  }
+
+  return NextResponse.json(state);
 }
 
 export async function PUT(request: NextRequest) {
