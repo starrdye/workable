@@ -198,10 +198,12 @@ export function radialWebLayout(
   // Radii scale to fit canvas — ring 0 is the centre point, outermost ring fits
   const cx = canvasW / 2;
   const cy = canvasH / 2;
-  const pad = 70;
-  const maxRadius = Math.min(canvasW / 2, canvasH / 2) - pad;
+  const pad = 50;
+  const maxRadius = (Math.min(canvasW / 2, canvasH / 2) - pad) * 0.78;
   const ringRadius = (r: number): number =>
-    r === 0 ? 0 : (r / Math.max(maxRing, 1)) * maxRadius;
+    r === 0 ? 0 : r === 1
+      ? (1 / Math.max(maxRing, 1)) * maxRadius * 0.55   // ring 1 closer to center
+      : (r / Math.max(maxRing, 1)) * maxRadius;
 
   const positions: PositionMap = {};
 
@@ -228,12 +230,20 @@ export function radialWebLayout(
       return avg(aParents) - avg(bParents);
     });
 
+    // Per-node angular micro-jitter to simulate organic clustering
+    // Uses a deterministic hash so positions are stable
+    function idToJitter(id: string, scale: number): number {
+      let h = 5381;
+      for (const c of id) h = ((h << 5) + h) ^ c.charCodeAt(0);
+      return ((h >>> 0) % 1000) / 1000 * scale - scale / 2;
+    }
+
     const count = ringNodes.length;
     // Slight angular offset per ring for an organic, non-symmetric look
     const startAngle = -Math.PI / 2 + r * 0.4;
 
     for (let i = 0; i < count; i++) {
-      const angle = startAngle + (2 * Math.PI * i) / count;
+      const angle = startAngle + (2 * Math.PI * i) / count + idToJitter(ringNodes[i], 0.18);
       positions[ringNodes[i]] = {
         x: Math.round(cx + radius * Math.cos(angle)),
         y: Math.round(cy + radius * Math.sin(angle)),
