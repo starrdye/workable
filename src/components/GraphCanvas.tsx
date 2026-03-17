@@ -62,6 +62,10 @@ interface WorkflowApiState {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SZ = 56;  // node box size
 const R  = SZ / 2; // radius / half-size
+const ECO_NODE_SZ = 44; // smaller nodes in ecosystem/web-map view
+function nodeRadius(isEco: boolean): number {
+  return isEco ? ECO_NODE_SZ / 2 : R;
+}
 
 // Default border/text per node ID (baseline view)
 const BASE_STYLE: Record<string, { border: string; text: string }> = {
@@ -112,6 +116,13 @@ function hashDelay(id: string): number {
   let h = 0;
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 100;
   return (h / 100) * 2;
+}
+
+// Deterministic per-edge jitter so parallel edges fan out organically
+function ecoJitter(id: string): number {
+  let h = 5381;
+  for (const c of id) h = ((h << 5) + h) ^ c.charCodeAt(0);
+  return ((h >>> 0) % 1000) / 1000 - 0.5; // -0.5 … +0.5
 }
 
 function buildBaselineNodes(
@@ -767,22 +778,28 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             const src = nodeMap[edge.source]; const tgt = nodeMap[edge.target];
             if (!src || !tgt) return null;
 
-            const x1 = src.x + R, y1 = src.y + R;
-            const x2 = tgt.x + R, y2 = tgt.y + R;
+            const x1 = src.x + nodeRadius(src.isEco), y1 = src.y + nodeRadius(src.isEco);
+            const x2 = tgt.x + nodeRadius(tgt.isEco), y2 = tgt.y + nodeRadius(tgt.isEco);
             // Bezier control point: perpendicular offset at midpoint for an organic curve
             const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
             const dx = x2 - x1, dy = y2 - y1;
             const len = Math.hypot(dx, dy);
-            const curvature = Math.min(len * 0.28, 90);
+            // MiroFish sweeping arcs: much larger curvature for ecosystem, moderate for baseline
+            const baseCurvature = isEcosystem
+              ? Math.min(len * 0.62, 210)   // sweeping arcs for web-map
+              : Math.min(len * 0.28, 90);   // existing baseline behaviour
+            const jitter = isEcosystem ? ecoJitter(edge.id) * baseCurvature * 0.35 : 0;
+            const curvature = baseCurvature + jitter;
+
             const cpx = mx - (dy / Math.max(len, 1)) * curvature;
             const cpy = my + (dx / Math.max(len, 1)) * curvature;
             const d = `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`;
 
             const isSelected = selectedId === edge.id && selectedType === "edge";
-            const baseStroke  = edge.isUpgraded ? "#10B981" : isEcosystem ? "#38BDF8" : "#94A3B8";
+            const baseStroke  = edge.isUpgraded ? "#10B981" : isEcosystem ? "rgba(185, 28, 28, 0.13)" : "#94A3B8";
             const selStroke   = isEcosystem ? "#0EA5E9" : "#4F46E5";
-            const pulseColor  = edge.isUpgraded ? "#10B981" : isEcosystem ? "#0EA5E9" : "#4F46E5";
-            const sw = isEcosystem ? 2.5 : 1.5;
+            const pulseColor  = edge.isUpgraded ? "#10B981" : isEcosystem ? "rgba(220, 38, 38, 0.7)" : "#4F46E5";
+            const sw = isEcosystem ? 1.0 : 1.5;
             const edgeMeta = EDGE_META[edge.id];
             const opacity = edge.isDeprecated ? 0.15 : 1;
 
@@ -800,6 +817,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       ? (isEcosystem ? "drop-shadow(0 0 5px rgba(14,165,233,0.6))" : "drop-shadow(0 0 5px rgba(79,70,229,0.5))")
                       : undefined,
                     transition: "stroke 0.3s, stroke-width 0.2s",
+                    ...(isEcosystem ? { mixBlendMode: "multiply" as const } : {}),
                   }}
                 />
                 {/* Animated travelling pulse */}
@@ -861,15 +879,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               data-nodeid={node.id}
               style={{
                 position: "absolute", left: node.x, top: node.y,
-                width: SZ, height: SZ,
+                width: node.isEco ? ECO_NODE_SZ : SZ, height: node.isEco ? ECO_NODE_SZ : SZ,
                 background: "white",
                 borderRadius: isCircle ? "50%" : "14px",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontWeight: 700, fontSize: 14,
-                border: `${node.isHub ? 3 : 2}px solid ${node.borderColor}`,
+                fontWeight: 700, fontSize: node.isEco ? 11 : 14,
+                border: `${node.isEco ? (node.isHub ? 2.5 : 1.5) : (node.isHub ? 3 : 2)}px solid ${node.borderColor}`,
                 color: node.textColor,
                 boxShadow: isBotl ? undefined
-                  : node.isEco ? "0 4px 12px rgba(14,165,233,0.15)"
+                  : node.isEco ? "0 3px 14px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12)"
                   : "0 4px 6px -1px rgba(0,0,0,0.1)",
                 zIndex: 20,
                 opacity: isDep ? 0.3 : 1,
@@ -890,7 +908,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
               {/* Node label */}
               <div style={{
-                position: "absolute", top: 65, whiteSpace: "nowrap",
+                position: "absolute", top: node.isEco ? 52 : 65, whiteSpace: "nowrap",
                 background: node.labelBg, padding: "4px 10px",
                 borderRadius: node.isEco ? "8px" : "20px",
                 fontSize: 11, fontWeight: 600,
