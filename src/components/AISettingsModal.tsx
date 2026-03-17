@@ -18,7 +18,17 @@ export function loadAIConfig(): AIConfig {
   if (typeof window === "undefined") return makeDefaultConfig();
   try {
     const raw = localStorage.getItem(AI_CONFIG_KEY);
-    if (raw) return { ...makeDefaultConfig(), ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AIConfig>;
+      const defaults = makeDefaultConfig();
+      // Deep-merge keys and models so a newly-added provider is never missing
+      return {
+        ...defaults,
+        ...parsed,
+        keys:   { ...defaults.keys,   ...(parsed.keys   ?? {}) },
+        models: { ...defaults.models, ...(parsed.models ?? {}) },
+      };
+    }
   } catch {}
   return makeDefaultConfig();
 }

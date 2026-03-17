@@ -2,13 +2,13 @@
 import { useRef, useState } from "react";
 import {
   Zap, ArrowRight, UploadCloud, FileText,
-  Sparkles, Loader2, AlertCircle, Settings, ChevronDown, Check,
+  Sparkles, Loader2, AlertCircle, Settings, Check,
 } from "lucide-react";
 import type { CustomNodeConfig, CustomEdgeConfig } from "@/lib/serverState";
 import type { AIConfig } from "@/components/AISettingsModal";
 import { PROVIDERS, type AIProvider } from "@/lib/aiClient";
 
-// ── colour palette (mirrors AISettingsModal) ──────────────────────────────
+// ── colour palette ────────────────────────────────────────────────────────
 const COLORS: Record<AIProvider, {
   bg: string; text: string; border: string; dot: string; pillBg: string;
 }> = {
@@ -30,9 +30,7 @@ interface StartScreenProps {
   onImportAndStart?: (csvText: string) => void;
   onAiParsed?:       (result: AIParsedResult) => void;
   aiConfig?:         AIConfig;
-  /** Persist a provider/model change without opening the full modal */
   onSaveConfig?:     (config: AIConfig) => void;
-  /** Open the full settings modal (for API key management) */
   onOpenSettings?:   () => void;
 }
 
@@ -41,14 +39,13 @@ export function StartScreen({
   aiConfig, onSaveConfig, onOpenSettings,
 }: StartScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName]       = useState<string | null>(null);
-  const [csvText, setCsvText]         = useState<string | null>(null);
+  const [fileName, setFileName]         = useState<string | null>(null);
+  const [csvText, setCsvText]           = useState<string | null>(null);
   const [instructions, setInstructions] = useState("");
-  const [isParsingAI, setIsParsingAI] = useState(false);
-  const [aiError, setAiError]         = useState<string | null>(null);
-  const [modelOpen, setModelOpen]     = useState(false);
+  const [isParsingAI, setIsParsingAI]   = useState(false);
+  const [aiError, setAiError]           = useState<string | null>(null);
 
-  // Local shadow so provider/model switches are instant (no round-trip needed)
+  // Local shadow for instant provider switches
   const [localConfig, setLocalConfig] = useState<AIConfig | undefined>(undefined);
   const cfg = localConfig ?? aiConfig;
 
@@ -59,20 +56,17 @@ export function StartScreen({
   const activeModelLabel = activeMeta.models.find((m) => m.id === activeModel)?.label ?? activeModel;
   const c                = COLORS[activeProvider];
 
-  const switchProvider = (p: AIProvider) => {
+  // Click on non-active pill → switch provider
+  // Click on active pill → open settings modal (to change model / key)
+  const handleProviderClick = (p: AIProvider) => {
+    if (p === activeProvider) {
+      onOpenSettings?.();
+      return;
+    }
     if (!cfg) return;
     const next = { ...cfg, provider: p };
     setLocalConfig(next);
     onSaveConfig?.(next);
-    setModelOpen(false);
-  };
-
-  const switchModel = (model: string) => {
-    if (!cfg) return;
-    const next = { ...cfg, models: { ...cfg.models, [activeProvider]: model } };
-    setLocalConfig(next);
-    onSaveConfig?.(next);
-    setModelOpen(false);
   };
 
   // ── File handling ─────────────────────────────────────────────────────
@@ -132,12 +126,9 @@ export function StartScreen({
     <div
       className="absolute inset-0 z-[100] flex items-center justify-center bg-[#F8FAFC]"
       style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }}
-      onClick={() => setModelOpen(false)}
     >
-      <div
-        className="bg-white/90 backdrop-blur-md border border-gray-100 w-full max-w-2xl rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.12)] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white/90 backdrop-blur-md border border-gray-100 w-full max-w-2xl rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.12)] flex flex-col overflow-hidden">
+
         {/* ── Header ───────────────────────────────────────────────────────── */}
         <div className="px-10 pt-9 pb-6 flex items-start justify-between">
           <div>
@@ -150,10 +141,10 @@ export function StartScreen({
             </p>
           </div>
 
-          {/* Settings gear — always visible ── */}
+          {/* Settings gear — always visible */}
           <button
             onClick={onOpenSettings}
-            title="Open AI Settings (API keys)"
+            title="AI Settings — configure API keys and models"
             className="mt-1 shrink-0 p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 transition-colors relative"
           >
             <Settings className="w-4 h-4" />
@@ -163,11 +154,11 @@ export function StartScreen({
           </button>
         </div>
 
-        {/* ── Inline AI config bar ─────────────────────────────────────────── */}
-        <div className={`mx-10 mb-6 rounded-2xl border-2 overflow-visible transition-colors ${c.border}`}>
+        {/* ── AI provider bar ───────────────────────────────────────────────── */}
+        <div className={`mx-10 mb-6 rounded-2xl border-2 overflow-hidden transition-colors ${c.border}`}>
 
-          {/* Provider pills */}
-          <div className="flex border-b border-inherit">
+          {/* Provider pills — click active = open modal, click other = switch */}
+          <div className="flex">
             {PROVIDERS.map((meta) => {
               const isActive = meta.id === activeProvider;
               const mc       = COLORS[meta.id];
@@ -175,7 +166,8 @@ export function StartScreen({
               return (
                 <button
                   key={meta.id}
-                  onClick={() => switchProvider(meta.id)}
+                  onClick={() => handleProviderClick(meta.id)}
+                  title={isActive ? `${meta.name} active — click to change model or key` : `Switch to ${meta.name}`}
                   className={`relative flex-1 py-2.5 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border-r last:border-r-0 border-inherit ${
                     isActive
                       ? `${mc.pillBg} ${mc.text}`
@@ -187,7 +179,7 @@ export function StartScreen({
                   <span className={`text-[10px] font-semibold ${isActive ? "opacity-70" : "text-slate-400"}`}>
                     ({meta.label})
                   </span>
-                  {/* dot = key saved for this (non-active) provider */}
+                  {/* dot = key saved for non-active provider */}
                   {hasKey && !isActive && (
                     <span className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${mc.dot}`} />
                   )}
@@ -196,54 +188,23 @@ export function StartScreen({
             })}
           </div>
 
-          {/* Model row — inline selector, no overflow clipping */}
-          <div className={`relative ${c.bg}`}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setModelOpen((v) => !v); }}
-              className={`w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold ${c.text} hover:opacity-80 transition-opacity`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="text-slate-400 font-normal">Model:</span>
-                {activeModelLabel}
-              </span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${modelOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {modelOpen && (
-              <div className="absolute top-full left-0 right-0 z-[200] bg-white border border-slate-200 shadow-xl overflow-hidden"
-                style={{ borderRadius: "0 0 1rem 1rem" }}
-              >
-                {activeMeta.models.map((m) => {
-                  const isSelected = activeModel === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={(e) => { e.stopPropagation(); switchModel(m.id); }}
-                      className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-slate-100 last:border-none hover:bg-slate-50 transition-colors ${isSelected ? c.bg : "bg-white"}`}
-                    >
-                      <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? c.border + " " + c.text : "border-slate-300"}`}>
-                        {isSelected && <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />}
-                      </span>
-                      <span>
-                        <span className={`block text-sm font-semibold ${isSelected ? c.text : "text-slate-800"}`}>{m.label}</span>
-                        <span className="block text-xs text-slate-500 mt-0.5">{m.description}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-                <button
-                  onClick={(e) => { e.stopPropagation(); setModelOpen(false); onOpenSettings?.(); }}
-                  className="w-full px-4 py-2.5 text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1.5 border-t border-slate-100 bg-slate-50 transition-colors"
-                >
-                  <Settings className="w-3 h-3" />
-                  {activeKey ? "Change API key…" : "Add API key…"}
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Active model + tap-to-configure hint */}
+          <button
+            onClick={onOpenSettings}
+            className={`w-full flex items-center justify-between px-4 py-2.5 border-t border-inherit ${c.bg} hover:opacity-80 transition-opacity`}
+          >
+            <span className={`text-xs flex items-center gap-2 ${c.text}`}>
+              <span className="text-slate-400 font-normal">Model:</span>
+              <span className="font-semibold">{activeModelLabel}</span>
+            </span>
+            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+              <Settings className="w-3 h-3" />
+              click to change
+            </span>
+          </button>
 
           {/* Key status bar */}
-          <div className={`px-4 py-2 flex items-center border-t ${c.border} ${activeKey ? c.bg : "bg-amber-50"}`}>
+          <div className={`px-4 py-2 flex items-center border-t border-inherit ${activeKey ? c.bg : "bg-amber-50"}`}>
             {activeKey ? (
               <span className="text-xs text-emerald-700 flex items-center gap-1.5 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -253,10 +214,7 @@ export function StartScreen({
               <span className="text-xs text-amber-700 flex items-center gap-1.5">
                 <AlertCircle className="w-3 h-3 shrink-0" />
                 No API key for {activeMeta.name} —{" "}
-                <button
-                  onClick={onOpenSettings}
-                  className="underline font-semibold hover:text-amber-900 ml-0.5"
-                >
+                <button onClick={onOpenSettings} className="underline font-semibold hover:text-amber-900 ml-0.5">
                   add one to enable AI generation
                 </button>
               </span>
@@ -265,6 +223,7 @@ export function StartScreen({
         </div>
 
         <div className="px-10 pb-9 flex flex-col gap-5">
+
           {/* ── Quick-start options ───────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-4">
             <button
@@ -349,11 +308,11 @@ export function StartScreen({
             {isParsingAI ? (
               <><Loader2 className="w-5 h-5 animate-spin" />Generating workflow with AI…</>
             ) : buttonMode === "csv" ? (
-              <>Load Workflow from CSV<ArrowRight className="w-5 h-5" /></>
+              <>Load Workflow from CSV <ArrowRight className="w-5 h-5" /></>
             ) : buttonMode === "ai" ? (
-              <><Sparkles className="w-5 h-5" />Generate with AI<ArrowRight className="w-5 h-5" /></>
+              <><Sparkles className="w-5 h-5" />Generate with AI <ArrowRight className="w-5 h-5" /></>
             ) : (
-              <>Generate Ecosystem Model<ArrowRight className="w-5 h-5" /></>
+              <>Generate Ecosystem Model <ArrowRight className="w-5 h-5" /></>
             )}
           </button>
         </div>
