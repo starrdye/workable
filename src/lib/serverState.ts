@@ -27,6 +27,10 @@ export interface CustomEdgeConfig {
   weight?: number;
   isCustom?: boolean;
   isImprovementOnly?: boolean; // only show this edge when improvements mode is ON
+  /** Curve tension for MiroFish arc rendering (0.1–1.0, default 0.6). UI-only hint. */
+  curveTension?: number;
+  /** Z-layer for edge rendering order (higher = rendered on top). UI-only hint. */
+  zLayer?: number;
 }
 
 export interface GlobalSettings {
@@ -40,6 +44,8 @@ export interface GlobalSettings {
     /** Operational / compliance / technical constraints for this entity. */
     constraints?: string;
   }>;
+  /** Visual mode for the ecosystem web-map: controls edge density rendering. */
+  ecoEdgeDensity?: "normal" | "dense" | "ultra";
 }
 
 export interface ServerGraphState {
