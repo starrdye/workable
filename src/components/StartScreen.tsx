@@ -2,19 +2,17 @@
 import { useRef, useState } from "react";
 import {
   Zap, ArrowRight, UploadCloud, FileText,
-  Sparkles, Loader2, AlertCircle, Settings, Check,
+  Sparkles, Loader2, AlertCircle, Settings,
 } from "lucide-react";
 import type { CustomNodeConfig, CustomEdgeConfig } from "@/lib/serverState";
 import type { AIConfig } from "@/components/AISettingsModal";
 import { PROVIDERS, type AIProvider } from "@/lib/aiClient";
 
-// ── colour palette ────────────────────────────────────────────────────────
-const COLORS: Record<AIProvider, {
-  bg: string; text: string; border: string; dot: string; pillBg: string;
-}> = {
-  anthropic: { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-300", dot: "bg-indigo-500", pillBg: "bg-indigo-50" },
-  gemini:    { bg: "bg-blue-50",   text: "text-blue-700",   border: "border-blue-300",   dot: "bg-blue-500",   pillBg: "bg-blue-50"   },
-  doubao:    { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-300", dot: "bg-violet-500", pillBg: "bg-violet-50" },
+// Dot colour per provider
+const DOT: Record<AIProvider, string> = {
+  anthropic: "bg-indigo-500",
+  gemini:    "bg-blue-500",
+  doubao:    "bg-violet-500",
 };
 
 export interface AIParsedResult {
@@ -36,7 +34,7 @@ interface StartScreenProps {
 
 export function StartScreen({
   onStart, onImportAndStart, onAiParsed,
-  aiConfig, onSaveConfig, onOpenSettings,
+  aiConfig, onSaveConfig: _onSaveConfig, onOpenSettings,
 }: StartScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName]         = useState<string | null>(null);
@@ -45,29 +43,12 @@ export function StartScreen({
   const [isParsingAI, setIsParsingAI]   = useState(false);
   const [aiError, setAiError]           = useState<string | null>(null);
 
-  // Local shadow for instant provider switches
-  const [localConfig, setLocalConfig] = useState<AIConfig | undefined>(undefined);
-  const cfg = localConfig ?? aiConfig;
-
-  const activeProvider   = cfg?.provider ?? "anthropic";
-  const activeKey        = cfg?.keys?.[activeProvider]?.trim() ?? "";
-  const activeMeta       = PROVIDERS.find((p) => p.id === activeProvider)!;
-  const activeModel      = cfg?.models?.[activeProvider] ?? activeMeta.defaultModel;
+  const cfg            = aiConfig;
+  const activeProvider = cfg?.provider ?? "anthropic";
+  const activeKey      = cfg?.keys?.[activeProvider]?.trim() ?? "";
+  const activeMeta     = PROVIDERS.find((p) => p.id === activeProvider)!;
+  const activeModel    = cfg?.models?.[activeProvider] ?? activeMeta.defaultModel;
   const activeModelLabel = activeMeta.models.find((m) => m.id === activeModel)?.label ?? activeModel;
-  const c                = COLORS[activeProvider];
-
-  // Click on non-active pill → switch provider
-  // Click on active pill → open settings modal (to change model / key)
-  const handleProviderClick = (p: AIProvider) => {
-    if (p === activeProvider) {
-      onOpenSettings?.();
-      return;
-    }
-    if (!cfg) return;
-    const next = { ...cfg, provider: p };
-    setLocalConfig(next);
-    onSaveConfig?.(next);
-  };
 
   // ── File handling ─────────────────────────────────────────────────────
   const handleFileDrop = (e: React.DragEvent) => {
@@ -141,84 +122,29 @@ export function StartScreen({
             </p>
           </div>
 
-          {/* Settings gear — always visible */}
-          <button
-            onClick={onOpenSettings}
-            title="AI Settings — configure API keys and models"
-            className="mt-1 shrink-0 p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 transition-colors relative"
-          >
-            <Settings className="w-4 h-4" />
-            {activeKey && (
-              <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white ${c.dot}`} />
-            )}
-          </button>
-        </div>
-
-        {/* ── AI provider bar ───────────────────────────────────────────────── */}
-        <div className={`mx-10 mb-6 rounded-2xl border-2 overflow-hidden transition-colors ${c.border}`}>
-
-          {/* Provider pills — click active = open modal, click other = switch */}
-          <div className="flex">
-            {PROVIDERS.map((meta) => {
-              const isActive = meta.id === activeProvider;
-              const mc       = COLORS[meta.id];
-              const hasKey   = !!cfg?.keys?.[meta.id]?.trim();
-              return (
-                <button
-                  key={meta.id}
-                  onClick={() => handleProviderClick(meta.id)}
-                  title={isActive ? `${meta.name} active — click to change model or key` : `Switch to ${meta.name}`}
-                  className={`relative flex-1 py-2.5 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border-r last:border-r-0 border-inherit ${
-                    isActive
-                      ? `${mc.pillBg} ${mc.text}`
-                      : "bg-white text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  {isActive && <Check className="w-3 h-3 shrink-0" />}
-                  <span>{meta.name}</span>
-                  <span className={`text-[10px] font-semibold ${isActive ? "opacity-70" : "text-slate-400"}`}>
-                    ({meta.label})
-                  </span>
-                  {/* dot = key saved for non-active provider */}
-                  {hasKey && !isActive && (
-                    <span className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${mc.dot}`} />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Active model + tap-to-configure hint */}
-          <button
-            onClick={onOpenSettings}
-            className={`w-full flex items-center justify-between px-4 py-2.5 border-t border-inherit ${c.bg} hover:opacity-80 transition-opacity`}
-          >
-            <span className={`text-xs flex items-center gap-2 ${c.text}`}>
-              <span className="text-slate-400 font-normal">Model:</span>
-              <span className="font-semibold">{activeModelLabel}</span>
-            </span>
-            <span className="text-[10px] text-slate-400 flex items-center gap-1">
-              <Settings className="w-3 h-3" />
-              click to change
-            </span>
-          </button>
-
-          {/* Key status bar */}
-          <div className={`px-4 py-2 flex items-center border-t border-inherit ${activeKey ? c.bg : "bg-amber-50"}`}>
+          {/* Gear + active model indicator */}
+          <div className="flex items-center gap-2 mt-1 shrink-0">
+            {/* Active model / key status pill */}
             {activeKey ? (
-              <span className="text-xs text-emerald-700 flex items-center gap-1.5 font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                API key configured — ready to generate
+              <span className="text-xs flex items-center gap-1.5 text-slate-500">
+                <span className={`w-2 h-2 rounded-full ${DOT[activeProvider]}`} />
+                {activeMeta.name} · {activeModelLabel}
               </span>
             ) : (
-              <span className="text-xs text-amber-700 flex items-center gap-1.5">
-                <AlertCircle className="w-3 h-3 shrink-0" />
-                No API key for {activeMeta.name} —{" "}
-                <button onClick={onOpenSettings} className="underline font-semibold hover:text-amber-900 ml-0.5">
-                  add one to enable AI generation
-                </button>
+              <span className="text-xs flex items-center gap-1 text-amber-600">
+                <AlertCircle className="w-3 h-3" />
+                No API key
               </span>
             )}
+
+            {/* Settings gear */}
+            <button
+              onClick={onOpenSettings}
+              title="AI Settings — configure provider, model and API key"
+              className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
@@ -284,7 +210,7 @@ export function StartScreen({
             {hasInstructions && !activeKey && (
               <p className="text-xs text-amber-600 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
-                Add an API key above to generate from this description.
+                Add an API key in AI Settings (⚙) to generate from this description.
               </p>
             )}
             {aiError && (

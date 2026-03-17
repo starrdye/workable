@@ -7,7 +7,7 @@ import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
 import { AISettingsModal, loadAIConfig, type AIConfig } from "@/components/AISettingsModal";
 import { AIAnalysisModal } from "@/components/AIAnalysisModal";
 import { AI_CONFIG_KEY } from "@/components/AISettingsModal";
-import { Zap, Users, AlignJustify, Download, FileText, Upload, Settings, Sparkles } from "lucide-react";
+import { Zap, Users, AlignJustify, Download, FileText, Upload, Settings, Sparkles, ChevronLeft } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
 
 export default function Home() {
@@ -191,6 +191,14 @@ export default function Home() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-50 shadow-sm relative">
         <div className="flex items-center gap-3">
+          {/* Back to start screen */}
+          <button
+            onClick={() => setIsAppStarted(false)}
+            title="Back to home"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
           <Zap className="w-7 h-7 text-indigo-600" />
           <h1 className="text-xl font-bold tracking-tight">
             Ridgeview <span className="text-indigo-600">Workflow Twin</span>
