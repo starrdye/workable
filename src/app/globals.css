@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --background: #F8FAFC;
+  --foreground: #1e293b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), 'Inter', sans-serif;
+}
+
+/* ================= ANIMATIONS & EFFECTS ================= */
+.bottleneck-glow {
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2), 0 0 20px rgba(245, 158, 11, 0.4);
+  animation: pulse-amber 1.5s infinite;
+}
+@keyframes pulse-amber {
+  0%   { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2), 0 0 15px rgba(245, 158, 11, 0.3); }
+  50%  { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.4), 0 0 25px rgba(245, 158, 11, 0.6); }
+  100% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2), 0 0 15px rgba(245, 158, 11, 0.3); }
+}
+
+@keyframes shoot-signal { 
+  0% { left: -40px; } 
+  100% { left: 100%; } 
+}
+
+.blueprint-bg {
+  background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* React Flow overrides — hide default attribution + scrollbars */
+.react-flow__attribution { display: none !important; }
+.react-flow__renderer { overflow: hidden; }
