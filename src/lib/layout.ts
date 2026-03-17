@@ -1,0 +1,239 @@
+/**
+ * layout.ts — Smart graph layout algorithms for workflow visualisation.
+ *
+ * Two algorithms are exported:
+ *   • hierarchicalLayout  — Sugiyama-style layered layout (great for process maps /
+ *                           directed pipelines with a clear start → end flow).
+ *   • forceDirectedLayout — Fruchterman-Reingold force-directed layout (great for
+ *                           ecosystem / network graphs without strict directionality).
+ *
+ * Both functions accept the same minimal node/edge shape used by the AI parse-workflow
+ * route and return a `Record<id, {x, y}>` position map.
+ */
+
+// ── Shared types ───────────────────────────────────────────────────────────────
+
+export interface LayoutNode {
+  id: string;
+}
+
+export interface LayoutEdge {
+  source: string;
+  target: string;
+}
+
+export type PositionMap = Record<string, { x: number; y: number }>;
+
+// ── 1. Hierarchical (Sugiyama-style layered) layout ───────────────────────────
+//
+// Algorithm overview:
+//   1. Build an adjacency list and an in-degree map.
+//   2. Kahn's topological BFS to assign each node a "layer" (depth from any root).
+//   3. Nodes with no predecessors (roots) are placed in layer 0; all cycles / unreachable
+//      nodes are appended as extra layers at the end.
+//   4. Within each layer, order nodes by barycenter heuristic (average layer-position of
+//      their predecessors) to reduce edge crossings.
+//   5. Scale the (layer, position-within-layer) grid to fit the canvas with padding.
+
+export function hierarchicalLayout(
+  nodes: LayoutNode[],
+  edges: LayoutEdge[],
+  canvasW = 900,
+  canvasH = 600,
+): PositionMap {
+  if (nodes.length === 0) return {};
+  if (nodes.length === 1) return { [nodes[0].id]: { x: canvasW / 2, y: canvasH / 2 } };
+
+  const ids = nodes.map((n) => n.id);
+
+  // Build predecessor / successor maps
+  const successors: Record<string, Set<string>>   = {};
+  const predecessors: Record<string, Set<string>> = {};
+  for (const id of ids) {
+    successors[id]   = new Set();
+    predecessors[id] = new Set();
+  }
+  for (const e of edges) {
+    if (successors[e.source] && predecessors[e.target]) {
+      successors[e.source].add(e.target);
+      predecessors[e.target].add(e.source);
+    }
+  }
+
+  // Kahn's BFS — assign layers
+  const inDegree: Record<string, number> = {};
+  for (const id of ids) inDegree[id] = predecessors[id].size;
+
+  const layer: Record<string, number> = {};
+  const queue: string[] = ids.filter((id) => inDegree[id] === 0);
+  for (const id of queue) layer[id] = 0;
+
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    for (const succ of successors[cur]) {
+      inDegree[succ]--;
+      layer[succ] = Math.max(layer[succ] ?? 0, (layer[cur] ?? 0) + 1);
+      if (inDegree[succ] === 0) queue.push(succ);
+    }
+  }
+
+  // Handle nodes in cycles or disconnected (assign them to an extra layer)
+  let maxLayer = Math.max(0, ...Object.values(layer));
+  for (const id of ids) {
+    if (layer[id] === undefined) {
+      layer[id] = ++maxLayer;
+    }
+  }
+  maxLayer = Math.max(0, ...Object.values(layer));
+
+  // Group nodes by layer
+  const layers: string[][] = Array.from({ length: maxLayer + 1 }, () => []);
+  for (const id of ids) layers[layer[id]].push(id);
+
+  // Barycenter ordering within each layer (one pass, top-down)
+  for (let l = 1; l <= maxLayer; l++) {
+    const bary = (id: string): number => {
+      const preds = [...predecessors[id]].filter((p) => layer[p] === l - 1);
+      if (preds.length === 0) return Infinity;
+      const posInPrevLayer = layers[l - 1];
+      const avgIdx = preds.reduce((s, p) => s + posInPrevLayer.indexOf(p), 0) / preds.length;
+      return avgIdx;
+    };
+    layers[l].sort((a, b) => bary(a) - bary(b));
+  }
+
+  // Scale to canvas
+  const padX = 80;
+  const padY = 80;
+  const usableW = canvasW - padX * 2;
+  const usableH = canvasH - padY * 2;
+
+  const positions: PositionMap = {};
+
+  const numLayers = maxLayer + 1;
+  for (let l = 0; l <= maxLayer; l++) {
+    const layerNodes = layers[l];
+    const count      = layerNodes.length;
+
+    // Y position for this layer
+    const y = numLayers === 1
+      ? canvasH / 2
+      : padY + (l / (numLayers - 1)) * usableH;
+
+    for (let i = 0; i < count; i++) {
+      const x = count === 1
+        ? canvasW / 2
+        : padX + (i / (count - 1)) * usableW;
+      positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y) };
+    }
+  }
+
+  return positions;
+}
+
+// ── 2. Force-directed (Fruchterman-Reingold) layout ───────────────────────────
+//
+// Algorithm overview:
+//   1. Initialise nodes on a circle so they are well-separated from the start.
+//   2. Iterate for a fixed number of steps:
+//      a. Repulsion: every pair of nodes pushes each other apart  (∝ k²/d).
+//      b. Attraction: every edge pulls its two endpoints together (∝ d²/k).
+//      c. Apply a displacement capped by a "temperature" that cools each step.
+//      d. Clamp positions inside the canvas bounds.
+//   3. Return the final positions.
+
+export function forceDirectedLayout(
+  nodes: LayoutNode[],
+  edges: LayoutEdge[],
+  canvasW = 900,
+  canvasH = 600,
+): PositionMap {
+  if (nodes.length === 0) return {};
+  if (nodes.length === 1) return { [nodes[0].id]: { x: canvasW / 2, y: canvasH / 2 } };
+
+  const count = nodes.length;
+  const pad   = 80;
+
+  // Ideal spring length
+  const area = (canvasW - pad * 2) * (canvasH - pad * 2);
+  const k    = Math.sqrt(area / count);
+
+  // Initialise on a circle
+  const pos: Record<string, { x: number; y: number }> = {};
+  const cx = canvasW / 2;
+  const cy = canvasH / 2;
+  const initR = Math.min(canvasW, canvasH) * 0.35;
+
+  nodes.forEach((n, i) => {
+    const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+    pos[n.id] = {
+      x: cx + initR * Math.cos(angle),
+      y: cy + initR * Math.sin(angle),
+    };
+  });
+
+  // Temperature schedule
+  const iterations    = 200;
+  let temperature     = Math.min(canvasW, canvasH) * 0.1;
+  const cooling       = temperature / (iterations + 1);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const disp: Record<string, { dx: number; dy: number }> = {};
+    for (const n of nodes) disp[n.id] = { dx: 0, dy: 0 };
+
+    // Repulsion between all pairs
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        const u = nodes[i].id;
+        const v = nodes[j].id;
+        const dx = pos[u].x - pos[v].x;
+        const dy = pos[u].y - pos[v].y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+        const force = (k * k) / dist;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        disp[u].dx += fx;
+        disp[u].dy += fy;
+        disp[v].dx -= fx;
+        disp[v].dy -= fy;
+      }
+    }
+
+    // Attraction along edges
+    for (const e of edges) {
+      const u = e.source;
+      const v = e.target;
+      if (!pos[u] || !pos[v]) continue;
+      const dx = pos[u].x - pos[v].x;
+      const dy = pos[u].y - pos[v].y;
+      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+      const force = (dist * dist) / k;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      disp[u].dx -= fx;
+      disp[u].dy -= fy;
+      disp[v].dx += fx;
+      disp[v].dy += fy;
+    }
+
+    // Apply displacement with temperature cap and boundary clamp
+    for (const n of nodes) {
+      const d  = disp[n.id];
+      const mag = Math.sqrt(d.dx * d.dx + d.dy * d.dy);
+      if (mag === 0) continue;
+      const scale = Math.min(mag, temperature) / mag;
+      pos[n.id].x = Math.min(canvasW - pad, Math.max(pad, pos[n.id].x + d.dx * scale));
+      pos[n.id].y = Math.min(canvasH - pad, Math.max(pad, pos[n.id].y + d.dy * scale));
+    }
+
+    temperature -= cooling;
+  }
+
+  // Round to integers
+  const result: PositionMap = {};
+  for (const n of nodes) {
+    result[n.id] = { x: Math.round(pos[n.id].x), y: Math.round(pos[n.id].y) };
+  }
+  return result;
+}

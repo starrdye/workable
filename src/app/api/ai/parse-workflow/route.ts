@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, type AIProvider } from '@/lib/aiClient';
 import type { CustomNodeConfig, CustomEdgeConfig } from '@/lib/serverState';
+import { hierarchicalLayout, forceDirectedLayout } from '@/lib/layout';
 
 const SYSTEM_PROMPT = `You are a workflow graph parser. Convert natural language workflow descriptions into structured JSON graphs.
 
@@ -54,24 +55,16 @@ function mapRole(role: string): CustomNodeConfig['role'] {
   return 'tool';
 }
 
-function calcPositions(nodes: AINode[]) {
-  const count = nodes.length;
-  const baselinePositions:  Record<string, { x: number; y: number }> = {};
-  const ecosystemPositions: Record<string, { x: number; y: number }> = {};
+function calcPositions(nodes: AINode[], edges: AIEdge[]) {
+  // Baseline view  → hierarchical (Sugiyama-style layered) layout.
+  //   Respects the directed flow of the workflow: sources at top, sinks at bottom.
+  //   Nodes are spread within each layer to minimise crossings (barycenter heuristic).
+  const baselinePositions = hierarchicalLayout(nodes, edges, 960, 560);
 
-  nodes.forEach((node, i) => {
-    const spanX  = Math.min(800, (count - 1) * 160);
-    const startX = 100 + (900 - 100 - spanX) / 2;
-    const x      = count > 1 ? startX + (i * spanX) / (count - 1) : 500;
-    baselinePositions[node.id] = { x, y: 250 };
-
-    const angle  = (2 * Math.PI * i) / count - Math.PI / 2;
-    const radius = Math.min(200, 60 + count * 20);
-    ecosystemPositions[node.id] = {
-      x: Math.round(450 + radius * Math.cos(angle)),
-      y: Math.round(280 + radius * Math.sin(angle)),
-    };
-  });
+  // Ecosystem view → force-directed (Fruchterman-Reingold) layout.
+  //   Treats the graph as a network: well-connected hubs cluster together,
+  //   peripheral nodes are pushed outward naturally.
+  const ecosystemPositions = forceDirectedLayout(nodes, edges, 960, 600);
 
   return { baselinePositions, ecosystemPositions };
 }
@@ -138,7 +131,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'AI response is missing nodes or edges.' }, { status: 422 });
     }
 
-    const { baselinePositions, ecosystemPositions } = calcPositions(parsed.nodes);
+    const { baselinePositions, ecosystemPositions } = calcPositions(parsed.nodes, parsed.edges);
 
     const customNodes: CustomNodeConfig[] = parsed.nodes.map((n) => ({
       id:            n.id,
