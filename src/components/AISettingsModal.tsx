@@ -184,40 +184,62 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
             </div>
           </section>
 
-          {/* ── Section 2: Model selection for active provider ─────────────── */}
+          {/* ── Section 2: Model / Endpoint selection ─────────────────────── */}
           <section>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-              Model — <span className={activeColor.text}>{activeMeta.name}</span>
+              {activeMeta.usesEndpointId ? "Endpoint ID" : "Model"} —{" "}
+              <span className={activeColor.text}>{activeMeta.name}</span>
             </p>
-            <div className="space-y-2">
-              {activeMeta.models.map((m) => {
-                const isSelected = config.models[activeProvider] === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => setModel(activeProvider, m.id)}
-                    className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-start gap-3 ${
-                      isSelected
-                        ? `${activeColor.bg} border-current ${activeColor.text}`
-                        : "border-slate-200 bg-white hover:border-slate-300 text-slate-700"
-                    }`}
-                  >
-                    {/* Radio dot */}
-                    <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                      isSelected ? `border-current` : "border-slate-300"
-                    }`}>
-                      {isSelected && <span className={`w-2 h-2 rounded-full ${activeColor.dot}`} />}
-                    </span>
-                    <span>
-                      <span className={`block text-sm font-semibold ${isSelected ? activeColor.text : "text-slate-800"}`}>
-                        {m.label}
+
+            {activeMeta.usesEndpointId ? (
+              /* Doubao: free-text endpoint ID input */
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={config.models[activeProvider] ?? ""}
+                  onChange={(e) => setModel(activeProvider, e.target.value.trim())}
+                  placeholder={activeMeta.endpointPlaceholder}
+                  className={`w-full bg-slate-50 border-2 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 transition-colors ${
+                    config.models[activeProvider]
+                      ? `border-current ${activeColor.text} focus:${activeColor.ring}`
+                      : "border-slate-200 focus:border-violet-400 focus:ring-violet-400"
+                  }`}
+                />
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  {activeMeta.endpointHint}
+                </p>
+              </div>
+            ) : (
+              /* Anthropic / Gemini: radio button list */
+              <div className="space-y-2">
+                {activeMeta.models.map((m) => {
+                  const isSelected = config.models[activeProvider] === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setModel(activeProvider, m.id)}
+                      className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-start gap-3 ${
+                        isSelected
+                          ? `${activeColor.bg} border-current ${activeColor.text}`
+                          : "border-slate-200 bg-white hover:border-slate-300 text-slate-700"
+                      }`}
+                    >
+                      <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        isSelected ? "border-current" : "border-slate-300"
+                      }`}>
+                        {isSelected && <span className={`w-2 h-2 rounded-full ${activeColor.dot}`} />}
                       </span>
-                      <span className="block text-xs text-slate-500 mt-0.5">{m.description}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                      <span>
+                        <span className={`block text-sm font-semibold ${isSelected ? activeColor.text : "text-slate-800"}`}>
+                          {m.label}
+                        </span>
+                        <span className="block text-xs text-slate-500 mt-0.5">{m.description}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           {/* ── Section 3: API keys for all providers ─────────────────────── */}

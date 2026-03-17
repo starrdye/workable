@@ -47,8 +47,11 @@ export function StartScreen({
   const activeProvider = cfg?.provider ?? "anthropic";
   const activeKey      = cfg?.keys?.[activeProvider]?.trim() ?? "";
   const activeMeta     = PROVIDERS.find((p) => p.id === activeProvider)!;
-  const activeModel    = cfg?.models?.[activeProvider] ?? activeMeta.defaultModel;
-  const activeModelLabel = activeMeta.models.find((m) => m.id === activeModel)?.label ?? activeModel;
+  const activeModel = cfg?.models?.[activeProvider] ?? activeMeta.defaultModel;
+  // Doubao uses a free-text endpoint ID; other providers show the human label
+  const activeModelLabel = activeMeta.usesEndpointId
+    ? (activeModel || "no endpoint set")
+    : (activeMeta.models.find((m) => m.id === activeModel)?.label ?? activeModel);
 
   // ── File handling ─────────────────────────────────────────────────────
   const handleFileDrop = (e: React.DragEvent) => {

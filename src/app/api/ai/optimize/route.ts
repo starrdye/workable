@@ -36,10 +36,19 @@ export async function POST(req: NextRequest) {
       const defaults: Record<AIProvider, string> = {
         anthropic: 'claude-sonnet-4-6',
         gemini:    'gemini-2.0-flash',
-        doubao:    'doubao-1-5-pro-32k',
+        doubao:    '', // must be supplied by user (Ark endpoint ID)
       };
-      return defaults[provider] ?? 'claude-sonnet-4-6';
+      return defaults[provider] ?? '';
     })();
+
+    if (!resolvedModel) {
+      return NextResponse.json(
+        { error: provider === 'doubao'
+            ? 'No Doubao endpoint ID configured. Add your endpoint ID (ep-…) in AI Settings.'
+            : 'No model configured for this provider.' },
+        { status: 400 }
+      );
+    }
 
     // Build a readable snapshot of the current workflow for the AI
     const coreNodes = Object.entries(NODE_DATA).map(([id, n]) => ({

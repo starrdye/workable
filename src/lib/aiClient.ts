@@ -25,12 +25,16 @@ export interface ModelOption {
 export interface ProviderMeta {
   id: AIProvider;
   name: string;
-  label: string;         // short branding label
+  label: string;           // short branding label
   keyPlaceholder: string;
   keyHint: string;
-  color: string;         // Tailwind color class stem (e.g. "indigo")
+  color: string;           // Tailwind color class stem (e.g. "indigo")
   models: ModelOption[];
   defaultModel: string;
+  /** When true, the model field is a free-text endpoint/deployment ID, not a list choice */
+  usesEndpointId?: boolean;
+  endpointPlaceholder?: string;
+  endpointHint?: string;
 }
 
 export const PROVIDERS: ProviderMeta[] = [
@@ -66,15 +70,17 @@ export const PROVIDERS: ProviderMeta[] = [
     id: 'doubao',
     name: 'ByteDance',
     label: 'Doubao',
-    keyPlaceholder: 'your-ark-api-key',
-    keyHint: 'Get a key at console.volcengine.com/ark',
+    // Ark API keys are UUIDs, e.g. d31cc9d6-7c3d-4f76-8a59-cac41c7eac4f
+    keyPlaceholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+    keyHint: 'Get a key at console.volcengine.com/ark → API Keys',
     color: 'violet',
-    defaultModel: 'doubao-1-5-pro-32k',
-    models: [
-      { id: 'doubao-1-5-pro-32k',  label: 'Doubao 1.5 Pro 32K',  description: 'Most capable — 32K context window'         },
-      { id: 'doubao-1-5-lite-32k', label: 'Doubao 1.5 Lite 32K', description: 'Lighter & faster — 32K context window'    },
-      { id: 'doubao-pro-32k',      label: 'Doubao Pro 32K',       description: 'Stable pro model — 32K context window'    },
-    ],
+    // Doubao uses per-user endpoint IDs (ep-xxxxxxxx-xxxx) as the model identifier.
+    // There are no shared model names — each user deploys their own endpoint in the Ark console.
+    usesEndpointId: true,
+    endpointPlaceholder: 'ep-xxxxxxxxxxxxxxxx-xxxxx',
+    endpointHint: 'Create an endpoint at console.volcengine.com/ark → Online Inference, then copy its ID here.',
+    defaultModel: '',  // empty until the user enters their endpoint ID
+    models: [],        // not used — endpoint ID is free-text
   },
 ];
 
@@ -146,5 +152,6 @@ export async function generateText(options: {
     return text as string;
   }
 
-  throw new Error(`Unsupported AI provider: ${provider}`);
+  throw new Error(`Unsupported AI provider: "${provider}"`);
+
 }
