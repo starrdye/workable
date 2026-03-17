@@ -12,6 +12,20 @@ The **Neural Workflow & Ecosystem Twin** is a full-stack web application that tr
 
 ---
 
+## 🏆 Version 0.1 — Achievements
+
+Version 0.1 marks the successful transition from a static prototype to a production-grade interactive framework.
+
+- **Framework Migration**: Fully ported from vanilla HTML/JS to **Next.js 16 + React 19 + TypeScript**.
+- **Interactive Canvas**: Integrated **React Flow (v12)** with custom physics, squircle/circle nodes, and SVG data-pulse wires.
+- **Dynamic CRUD**: Full support for adding, editing, and deleting nodes and edges via right-click and interactive handles.
+- **Bidirectional Metadata Sync**: Automated synchronization between the **Analysis Sidebar** and the visual graph (including name-to-ID resolution).
+- **Backend Persistence**: Server-side state management with real-time polling to ensure across-the-board synchronization.
+- **Advanced Optimization**: Implemented "Improvements Mode" to highlight optimized routes and fade legacy bottlenecks.
+- **Export Capabilities**: Native **PNG** rendering and **CSV** export for external data analysis.
+
+---
+
 ## ✅ Phase 1 — Prototype (UI/UX Baseline)
 
 The `prototype.html` file is the interactive frontend prototype. It demonstrates the following UI/UX paradigms:
