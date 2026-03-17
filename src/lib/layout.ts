@@ -132,7 +132,119 @@ export function hierarchicalLayout(
   return positions;
 }
 
-// ── 2. Force-directed (Fruchterman-Reingold) layout ───────────────────────────
+// ── 2. Radial web layout ───────────────────────────────────────────────────────
+//
+// Algorithm overview:
+//   "Miro-fish" / 3-D web-map style: finds the most-connected node and places it
+//   at the canvas centre.  All other nodes are arranged in concentric rings via a
+//   BFS from that centre node.  Within each ring, nodes are sorted by the average
+//   angular position of their parents (barycenter) to minimise edge crossings, and
+//   a small per-ring angular rotation adds an organic, non-symmetric feel.
+//
+//   Result: hubs feel central, leaf nodes radiate outward — similar to Miro's
+//   network / mind-map board layout.
+
+export function radialWebLayout(
+  nodes: LayoutNode[],
+  edges: LayoutEdge[],
+  canvasW = 960,
+  canvasH = 600,
+): PositionMap {
+  if (nodes.length === 0) return {};
+  if (nodes.length === 1) return { [nodes[0].id]: { x: canvasW / 2, y: canvasH / 2 } };
+
+  const ids = nodes.map((n) => n.id);
+
+  // Build undirected degree + neighbour map
+  const degree:    Record<string, number>      = {};
+  const neighbors: Record<string, Set<string>> = {};
+  for (const id of ids) { degree[id] = 0; neighbors[id] = new Set(); }
+  for (const e of edges) {
+    if (degree[e.source] !== undefined && degree[e.target] !== undefined) {
+      degree[e.source]++;
+      degree[e.target]++;
+      neighbors[e.source].add(e.target);
+      neighbors[e.target].add(e.source);
+    }
+  }
+
+  // Centre = highest-degree node (tie-break: first in list)
+  const center = ids.reduce((best, id) => degree[id] > degree[best] ? id : best, ids[0]);
+
+  // BFS from centre to assign rings
+  const ring: Record<string, number> = { [center]: 0 };
+  const queue = [center];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    for (const nb of neighbors[cur]) {
+      if (ring[nb] === undefined) {
+        ring[nb] = ring[cur] + 1;
+        queue.push(nb);
+      }
+    }
+  }
+  // Disconnected nodes → one extra ring beyond max
+  const maxRingBfs = Math.max(0, ...Object.values(ring));
+  for (const id of ids) {
+    if (ring[id] === undefined) ring[id] = maxRingBfs + 1;
+  }
+  const maxRing = Math.max(0, ...Object.values(ring));
+
+  // Group nodes by ring
+  const rings: string[][] = Array.from({ length: maxRing + 1 }, () => []);
+  for (const id of ids) rings[ring[id]].push(id);
+
+  // Radii scale to fit canvas — ring 0 is the centre point, outermost ring fits
+  const cx = canvasW / 2;
+  const cy = canvasH / 2;
+  const pad = 70;
+  const maxRadius = Math.min(canvasW / 2, canvasH / 2) - pad;
+  const ringRadius = (r: number): number =>
+    r === 0 ? 0 : (r / Math.max(maxRing, 1)) * maxRadius;
+
+  const positions: PositionMap = {};
+
+  for (let r = 0; r <= maxRing; r++) {
+    const ringNodes = rings[r];
+    if (!ringNodes.length) continue;
+    const radius = ringRadius(r);
+
+    if (r === 0) {
+      positions[ringNodes[0]] = { x: Math.round(cx), y: Math.round(cy) };
+      continue;
+    }
+
+    // Sort this ring's nodes by their parents' average angle (barycenter ordering)
+    const prevRingAngleOf: Record<string, number> = {};
+    rings[r - 1].forEach((id, i) => {
+      prevRingAngleOf[id] = (2 * Math.PI * i) / rings[r - 1].length;
+    });
+    ringNodes.sort((a, b) => {
+      const aParents = [...neighbors[a]].filter((n) => ring[n] === r - 1);
+      const bParents = [...neighbors[b]].filter((n) => ring[n] === r - 1);
+      const avg = (arr: string[]) =>
+        arr.length === 0 ? Infinity : arr.reduce((s, p) => s + (prevRingAngleOf[p] ?? 0), 0) / arr.length;
+      return avg(aParents) - avg(bParents);
+    });
+
+    const count = ringNodes.length;
+    // Slight angular offset per ring for an organic, non-symmetric look
+    const startAngle = -Math.PI / 2 + r * 0.4;
+
+    for (let i = 0; i < count; i++) {
+      const angle = startAngle + (2 * Math.PI * i) / count;
+      positions[ringNodes[i]] = {
+        x: Math.round(cx + radius * Math.cos(angle)),
+        y: Math.round(cy + radius * Math.sin(angle)),
+      };
+    }
+  }
+
+  return positions;
+}
+
+// ── 3. Force-directed (Fruchterman-Reingold) layout ───────────────────────────
 //
 // Algorithm overview:
 //   1. Initialise nodes on a circle so they are well-separated from the start.

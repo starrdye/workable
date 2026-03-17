@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, type AIProvider } from '@/lib/aiClient';
 import type { CustomNodeConfig, CustomEdgeConfig } from '@/lib/serverState';
-import { hierarchicalLayout, forceDirectedLayout } from '@/lib/layout';
+import { hierarchicalLayout, radialWebLayout } from '@/lib/layout';
 
 const SYSTEM_PROMPT = `You are a workflow graph parser. Convert natural language workflow descriptions into structured JSON graphs.
 
@@ -13,7 +13,8 @@ Output ONLY valid JSON with this exact structure:
       "name": "Full Display Name",
       "initials": "AB",
       "role": "person|tool|external|output",
-      "summary": "Brief description of this entity's role in the workflow"
+      "summary": "Brief description of this entity's role in the workflow",
+      "constraints": "Optional: known operational, compliance, or technical constraints (e.g. 'Requires manual sign-off', 'GDPR restricted', 'Max 500 req/day'). Omit if none."
     }
   ],
   "edges": [
@@ -31,6 +32,7 @@ Rules:
 - Initials: 2-3 uppercase characters representing the entity
 - Role types: "person" (human reviewer/approver), "tool" (software/internal system), "external" (external data source), "output" (final destination)
 - Edges represent data/work flow direction — source produces output consumed by target
+- constraints: only fill in when you can infer a real constraint from the description; leave out the field otherwise
 - Output ONLY the JSON object — no markdown fences, no explanation text`;
 
 interface AINode {
@@ -39,6 +41,7 @@ interface AINode {
   initials: string;
   role: string;
   summary: string;
+  constraints?: string;
 }
 
 interface AIEdge {
@@ -58,13 +61,12 @@ function mapRole(role: string): CustomNodeConfig['role'] {
 function calcPositions(nodes: AINode[], edges: AIEdge[]) {
   // Baseline view  → hierarchical (Sugiyama-style layered) layout.
   //   Respects the directed flow of the workflow: sources at top, sinks at bottom.
-  //   Nodes are spread within each layer to minimise crossings (barycenter heuristic).
   const baselinePositions = hierarchicalLayout(nodes, edges, 960, 560);
 
-  // Ecosystem view → force-directed (Fruchterman-Reingold) layout.
-  //   Treats the graph as a network: well-connected hubs cluster together,
-  //   peripheral nodes are pushed outward naturally.
-  const ecosystemPositions = forceDirectedLayout(nodes, edges, 960, 600);
+  // Ecosystem view → radial web layout (Miro-style concentric rings).
+  //   The most-connected node is placed at the centre; all others radiate
+  //   outward in BFS rings — producing the "3-D web map" look.
+  const ecosystemPositions = radialWebLayout(nodes, edges, 960, 600);
 
   return { baselinePositions, ecosystemPositions };
 }
@@ -151,9 +153,14 @@ export async function POST(req: NextRequest) {
       isCustom: true,
     }));
 
-    const metadataOverrides: Record<string, { summary?: string }> = {};
+    const metadataOverrides: Record<string, { summary?: string; constraints?: string }> = {};
     for (const n of parsed.nodes) {
-      if (n.summary) metadataOverrides[n.id] = { summary: n.summary };
+      if (n.summary || n.constraints) {
+        metadataOverrides[n.id] = {
+          ...(n.summary     ? { summary:     n.summary     } : {}),
+          ...(n.constraints ? { constraints: n.constraints } : {}),
+        };
+      }
     }
 
     return NextResponse.json({

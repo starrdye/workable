@@ -7,7 +7,7 @@ import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
 import { AISettingsModal, loadAIConfig, type AIConfig } from "@/components/AISettingsModal";
 import { AIAnalysisModal } from "@/components/AIAnalysisModal";
 import { AI_CONFIG_KEY } from "@/components/AISettingsModal";
-import { Zap, Users, AlignJustify, Download, FileText, Upload, Settings, Sparkles, ChevronLeft } from "lucide-react";
+import { Zap, Users, AlignJustify, Download, FileText, Upload, Settings, Sparkles, ChevronLeft, LayoutGrid } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
 
 export default function Home() {
@@ -338,15 +338,31 @@ export default function Home() {
             onDeleteNode={(id) => { if (selectedId === id) { setSelectedId(null); setSelectedType(null); } }}
           />
 
-          {/* View toggle */}
-          <div className="absolute bottom-6 left-6 z-50 bg-white/90 backdrop-blur-md border border-slate-200 rounded-full shadow-lg flex gap-1 p-1.5 items-center">
+          {/* View toggle + Reset Layout */}
+          <div className="absolute bottom-6 left-6 z-50 flex items-center gap-2">
+            <div className="bg-white/90 backdrop-blur-md border border-slate-200 rounded-full shadow-lg flex gap-1 p-1.5 items-center">
+              <button
+                onClick={() => { setSelectedId(null); setSelectedType(null); setIsEcosystem((v) => !v); }}
+                className="px-4 py-2 hover:bg-slate-100 rounded-full text-slate-700 flex items-center gap-2 font-semibold text-sm transition-all duration-300"
+              >
+                {!isEcosystem
+                  ? <><Users className="w-5 h-5 text-indigo-600" />Switch to Web Map</>
+                  : <><AlignJustify className="w-5 h-5 text-slate-600" />Switch to Process Map</>}
+              </button>
+            </div>
             <button
-              onClick={() => { setSelectedId(null); setSelectedType(null); setIsEcosystem((v) => !v); }}
-              className="px-4 py-2 hover:bg-slate-100 rounded-full text-slate-700 flex items-center gap-2 font-semibold text-sm transition-all duration-300"
+              title="Reset layout to default positions"
+              onClick={async () => {
+                await fetch("/api/graph-state", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "resetLayout" }),
+                }).catch(console.error);
+              }}
+              className="bg-white/90 backdrop-blur-md border border-slate-200 rounded-full shadow-lg px-3 py-2 text-slate-600 hover:bg-slate-100 flex items-center gap-1.5 text-sm font-semibold transition-colors"
             >
-              {!isEcosystem
-                ? <><Users className="w-5 h-5 text-indigo-600" />Switch to Human Ecosystem (Hub)</>
-                : <><AlignJustify className="w-5 h-5 text-slate-600" />Switch to Process Map</>}
+              <LayoutGrid className="w-4 h-4" />
+              Reset Layout
             </button>
           </div>
         </main>

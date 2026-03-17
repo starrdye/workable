@@ -7,6 +7,7 @@ import {
   removeNode,
   removeEdge,
   importState,
+  resetLayout,
   updateEdgeParams,
   updateNodeDelay,
   updateSettings,
@@ -85,6 +86,9 @@ export async function PUT(request: NextRequest) {
         customEdges:        body.customEdges        || [],
         settings:           body.settings,
       });
+      break;
+    case 'resetLayout':
+      resetLayout();
       break;
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });

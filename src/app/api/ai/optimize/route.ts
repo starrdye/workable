@@ -12,8 +12,11 @@ Analyze the provided workflow graph and deliver a structured, actionable report.
 ## Bottlenecks Identified
 List each bottleneck as a bullet point. For each one, name the node/step and explain why it slows the process.
 
+## Constraint Analysis
+For each entity that has a "constraints" field set, evaluate whether the current relations respect those constraints. Flag any violations or risks. If no constraints are set, write "No constraints defined — consider adding them via the sidebar."
+
 ## Optimization Recommendations
-Provide 3–5 specific, actionable improvements. Each should reference actual nodes or edges from the workflow by name.
+Provide 3–5 specific, actionable improvements. Each should reference actual nodes or edges from the workflow by name. Where relevant, suggest how entities and their relations could be restructured to better satisfy the listed constraints.
 
 ## Quick Wins
 1–2 changes that can be implemented immediately with the highest impact-to-effort ratio.
@@ -51,22 +54,27 @@ export async function POST(req: NextRequest) {
     }
 
     // Build a readable snapshot of the current workflow for the AI
-    const coreNodes = Object.entries(NODE_DATA).map(([id, n]) => ({
-      id, name: n.name, role: n.role, status: n.status, summary: n.summary,
-    }));
+    const metadataOverrides = (workflowData as { settings?: { metadataOverrides?: Record<string, { constraints?: string }> } })
+      .settings?.metadataOverrides ?? {};
+
+    const coreNodes = Object.entries(NODE_DATA).map(([id, n]) => {
+      const meta = metadataOverrides[id];
+      return { id, name: n.name, role: n.role, status: n.status, summary: n.summary,
+        ...(meta?.constraints ? { constraints: meta.constraints } : {}) };
+    });
 
     const coreEdges = Object.entries(EDGE_DATA).map(([id, e]) => ({
       id, name: e.name, status: e.status, summary: e.summary,
     }));
 
     const customNodes = ((workflowData.customNodes ?? []) as Array<{ id: string; label: string; role: string }>)
-      .map((n) => ({ id: n.id, name: n.label, role: n.role }));
+      .map((n) => {
+        const meta = metadataOverrides[n.id];
+        return { id: n.id, name: n.label, role: n.role, ...(meta?.constraints ? { constraints: meta.constraints } : {}) };
+      });
 
     const customEdges = ((workflowData.customEdges ?? []) as Array<{ id: string; source: string; target: string; isImprovementOnly?: boolean }>)
       .map((e) => ({ id: e.id, source: e.source, target: e.target, isImprovementOnly: e.isImprovementOnly ?? false }));
-
-    const metadataOverrides = (workflowData as { settings?: { metadataOverrides?: unknown } })
-      .settings?.metadataOverrides ?? {};
 
     const workflowSummary = JSON.stringify(
       { coreNodes, coreEdges, customNodes, customEdges, metadataOverrides },

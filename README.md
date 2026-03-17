@@ -12,6 +12,50 @@ The **Neural Workflow & Ecosystem Twin** is a full-stack web application that tr
 
 ---
 
+## 🗺️ Branch 0.21 — Smart Layout, Web Map & Entity Constraints (Plan)
+
+> **Status:** In development on branch `0.21`
+
+### Implemented
+
+| # | Feature | Detail |
+|---|---------|--------|
+| 1 | **Radial Web Layout** (`radialWebLayout`) | Miro-style concentric-ring layout for the Ecosystem / "Web Map" view. The most-connected node is placed at the canvas centre; all others radiate outward in BFS rings. Sorted within each ring by barycenter heuristic (parent-average angle) to minimise edge crossings. Small per-ring rotation adds organic asymmetry. |
+| 2 | **SVG Bezier Edges** | Replaced the old CSS-rotated `<div>` wire layer with an SVG overlay using quadratic bezier curves. Control point is the mid-point shifted perpendicular to the edge direction — producing the curved "web map" look. Animated travelling pulses use `stroke-dashoffset` on normalised paths (`pathLength="1"`). |
+| 3 | **Reset Layout Button** | "Reset Layout" button (bottom-left of canvas) restores all node positions to the snapshot taken when the last AI workflow was imported or CSV was loaded. Positions are preserved on the server under `originalBaselinePositions` / `originalEcosystemPositions`. |
+| 4 | **Entity `constraints` Attribute** | Every entity (node) now supports a free-text `constraints` field — editable in the right-hand Analysis sidebar with amber styling. Constraints are persisted in `metadataOverrides` and survive CSV export/import. |
+| 5 | **AI-Aware Constraints** | The parse-workflow prompt asks the model to infer constraints from the description (e.g. "Requires manual sign-off", "GDPR restricted", "Max 500 req/day"). The AI Analyze prompt gains a new **Constraint Analysis** section that flags violations and suggests how entities and relations should be restructured to satisfy them. |
+
+### Roadmap — Next Steps for Relations & Entities
+
+#### A. Constraint-Driven Relation Scoring
+Each edge between two nodes should carry a **compatibility score** derived from:
+- The _source_ node's constraints (e.g. "no automated handoff")
+- The _target_ node's constraints (e.g. "must receive data only via encrypted channel")
+
+The AI Analyze pass would flag pairs whose constraints are incompatible and propose an intermediary node (e.g. a compliance gateway).
+
+#### B. Constraint Propagation
+When a constrained node is added or edited, the app should automatically:
+1. Trace all upstream and downstream paths.
+2. Check each path node for constraint conflicts.
+3. Surface warnings in the sidebar ("upstream node X has no encryption — violates your constraint").
+
+#### C. Suggested Entity / Relation Improvements
+Add a dedicated **"Suggest Improvements"** AI call that receives the full constraint map and returns:
+- New entities that should be introduced (e.g. "Add a Rate Limiter before X").
+- Edges that should be rerouted to respect constraints.
+- Nodes whose role should change (e.g. promote a `tool` to `person` if a constraint mandates human review).
+
+#### D. Constraint Templates
+Pre-built constraint templates for common domains (Finance, Healthcare, GDPR, SOC 2) that users can attach to nodes with a single click rather than typing free text.
+
+#### E. Visual Constraint Indicators
+- Show a ⚠️ badge on nodes with active constraints in the canvas.
+- Color edges red / amber when a constraint violation is detected along the path.
+
+---
+
 ## 🏆 Version 0.2 — AI Integration
 
 Version 0.2 builds directly on v0.1 by implementing the full Phase 4 AI roadmap using the **Anthropic Claude API**.

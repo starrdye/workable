@@ -715,6 +715,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       const startPct = (start / totalWeight) * 100;
       const endPct = ((start + duration) / totalWeight) * 100;
 
+      // Legacy anim for any remaining div-based usage
       seqStyles.push(`
         @keyframes anim-seq-${seq} {
           0% { left: -40px; opacity: 0; }
@@ -723,6 +724,19 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           ${endPct}% { left: 100%; opacity: 1; }
           ${Math.min(100, endPct + 0.01)}% { left: 100%; opacity: 0; }
           100% { left: 100%; opacity: 0; }
+        }
+      `);
+
+      // SVG stroke-dashoffset animation (pathLength="1" normalises path).
+      // Dash travels from before the path start (offset=0.06) to after the end (offset=-1.06).
+      seqStyles.push(`
+        @keyframes svgflow-${seq} {
+          0%                              { stroke-dashoffset: 0.06; opacity: 0; }
+          ${Math.max(0, startPct - 0.01)}%{ stroke-dashoffset: 0.06; opacity: 0; }
+          ${startPct}%                    { stroke-dashoffset: 0.06; opacity: 0.7; }
+          ${endPct}%                      { stroke-dashoffset: -1.06; opacity: 0.7; }
+          ${Math.min(100, endPct + 0.01)}%{ stroke-dashoffset: -1.06; opacity: 0; }
+          100%                            { stroke-dashoffset: -1.06; opacity: 0; }
         }
       `);
     });
@@ -744,88 +758,93 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
         <style dangerouslySetInnerHTML={{ __html: seqStyles.join("\n") }} />
 
-        {/* ── Wire layer ────────────────────────────────────── */}
-        {edges.map((edge, index) => {
-          const src = nodeMap[edge.source]; const tgt = nodeMap[edge.target];
-          if (!src || !tgt) return null;
-          const x1 = src.x + R, y1 = src.y + R, x2 = tgt.x + R, y2 = tgt.y + R;
-          const len = Math.hypot(x2-x1, y2-y1);
-          const angle = Math.atan2(y2-y1, x2-x1) * (180/Math.PI);
-          const wireH = isEcosystem ? 3 : 2;
-          const hitH  = 26;
-          const pivot = hitH / 2;
-          const wireTop = Math.round((hitH - wireH) / 2);
-          let bgColor = edge.isUpgraded ? "rgba(16,185,129,0.3)" : isEcosystem ? "#E0F2FE" : "#CBD5E1";
-          
-          const isSelected = selectedId === edge.id && selectedType === "edge";
-          const hasReverseBefore = edges.findIndex((e, i) => i < index && e.source === edge.target && e.target === edge.source) !== -1;
-          if (hasReverseBefore && !isSelected) bgColor = "transparent";
-          const pulseGrad = edge.isUpgraded
-            ? "linear-gradient(90deg,transparent,#10B981,transparent)"
-            : isEcosystem
-              ? "linear-gradient(90deg,transparent,#0EA5E9,transparent)"
-              : "linear-gradient(90deg,transparent,#4F46E5,transparent)";
-          const edgeMeta = EDGE_META[edge.id];
+        {/* ── SVG edge layer — bezier curves ─────────────────── */}
+        <svg
+          className="absolute inset-0 w-full h-full"
+          style={{ zIndex: 10, overflow: "visible", pointerEvents: "none" }}
+        >
+          {edges.map((edge) => {
+            const src = nodeMap[edge.source]; const tgt = nodeMap[edge.target];
+            if (!src || !tgt) return null;
 
-          return (
-            <div
-              key={edge.id}
-              data-edgeid={edge.id}
-              style={{
-                position: "absolute", left: x1, top: y1 - pivot,
-                width: len, height: hitH,
-                transformOrigin: `0 ${pivot}px`,
-                transform: `rotate(${angle}deg)`,
-                cursor: edge.isDeprecated ? "default" : "pointer",
-                zIndex: 10,
-                pointerEvents: edge.isDeprecated ? "none" : "auto",
-                opacity: edge.isDeprecated ? 0.15 : 1,
-                transition: "opacity 0.5s ease",
-              }}
-              onClick={(e) => { e.stopPropagation(); if (!edge.isDeprecated) handleEdgeClick(edge.id); }}
-              onMouseEnter={() => { if (edgeMeta) onHover(edgeMeta.name, edgeMeta.summary); }}
-              onMouseLeave={onHoverEnd}
-            >
-              <div style={{
-                position: "absolute", top: wireTop, left: 0, right: 0, height: wireH,
-                background: bgColor, overflow: "hidden",
-                boxShadow: isSelected ? (isEcosystem ? "0 0 8px rgba(14,165,233,0.6)" : "0 0 8px rgba(79,70,229,0.5)") : "none",
-                filter: isSelected ? "brightness(0.75)" : "none",
-                transition: "box-shadow 0.2s, filter 0.2s",
-              }}>
+            const x1 = src.x + R, y1 = src.y + R;
+            const x2 = tgt.x + R, y2 = tgt.y + R;
+            // Bezier control point: perpendicular offset at midpoint for an organic curve
+            const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+            const dx = x2 - x1, dy = y2 - y1;
+            const len = Math.hypot(dx, dy);
+            const curvature = Math.min(len * 0.28, 90);
+            const cpx = mx - (dy / Math.max(len, 1)) * curvature;
+            const cpy = my + (dx / Math.max(len, 1)) * curvature;
+            const d = `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`;
+
+            const isSelected = selectedId === edge.id && selectedType === "edge";
+            const baseStroke  = edge.isUpgraded ? "#10B981" : isEcosystem ? "#38BDF8" : "#94A3B8";
+            const selStroke   = isEcosystem ? "#0EA5E9" : "#4F46E5";
+            const pulseColor  = edge.isUpgraded ? "#10B981" : isEcosystem ? "#0EA5E9" : "#4F46E5";
+            const sw = isEcosystem ? 2.5 : 1.5;
+            const edgeMeta = EDGE_META[edge.id];
+            const opacity = edge.isDeprecated ? 0.15 : 1;
+
+            return (
+              <g key={edge.id} style={{ opacity, transition: "opacity 0.5s" }}>
+                {/* Base curved path */}
+                <path
+                  d={d} pathLength="1"
+                  stroke={isSelected ? selStroke : baseStroke}
+                  strokeWidth={isSelected ? sw + 1.5 : sw}
+                  fill="none"
+                  strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}
+                  style={{
+                    filter: isSelected
+                      ? (isEcosystem ? "drop-shadow(0 0 5px rgba(14,165,233,0.6))" : "drop-shadow(0 0 5px rgba(79,70,229,0.5))")
+                      : undefined,
+                    transition: "stroke 0.3s, stroke-width 0.2s",
+                  }}
+                />
+                {/* Animated travelling pulse */}
                 {!edge.isDeprecated && (
-                  <div style={{
-                    position: "absolute", top: 0, width: 40, height: "100%",
-                    background: pulseGrad,
-                    animation: `anim-seq-${edge.sequence || 1} ${cycleDur}s linear infinite`,
-                  }} />
+                  <path
+                    d={d} pathLength="1"
+                    stroke={pulseColor}
+                    strokeWidth={sw + 1.5}
+                    fill="none"
+                    strokeDasharray="0.06 1"
+                    style={{ animation: `svgflow-${edge.sequence || 1} ${cycleDur}s linear infinite` }}
+                  />
                 )}
-              </div>
-            </div>
-          );
-        })}
+                {/* Wide invisible hit area for click / hover */}
+                <path
+                  d={d}
+                  stroke="transparent"
+                  strokeWidth={22}
+                  fill="none"
+                  style={{
+                    cursor: edge.isDeprecated ? "default" : "pointer",
+                    pointerEvents: edge.isDeprecated ? "none" : "stroke",
+                  }}
+                  onClick={(e) => { e.stopPropagation(); if (!edge.isDeprecated) handleEdgeClick(edge.id); }}
+                  onMouseEnter={() => { if (edgeMeta) onHover(edgeMeta.name, edgeMeta.summary); }}
+                  onMouseLeave={onHoverEnd}
+                />
+              </g>
+            );
+          })}
 
-        {/* ── Rubber band for connect mode ─────────────────── */}
-        {connectFrom && (
-          (() => {
+          {/* Rubber band for connect mode */}
+          {connectFrom && (() => {
             const src = nodeMap[connectFrom];
             if (!src) return null;
-            const x1 = src.x + R, y1 = src.y + R;
-            const x2 = mousePos.x, y2 = mousePos.y;
-            const len = Math.hypot(x2-x1, y2-y1);
-            const angle = Math.atan2(y2-y1, x2-x1) * (180/Math.PI);
             return (
-              <div style={{
-                position: "absolute", left: x1, top: y1, width: len, height: 2,
-                transformOrigin: "0% 50%", transform: `rotate(${angle}deg)`,
-                background: "#F59E0B", opacity: 0.6, zIndex: 15, pointerEvents: "none",
-                display: "flex", alignItems: "center"
-              }}>
-                <div style={{ width: "100%", height: 0, borderTop: "2px dashed #F59E0B" }} />
-              </div>
+              <line
+                x1={src.x + R} y1={src.y + R}
+                x2={mousePos.x} y2={mousePos.y}
+                stroke="#F59E0B" strokeWidth={2} strokeDasharray="8 4" opacity={0.7}
+                style={{ pointerEvents: "none" }}
+              />
             );
-          })()
-        )}
+          })()}
+        </svg>
 
         {/* ── Node layer ────────────────────────────────────── */}
         {nodes.map((node) => {

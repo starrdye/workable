@@ -37,12 +37,17 @@ export interface GlobalSettings {
     name?: string; role?: string; status?: string;
     statusColor?: string; summary?: string;
     processes?: string[]; connections?: string[];
+    /** Operational / compliance / technical constraints for this entity. */
+    constraints?: string;
   }>;
 }
 
 export interface ServerGraphState {
   baselinePositions:  Record<string, NodePosition>;
   ecosystemPositions: Record<string, NodePosition>;
+  /** Snapshot of positions when the last workflow was imported — used by Reset Layout. */
+  originalBaselinePositions:  Record<string, NodePosition>;
+  originalEcosystemPositions: Record<string, NodePosition>;
   customNodes: CustomNodeConfig[];
   customEdges: CustomEdgeConfig[];
   settings: GlobalSettings;
@@ -78,6 +83,8 @@ function createInitialState(): ServerGraphState {
   return {
     baselinePositions:  { ...DEFAULT_BASELINE },
     ecosystemPositions: { ...DEFAULT_ECOSYSTEM },
+    originalBaselinePositions:  { ...DEFAULT_BASELINE },
+    originalEcosystemPositions: { ...DEFAULT_ECOSYSTEM },
     customNodes: [],
     customEdges: [],
     settings: { ...DEFAULT_SETTINGS, edgeWeightOverrides: {}, nodeDelayOverrides: {}, metadataOverrides: {} },
@@ -101,6 +108,11 @@ if (!global.__graphState.settings) {
     edgeWeightOverrides: {},
     nodeDelayOverrides: {},
   };
+}
+// Migrate old state that might be missing original positions
+if (!global.__graphState.originalBaselinePositions) {
+  (global.__graphState as ServerGraphState).originalBaselinePositions  = { ...global.__graphState.baselinePositions };
+  (global.__graphState as ServerGraphState).originalEcosystemPositions = { ...global.__graphState.ecosystemPositions };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -202,7 +214,7 @@ export function updateSettings(partial: Partial<GlobalSettings>) {
 
 export function updateMetadata(id: string, patch: {
   name?: string; role?: string; status?: string;
-  statusColor?: string; summary?: string;
+  statusColor?: string; summary?: string; constraints?: string;
   processes?: string[]; connections?: string[];
 }) {
   const state = global.__graphState!;
@@ -318,8 +330,19 @@ export function importState(data: {
   const state = global.__graphState!;
   state.baselinePositions  = { ...DEFAULT_BASELINE,   ...data.baselinePositions };
   state.ecosystemPositions = { ...DEFAULT_ECOSYSTEM,  ...data.ecosystemPositions };
+  // Snapshot for Reset Layout
+  state.originalBaselinePositions  = { ...state.baselinePositions };
+  state.originalEcosystemPositions = { ...state.ecosystemPositions };
   state.customNodes  = data.customNodes;
   state.customEdges  = data.customEdges;
   if (data.settings) state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
   state.lastUpdated  = Date.now();
+}
+
+/** Restore positions to the snapshot taken at last importState call. */
+export function resetLayout() {
+  const state = global.__graphState!;
+  state.baselinePositions  = { ...state.originalBaselinePositions };
+  state.ecosystemPositions = { ...state.originalEcosystemPositions };
+  state.lastUpdated = Date.now();
 }

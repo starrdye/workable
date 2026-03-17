@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { X, Zap, Link as LinkIcon, Trash2, Settings, Check, Clock, FastForward, Activity } from "lucide-react";
+import { X, Zap, Link as LinkIcon, Trash2, Settings, Check, Clock, FastForward, Activity, ShieldAlert } from "lucide-react";
 
 export interface AnalysisData {
   id: string;
@@ -9,6 +9,8 @@ export interface AnalysisData {
   status: string;
   statusColor?: string;
   summary: string;
+  /** Operational / compliance / technical constraints for this entity. */
+  constraints?: string;
   processes: string[];
   connections: string[];
   type: "node" | "edge";
@@ -131,6 +133,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
           status: draft.status,
           statusColor: draft.statusColor,
           summary: draft.summary,
+          constraints: draft.constraints,
           processes: (draft.processes || []).filter(Boolean),
           connections: (draft.connections || []).filter(Boolean),
         },
@@ -317,8 +320,33 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
             </div>
 
             <EditableField label="Summary"
-              value={current.summary || (current.type === "node" ? "No summary provided." : "Direct communication between nodes.")} 
+              value={current.summary || (current.type === "node" ? "No summary provided." : "Direct communication between nodes.")}
               editing={editing} multiline onChange={set("summary")} />
+
+            {/* Constraints — only shown for nodes */}
+            {current.type === "node" && (
+              <div className="mb-4">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <ShieldAlert className="w-3 h-3 text-amber-500" />
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest">Constraints</span>
+                </div>
+                {editing ? (
+                  <textarea
+                    rows={3}
+                    value={current.constraints || ""}
+                    placeholder="e.g. Requires manual sign-off · GDPR restricted · Max 500 req/day"
+                    onChange={(e) => set("constraints")(e.target.value)}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-400 resize-none bg-amber-50/30"
+                  />
+                ) : current.constraints ? (
+                  <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                    {current.constraints}
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-400 italic">None set — click edit to add constraints.</div>
+                )}
+              </div>
+            )}
 
             <EditableList
               label={current.type === "node" ? "Assigned Processes" : "Active Protocols"}
