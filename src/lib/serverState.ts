@@ -1,0 +1,325 @@
+/**
+ * serverState.ts
+ */
+import { NODE_DATA } from './constants';
+
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
+export interface CustomNodeConfig {
+  id: string;
+  labelInitials: string;
+  label: string;
+  nodeType: 'neural' | 'eco';
+  role: 'person' | 'tool' | 'external' | 'output';
+  textColor?: string;
+  position: NodePosition;
+  outputDelay?: number; // extra weight applied to outgoing edges from this node
+}
+
+export interface CustomEdgeConfig {
+  id: string;
+  source: string;
+  target: string;
+  sequence?: number;
+  weight?: number;
+  isCustom?: boolean;
+  isImprovementOnly?: boolean; // only show this edge when improvements mode is ON
+}
+
+export interface GlobalSettings {
+  nodePause: number;
+  edgeWeightOverrides: Record<string, { sequence?: number; weight?: number }>;
+  nodeDelayOverrides: Record<string, number>;
+  metadataOverrides: Record<string, {
+    name?: string; role?: string; status?: string;
+    statusColor?: string; summary?: string;
+    processes?: string[]; connections?: string[];
+  }>;
+}
+
+export interface ServerGraphState {
+  baselinePositions:  Record<string, NodePosition>;
+  ecosystemPositions: Record<string, NodePosition>;
+  customNodes: CustomNodeConfig[];
+  customEdges: CustomEdgeConfig[];
+  settings: GlobalSettings;
+  lastUpdated: number;
+}
+
+// ── Default positions matching the prototype exactly ──────────────────────────
+const DEFAULT_BASELINE: Record<string, NodePosition> = {
+  nav:    { x: 80,  y: 250 },
+  script: { x: 280, y: 80  },
+  db:     { x: 280, y: 420 },
+  xy:     { x: 280, y: 250 },
+  mary:   { x: 480, y: 250 },
+  ed:     { x: 680, y: 150 },
+  cy:     { x: 880, y: 250 },
+};
+
+const DEFAULT_ECOSYSTEM: Record<string, NodePosition> = {
+  nav:  { x: 200, y: 250 },
+  xy:   { x: 450, y: 250 },
+  mary: { x: 700, y: 150 },
+  ed:   { x: 700, y: 350 },
+};
+
+const DEFAULT_SETTINGS: GlobalSettings = {
+  nodePause: 1.0,
+  edgeWeightOverrides: {},
+  nodeDelayOverrides: {},
+  metadataOverrides: {},
+};
+
+function createInitialState(): ServerGraphState {
+  return {
+    baselinePositions:  { ...DEFAULT_BASELINE },
+    ecosystemPositions: { ...DEFAULT_ECOSYSTEM },
+    customNodes: [],
+    customEdges: [],
+    settings: { ...DEFAULT_SETTINGS, edgeWeightOverrides: {}, nodeDelayOverrides: {}, metadataOverrides: {} },
+    lastUpdated: Date.now(),
+  };
+}
+
+// Global singleton — survives hot-reload
+declare global {
+  // eslint-disable-next-line no-var
+  var __graphState: ServerGraphState | undefined;
+}
+
+if (!global.__graphState) {
+  global.__graphState = createInitialState();
+}
+// Migrate old state that might be missing `settings`
+if (!global.__graphState.settings) {
+  (global.__graphState as ServerGraphState).settings = {
+    ...DEFAULT_SETTINGS,
+    edgeWeightOverrides: {},
+    nodeDelayOverrides: {},
+  };
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export function getGraphState(): ServerGraphState {
+  return global.__graphState!;
+}
+
+export function updateNodePosition(
+  view: 'baseline' | 'ecosystem',
+  nodeId: string,
+  pos: NodePosition
+) {
+  const state = global.__graphState!;
+  if (view === 'baseline') {
+    state.baselinePositions[nodeId] = pos;
+  } else {
+    state.ecosystemPositions[nodeId] = pos;
+  }
+  state.lastUpdated = Date.now();
+}
+
+export function addCustomNode(node: CustomNodeConfig) {
+  const state = global.__graphState!;
+  state.customNodes = state.customNodes.filter(n => n.id !== node.id);
+  state.customNodes.push(node);
+  state.lastUpdated = Date.now();
+}
+
+export function addCustomEdge(edge: CustomEdgeConfig) {
+  const state = global.__graphState!;
+  state.customEdges = state.customEdges.filter(e => e.id !== edge.id);
+  state.customEdges.push(edge);
+
+  // Sync back to metadata: add target node name to source's connections list
+  const sourceId = edge.source;
+  const targetId = edge.target;
+  
+  // Resolve target name
+  let targetName = targetId;
+  const coreNode = NODE_DATA[targetId];
+  if (coreNode) targetName = coreNode.name;
+  else {
+    const customNode = state.customNodes.find(n => n.id === targetId);
+    if (customNode) targetName = customNode.label;
+  }
+
+  if (!state.settings.metadataOverrides) state.settings.metadataOverrides = {};
+  if (!state.settings.metadataOverrides[sourceId]) {
+    // Find initial connections from NODE_DATA if core
+    const coreSource = NODE_DATA[sourceId];
+    state.settings.metadataOverrides[sourceId] = {
+      connections: coreSource ? [...coreSource.connections] : []
+    };
+  }
+
+  const currentConns = state.settings.metadataOverrides[sourceId].connections || [];
+  if (!currentConns.includes(targetName)) {
+    state.settings.metadataOverrides[sourceId].connections = [...currentConns, targetName];
+  }
+
+  state.lastUpdated = Date.now();
+}
+
+export function updateEdgeParams(edgeId: string, params: { sequence?: number; weight?: number; isImprovementOnly?: boolean }) {
+  const state = global.__graphState!;
+  
+  // 1. Update settings overrides (for both builtin and custom)
+  if (!state.settings.edgeWeightOverrides) state.settings.edgeWeightOverrides = {};
+  const { isImprovementOnly, ...rest } = params;
+  state.settings.edgeWeightOverrides[edgeId] = {
+    ...(state.settings.edgeWeightOverrides[edgeId] || {}),
+    ...rest,
+  };
+
+  // 2. If it's a custom edge, update the flag on the edge itself
+  const customEdge = state.customEdges.find(e => e.id === edgeId);
+  if (customEdge) {
+    if (params.sequence !== undefined) customEdge.sequence = params.sequence;
+    if (params.weight !== undefined) customEdge.weight = params.weight;
+    if (params.isImprovementOnly !== undefined) customEdge.isImprovementOnly = params.isImprovementOnly;
+  }
+
+  state.lastUpdated = Date.now();
+}
+
+export function updateNodeDelay(nodeId: string, delay: number) {
+  const state = global.__graphState!;
+  if (!state.settings.nodeDelayOverrides) state.settings.nodeDelayOverrides = {};
+  state.settings.nodeDelayOverrides[nodeId] = delay;
+  state.lastUpdated = Date.now();
+}
+
+export function updateSettings(partial: Partial<GlobalSettings>) {
+  const state = global.__graphState!;
+  state.settings = { ...state.settings, ...partial };
+  state.lastUpdated = Date.now();
+}
+
+export function updateMetadata(id: string, patch: {
+  name?: string; role?: string; status?: string;
+  statusColor?: string; summary?: string;
+  processes?: string[]; connections?: string[];
+}) {
+  const state = global.__graphState!;
+  if (!state.settings.metadataOverrides) state.settings.metadataOverrides = {};
+  state.settings.metadataOverrides[id] = {
+    ...(state.settings.metadataOverrides[id] || {}),
+    ...patch,
+  };
+
+  // If connections are updated, sync the edges
+  if (patch.connections) {
+    syncEdgesFromConnections(id, patch.connections);
+  }
+
+  state.lastUpdated = Date.now();
+}
+
+function resolveNodeId(query: string): string | null {
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+
+  // 1. Check core nodes by ID or Name
+  for (const [id, data] of Object.entries(NODE_DATA)) {
+    if (id.toLowerCase() === q || data.name.toLowerCase() === q) return id;
+  }
+
+  // 2. Check custom nodes by ID or Name
+  const state = global.__graphState!;
+  for (const node of state.customNodes) {
+    if (node.id.toLowerCase() === q || node.label.toLowerCase() === q) return node.id;
+  }
+
+  return null;
+}
+
+function syncEdgesFromConnections(sourceId: string, connections: string[]) {
+  const state = global.__graphState!;
+  const targetIds = new Set(connections.map(resolveNodeId).filter(Boolean) as string[]);
+
+  // 1. Remove existing custom edges that are no longer in the list
+  state.customEdges = state.customEdges.filter(edge => {
+    if (edge.source !== sourceId) return true;
+    return targetIds.has(edge.target);
+  });
+
+  // 2. Add new edges for items in the list that don't exist yet
+  targetIds.forEach(targetId => {
+    if (targetId === sourceId) return; // No self-loops
+    const existsInCustom = state.customEdges.find(e => e.source === sourceId && e.target === targetId);
+    // Note: We don't check static EDGE_DATA here because updateMetadata is usually for manual/custom routing overrides.
+    if (!existsInCustom) {
+      const edgeId = `${sourceId}-${targetId}`;
+      state.customEdges.push({
+        id: edgeId,
+        source: sourceId,
+        target: targetId,
+        sequence: 1,
+        isCustom: true,
+        weight: 1
+      });
+    }
+  });
+}
+
+export function removeNode(nodeId: string) {
+  const state = global.__graphState!;
+  state.customNodes = state.customNodes.filter((n) => n.id !== nodeId);
+  state.customEdges = state.customEdges.filter(
+    (e) => e.source !== nodeId && e.target !== nodeId
+  );
+  delete state.baselinePositions[nodeId];
+  delete state.ecosystemPositions[nodeId];
+  delete state.settings.nodeDelayOverrides[nodeId];
+  state.lastUpdated = Date.now();
+}
+
+export function removeEdge(edgeId: string) {
+  const state = global.__graphState!;
+  const edge = state.customEdges.find((e) => e.id === edgeId);
+  
+  if (edge) {
+    const sourceId = edge.source;
+    const targetId = edge.target;
+
+    // Resolve target name
+    let targetName = targetId;
+    const coreNode = NODE_DATA[targetId];
+    if (coreNode) targetName = coreNode.name;
+    else {
+      const customNode = state.customNodes.find(n => n.id === targetId);
+      if (customNode) targetName = customNode.label;
+    }
+
+    // Remove from metadata overrides
+    if (state.settings.metadataOverrides?.[sourceId]?.connections) {
+      state.settings.metadataOverrides[sourceId].connections = 
+        state.settings.metadataOverrides[sourceId].connections.filter(c => c !== targetName);
+    }
+  }
+
+  state.customEdges = state.customEdges.filter((e) => e.id !== edgeId);
+  delete state.settings.edgeWeightOverrides[edgeId];
+  state.lastUpdated = Date.now();
+}
+
+export function importState(data: {
+  baselinePositions: Record<string, NodePosition>;
+  ecosystemPositions: Record<string, NodePosition>;
+  customNodes: CustomNodeConfig[];
+  customEdges: CustomEdgeConfig[];
+  settings?: Partial<GlobalSettings>;
+}) {
+  const state = global.__graphState!;
+  state.baselinePositions  = { ...DEFAULT_BASELINE,   ...data.baselinePositions };
+  state.ecosystemPositions = { ...DEFAULT_ECOSYSTEM,  ...data.ecosystemPositions };
+  state.customNodes  = data.customNodes;
+  state.customEdges  = data.customEdges;
+  if (data.settings) state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
+  state.lastUpdated  = Date.now();
+}
