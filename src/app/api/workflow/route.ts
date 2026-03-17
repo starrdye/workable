@@ -13,6 +13,7 @@ export async function GET() {
       ecosystemPositions: graphState.ecosystemPositions,
     },
     customNodes: graphState.customNodes,
+    // curveTension and zLayer are optional UI hints — not required for workflow import
     customEdges: graphState.customEdges,
     lastUpdated: graphState.lastUpdated,
   });
