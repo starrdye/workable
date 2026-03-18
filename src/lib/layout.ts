@@ -104,16 +104,19 @@ function resolveRingAngles(
   return a;
 }
 
-// ── 1. Hierarchical (Sugiyama-style layered) layout ───────────────────────────
+// ── 1. Hierarchical layout — horizontal flow (left → right) ───────────────────
 //
-// Algorithm overview:
-//   1. Build an adjacency list and an in-degree map.
-//   2. Kahn's topological BFS to assign each node a "layer" (depth from any root).
-//   3. Nodes with no predecessors (roots) are placed in layer 0; all cycles / unreachable
-//      nodes are appended as extra layers at the end.
-//   4. Within each layer, order nodes by barycenter heuristic (average layer-position of
-//      their predecessors) to reduce edge crossings.
-//   5. Scale the (layer, position-within-layer) grid to fit the canvas with padding.
+// Layers flow LEFT → RIGHT (X = layer depth).  Nodes within a layer spread
+// VERTICALLY (Y), centred around the average Y of their predecessors so that
+// edges stay short and children cluster near their parents.
+//
+// Algorithm:
+//   1. Kahn's BFS assigns each node a "layer" (0 = roots, grows rightward).
+//   2. Barycenter ordering within each layer minimises vertical edge crossings.
+//   3. Top-down placement: each column's nodes are centred around the mean Y
+//      of their predecessors.  Single-node columns inherit predecessor Y exactly.
+//   4. Bottom-up refinement: single-node columns blend pred / succ Y averages.
+//   5. Vertical overlap resolution: push nodes apart until ≥ MIN_NODE_SPACING_Y.
 
 export function hierarchicalLayout(
   nodes: LayoutNode[],
@@ -131,17 +134,16 @@ export function hierarchicalLayout(
   const padY = 70;
   const usableW = canvasW - padX * 2;
   const usableH = canvasH - padY * 2;
-  /** Minimum gap between layer centre-lines. Prevents nodes from nearly touching
-   *  in tall graphs. Nodes may go slightly off-canvas — user can pan. */
-  const MIN_LAYER_SPACING = 130;
-  /** Minimum horizontal gap between node centres in the same layer/row. */
-  const MIN_NODE_SPACING_X = 110;
-  /** Split dense layers into two sub-rows when count exceeds this. */
-  const MAX_PER_ROW   = 4;
-  /** Vertical offset between the two sub-rows for dense layers. */
-  const ROW_OFFSET_PX = 50;
+  /** Minimum horizontal gap between layer x-centres (columns). */
+  const MIN_LAYER_SPACING_X = 150;
+  /** Minimum vertical gap between node centres in the same column. */
+  const MIN_NODE_SPACING_Y  = 110;
+  /** Split dense columns into two sub-columns when count exceeds this. */
+  const MAX_PER_COL   = 4;
+  /** X offset between the two sub-columns for dense layers. */
+  const COL_OFFSET_PX = 55;
 
-  // Build predecessor / successor maps
+  // ── Build predecessor / successor maps ──────────────────────────────────
   const successors: Record<string, Set<string>>   = {};
   const predecessors: Record<string, Set<string>> = {};
   for (const id of ids) {
@@ -155,7 +157,7 @@ export function hierarchicalLayout(
     }
   }
 
-  // Kahn's BFS — assign layers
+  // ── Kahn's BFS — assign layers ──────────────────────────────────────────
   const inDegree: Record<string, number> = {};
   for (const id of ids) inDegree[id] = predecessors[id].size;
 
@@ -173,7 +175,7 @@ export function hierarchicalLayout(
     }
   }
 
-  // Handle nodes in cycles or disconnected (assign them to an extra layer)
+  // Cycle / disconnected nodes → extra layer at the end
   let maxLayer = Object.values(layer).reduce((m, l) => Math.max(m, l), 0);
   for (const id of ids) {
     if (layer[id] === undefined) layer[id] = ++maxLayer;
@@ -184,30 +186,29 @@ export function hierarchicalLayout(
   const layers: string[][] = Array.from({ length: maxLayer + 1 }, () => []);
   for (const id of ids) layers[layer[id]].push(id);
 
-  // Barycenter ordering within each layer (one pass, top-down)
+  // Barycenter ordering within each layer — minimises vertical edge crossings
   for (let l = 1; l <= maxLayer; l++) {
     const bary = (id: string): number => {
       const preds = [...predecessors[id]].filter((p) => layer[p] === l - 1);
       if (preds.length === 0) return Infinity;
-      const posInPrevLayer = layers[l - 1];
-      return preds.reduce((s, p) => s + posInPrevLayer.indexOf(p), 0) / preds.length;
+      return preds.reduce((s, p) => s + layers[l - 1].indexOf(p), 0) / preds.length;
     };
     layers[l].sort((a, b) => bary(a) - bary(b));
   }
 
-  // ── Adaptive vertical spacing ────────────────────────────────────────────
-  // Use at least MIN_LAYER_SPACING between layer centres.  When the natural
-  // spacing from usableH is larger, keep it (sparse graph stays compact).
-  const numLayers = maxLayer + 1;
-  const naturalSpacing = numLayers > 1 ? usableH / (numLayers - 1) : 0;
-  const layerSpacingY  = Math.max(MIN_LAYER_SPACING, naturalSpacing);
+  // ── Horizontal column spacing ────────────────────────────────────────────
+  const numLayers     = maxLayer + 1;
+  const naturalSpacingX = numLayers > 1 ? usableW / (numLayers - 1) : 0;
+  const layerSpacingX   = Math.max(MIN_LAYER_SPACING_X, naturalSpacingX);
 
-  // ── X-position helper: average of already-placed neighbour positions ─────
+  // ── Y-position helper: average of already-placed neighbour positions ─────
   const positions: PositionMap = {};
-  /** Average X of a set of node IDs that already have assigned positions. */
-  function avgPlacedX(nodeIds: Iterable<string>): number | null {
-    const xs = [...nodeIds].map((id) => positions[id]?.x).filter((x) => x !== undefined) as number[];
-    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+
+  function avgPlacedY(nodeIds: Iterable<string>): number | null {
+    const ys = [...nodeIds]
+      .map((id) => positions[id]?.y)
+      .filter((y) => y !== undefined) as number[];
+    return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : null;
   }
 
   // ── Top-down placement pass ──────────────────────────────────────────────
@@ -215,89 +216,112 @@ export function hierarchicalLayout(
     const layerNodes = layers[l];
     const count      = layerNodes.length;
 
-    // Layer centre Y (may exceed canvasH — user can pan)
-    const y = numLayers === 1 ? canvasH / 2 : padY + l * layerSpacingY;
+    // Column X (may exceed canvasW for many layers — user can pan)
+    const x = numLayers === 1 ? canvasW / 2 : padX + l * layerSpacingX;
 
-    // z: first layer slightly in front, last slightly at back
+    // z: leftmost column at front, rightmost at back (for 3-D eco view)
     const baseZ = Math.cos((l / Math.max(maxLayer, 1)) * Math.PI * 0.5) * 0.5;
 
-    if (count > MAX_PER_ROW) {
-      // Split into two sub-rows: even indices → top row, odd → bottom row
-      const topNodes = layerNodes.filter((_, i) => i % 2 === 0);
-      const botNodes = layerNodes.filter((_, i) => i % 2 === 1);
+    // Compute the "anchor" Y for this column: average of all predecessor Y's
+    const predYs: number[] = [];
+    for (const id of layerNodes) {
+      const py = avgPlacedY(predecessors[id]);
+      if (py !== null) predYs.push(py);
+    }
+    const anchorY = predYs.length > 0
+      ? predYs.reduce((a, b) => a + b, 0) / predYs.length
+      : canvasH / 2;
 
-      const placeRow = (rowNodes: string[], yOffset: number) => {
-        const n = rowNodes.length;
-        rowNodes.forEach((id, i) => {
-          const evenX = n === 1 ? canvasW / 2 : padX + (i / (n - 1)) * usableW;
-          const predX = avgPlacedX(predecessors[id]);
-          // For single-node sub-rows, bias toward predecessor; else use even spread
-          const x = n === 1 ? (predX ?? evenX) : evenX;
+    if (count > MAX_PER_COL) {
+      // ── Dense column: split into two sub-columns (left / right of x) ────
+      const leftNodes  = layerNodes.filter((_, i) => i % 2 === 0);
+      const rightNodes = layerNodes.filter((_, i) => i % 2 === 1);
+
+      const placeCol = (colNodes: string[], xOff: number) => {
+        const n = colNodes.length;
+        // Compute per-sub-column anchor
+        const colPredYs = colNodes
+          .map((id) => avgPlacedY(predecessors[id]))
+          .filter((y) => y !== null) as number[];
+        const colAnchor = colPredYs.length > 0
+          ? colPredYs.reduce((a, b) => a + b, 0) / colPredYs.length
+          : canvasH / 2;
+        const span   = Math.max(usableH, (n - 1) * MIN_NODE_SPACING_Y);
+        const yStart = Math.max(padY, Math.min(canvasH - padY - span, colAnchor - span / 2));
+        colNodes.forEach((id, i) => {
+          const y = n === 1 ? colAnchor : yStart + i * (span / (n - 1));
           const jitter = idToJitter(id, 0.2);
-          positions[id] = { x: Math.round(Math.max(padX, Math.min(canvasW - padX, x))), y: Math.round(y + yOffset), z: Math.max(-1, Math.min(1, baseZ + jitter)) };
+          positions[id] = {
+            x: Math.round(x + xOff),
+            y: Math.round(Math.max(padY, Math.min(canvasH - padY, y))),
+            z: Math.max(-1, Math.min(1, baseZ + jitter)),
+          };
         });
       };
-      placeRow(topNodes, -ROW_OFFSET_PX);
-      placeRow(botNodes,  ROW_OFFSET_PX);
+      placeCol(leftNodes,  -COL_OFFSET_PX);
+      placeCol(rightNodes,  COL_OFFSET_PX);
 
     } else if (count === 1) {
-      // Single-node layer: x = average of predecessor X positions (top-down),
-      // falling back to canvas centre if nothing placed yet.
-      const id   = layerNodes[0];
-      const predX = avgPlacedX(predecessors[id]);
-      const x    = predX ?? canvasW / 2;
+      // ── Single node: inherit anchor Y from predecessors ──────────────────
+      const id = layerNodes[0];
       const jitter = idToJitter(id, 0.2);
-      positions[id] = { x: Math.round(Math.max(padX, Math.min(canvasW - padX, x))), y: Math.round(y), z: Math.max(-1, Math.min(1, baseZ + jitter)) };
+      positions[id] = {
+        x: Math.round(x),
+        y: Math.round(Math.max(padY, Math.min(canvasH - padY, anchorY))),
+        z: Math.max(-1, Math.min(1, baseZ + jitter)),
+      };
 
     } else {
-      // Normal layer: even horizontal spread
+      // ── Normal column: spread nodes evenly, centred on anchorY ──────────
+      const span   = Math.max(usableH * 0.6, (count - 1) * MIN_NODE_SPACING_Y);
+      const yStart = Math.max(padY, Math.min(canvasH - padY - span, anchorY - span / 2));
       for (let i = 0; i < count; i++) {
-        const x = padX + (i / (count - 1)) * usableW;
+        const y = count === 1 ? anchorY : yStart + i * (span / (count - 1));
         const jitter = idToJitter(layerNodes[i], 0.2);
-        positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y), z: Math.max(-1, Math.min(1, baseZ + jitter)) };
+        positions[layerNodes[i]] = {
+          x: Math.round(x),
+          y: Math.round(y),
+          z: Math.max(-1, Math.min(1, baseZ + jitter)),
+        };
       }
     }
   }
 
-  // ── Bottom-up refinement for single-node layers ───────────────────────────
-  // Blend the predecessor-based X with the average X of successors that have
-  // now been placed.  This smooths out linear chains into a gentle staircase
-  // rather than a rigid vertical column.
+  // ── Bottom-up refinement for single-node columns ─────────────────────────
+  // Blend predecessor Y with successor Y so nodes sit midway along their edge.
   for (let l = maxLayer - 1; l >= 0; l--) {
     if (layers[l].length !== 1) continue;
-    const id = layers[l][0];
-    const succX = avgPlacedX(successors[id]);
-    if (succX === null) continue;
-    const predX = avgPlacedX(predecessors[id]);
-    // Weighted blend: 50 % predecessors, 50 % successors
-    const blendX = predX !== null ? (predX + succX) / 2 : succX;
-    const clamped = Math.max(padX, Math.min(canvasW - padX, blendX));
-    positions[id] = { ...positions[id], x: Math.round(clamped) };
+    const id   = layers[l][0];
+    const succY = avgPlacedY(successors[id]);
+    if (succY === null) continue;
+    const predY  = avgPlacedY(predecessors[id]);
+    const blendY = predY !== null ? (predY + succY) / 2 : succY;
+    const clamped = Math.max(padY, Math.min(canvasH - padY, blendY));
+    positions[id] = { ...positions[id], y: Math.round(clamped) };
   }
 
-  // ── Horizontal overlap resolution ────────────────────────────────────────
-  // For each layer, sort placed nodes by X and push neighbours apart if they
-  // are closer than MIN_NODE_SPACING_X.  Three passes converge quickly.
+  // ── Vertical overlap resolution ──────────────────────────────────────────
+  // Within each column (grouped by X bucket), push nodes apart vertically
+  // until they are at least MIN_NODE_SPACING_Y apart.  3 passes converge fast.
   for (let l = 0; l <= maxLayer; l++) {
-    // Group by approximate Y bucket (handles split sub-rows)
-    const byYBucket = new Map<number, string[]>();
+    const byXBucket = new Map<number, string[]>();
     for (const id of layers[l]) {
-      const bucket = Math.round((positions[id]?.y ?? 0) / 10) * 10;
-      if (!byYBucket.has(bucket)) byYBucket.set(bucket, []);
-      byYBucket.get(bucket)!.push(id);
+      const bucket = Math.round((positions[id]?.x ?? 0) / 10) * 10;
+      if (!byXBucket.has(bucket)) byXBucket.set(bucket, []);
+      byXBucket.get(bucket)!.push(id);
     }
-    for (const [, rowNodes] of byYBucket) {
-      if (rowNodes.length < 2) continue;
+    for (const [, colNodes] of byXBucket) {
+      if (colNodes.length < 2) continue;
       for (let pass = 0; pass < 3; pass++) {
-        rowNodes.sort((a, b) => (positions[a]?.x ?? 0) - (positions[b]?.x ?? 0));
-        for (let i = 1; i < rowNodes.length; i++) {
-          const prev = rowNodes[i - 1];
-          const curr = rowNodes[i];
-          const gap = (positions[curr]?.x ?? 0) - (positions[prev]?.x ?? 0);
-          if (gap < MIN_NODE_SPACING_X) {
-            const push = (MIN_NODE_SPACING_X - gap) / 2;
-            if (positions[prev]) positions[prev] = { ...positions[prev], x: Math.round(Math.max(padX,            positions[prev].x - push)) };
-            if (positions[curr]) positions[curr] = { ...positions[curr], x: Math.round(Math.min(canvasW - padX, positions[curr].x + push)) };
+        colNodes.sort((a, b) => (positions[a]?.y ?? 0) - (positions[b]?.y ?? 0));
+        for (let i = 1; i < colNodes.length; i++) {
+          const prev = colNodes[i - 1];
+          const curr = colNodes[i];
+          const gap  = (positions[curr]?.y ?? 0) - (positions[prev]?.y ?? 0);
+          if (gap < MIN_NODE_SPACING_Y) {
+            const push = (MIN_NODE_SPACING_Y - gap) / 2;
+            if (positions[prev]) positions[prev] = { ...positions[prev], y: Math.round(Math.max(padY,            positions[prev].y - push)) };
+            if (positions[curr]) positions[curr] = { ...positions[curr], y: Math.round(Math.min(canvasH - padY, positions[curr].y + push)) };
           }
         }
       }
