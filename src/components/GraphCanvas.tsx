@@ -67,6 +67,8 @@ interface WorkflowApiState {
       constraints?: string;
       tasks?: import("@/lib/serverState").NodeTask[];
     }>;
+    /** Named workflow groups rendered as coloured regions behind their nodes. */
+    workflowGroups?: Array<{ id: string; name: string; color: string; nodeIds: string[] }>;
   };
   lastUpdated: number;
   _positionsHash?: string;
@@ -568,6 +570,16 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       [nodes]
     );
 
+    // ── Hover highlight state — declared early so connectedEdgeIds can reference it ──
+    const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+    const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+
+    /** Set of edge IDs connected to the currently hovered node — drives dimming. */
+    const connectedEdgeIds = useMemo(() => {
+      if (!hoveredNodeId) return null;
+      return new Set(edges.filter((e) => e.source === hoveredNodeId || e.target === hoveredNodeId).map((e) => e.id));
+    }, [hoveredNodeId, edges]);
+
     // ── Pan + Zoom ────────────────────────────────────────────────────────────
     const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, scale: 1 });
     // Mutable ref so wheel/pan handlers always see fresh values without stale closure
@@ -790,7 +802,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       if (dragRef.current?.hasMoved) return;
       // Suppress deselect if the mouse moved during this pane drag (pan gesture)
       if (isPanningRef.current) { isPanningRef.current = false; return; }
-      setCtxMenu(null); setConnectFrom(null); setTaskPopup(null); onDeselect();
+      setCtxMenu(null); setConnectFrom(null); setTaskPopup(null);
+      setHoveredNodeId(null); setHoveredEdgeId(null);
+      onDeselect();
     }, [onDeselect]);
 
     // ── Delete key ────────────────────────────────────────────────────────────
@@ -923,6 +937,11 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     // ── Compute max degree once for edge-thickness scaling ────────────────────
     const maxNodeDeg = useMemo(() => Math.max(...Object.values(nodeDeg), 1), [nodeDeg]);
 
+    // ── Zoom LOD thresholds ───────────────────────────────────────────────────
+    // showLabels: hide all text labels when zoomed out past 42 % (reduces clutter)
+    // showEdges:  hide edge SVG entirely at very low zoom (group regions take over)
+    const showLabels = viewTransform.scale >= 0.42;
+
     // ── Render ────────────────────────────────────────────────────────────────
     return (
       <div
@@ -970,8 +989,51 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* ── SVG edge layer — bezier curves + satellite clusters + task dots ────── */}
         <svg
           className="absolute inset-0 w-full h-full"
-          style={{ zIndex: 10, overflow: "visible", pointerEvents: "none" }}
+          style={{
+            zIndex: 10, overflow: "visible", pointerEvents: "none",
+            // LOD: hide edges entirely when zoomed very far out
+            opacity: viewTransform.scale < 0.28 ? 0 : 1,
+            transition: "opacity 0.2s",
+          }}
         >
+          {/* ── Workflow group regions — rendered first (behind everything else) ── */}
+          {(serverState?.settings?.workflowGroups ?? []).map((group) => {
+            const memberNodes = group.nodeIds.map((id) => nodeMap[id]).filter(Boolean);
+            if (memberNodes.length === 0) return null;
+            const nodeHalfSize = memberNodes[0].isEco ? SPHERE_SZ / 2 : SZ / 2;
+            const PAD = 32;
+            const xs  = memberNodes.map((n) => n.x + nodeHalfSize);
+            const ys  = memberNodes.map((n) => n.y + nodeHalfSize);
+            const minX = Math.min(...xs) - PAD - nodeHalfSize;
+            const minY = Math.min(...ys) - PAD - nodeHalfSize;
+            const maxX = Math.max(...xs) + PAD + nodeHalfSize;
+            const maxY = Math.max(...ys) + PAD + nodeHalfSize;
+            const w = maxX - minX;
+            const h = maxY - minY;
+            const isLOD = viewTransform.scale < 0.42;
+            return (
+              <g key={group.id} style={{ pointerEvents: "none" }}>
+                <rect
+                  x={minX} y={minY} width={w} height={h}
+                  rx={16} ry={16}
+                  fill={group.color + "18"}
+                  stroke={group.color + "80"}
+                  strokeWidth={isLOD ? 2 : 1.5}
+                  strokeDasharray={isLOD ? undefined : "6 3"}
+                />
+                <text
+                  x={minX + 12} y={minY + (isLOD ? 26 : 16)}
+                  fontSize={isLOD ? 16 : 11}
+                  fontWeight={700}
+                  fill={group.color}
+                  style={{ userSelect: "none" }}
+                >
+                  {group.name}{isLOD && viewTransform.scale < 0.32 ? ` · ${memberNodes.length}` : ""}
+                </text>
+              </g>
+            );
+          })}
+
           {/* MiroFish satellite mini-spheres — dense cluster halo around each eco node */}
           {isEcosystem && nodes.filter(n => n.isEco).map(node => {
             const cx = node.x + SPHERE_SZ / 2;
@@ -1112,20 +1174,35 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             const selStroke = isEcosystem ? "#e91e8c" : "#4F46E5";
             const pulseColor = edge.isUpgraded ? "#10B981" : isEcosystem ? "rgba(220,50,70,0.7)" : "#4F46E5";
 
+            // ── Hover highlight logic ───────────────────────────────────────────
+            const isHoveredEdge = hoveredEdgeId === edge.id;
+            const isConnected   = connectedEdgeIds?.has(edge.id) ?? false;
+            const anyHover      = hoveredNodeId !== null || hoveredEdgeId !== null;
+            const baseOpacity   = isEcosystem ? ecoEdgeOpacity : (edge.isDeprecated ? 0.15 : 1);
+            const highlightOpacity = anyHover
+              ? (isHoveredEdge || isConnected ? 1 : 0.06)
+              : baseOpacity;
+
             return (
-              <g key={edge.id} style={{ opacity: isEcosystem ? ecoEdgeOpacity : (edge.isDeprecated ? 0.15 : 1), transition: "opacity 0.5s" }}>
+              <g key={edge.id} style={{ opacity: highlightOpacity, transition: "opacity 0.18s" }}>
                 {/* Adaptive edges: straight / single bezier / 4-arc bundle based on degree */}
                 {arcPaths.map((arcD, ai) => (
                   <path
                     key={ai}
                     d={arcD} pathLength="1"
                     stroke={isSelected ? selStroke : (isEcosystem ? `${miroArcColor}${(baseArcOpacity - ai * 0.02).toFixed(2)})` : (edge.isUpgraded ? "#10B981" : "#94A3B8"))}
-                    strokeWidth={isSelected ? ecoEdgeSW + 1.5 : ecoEdgeSW}
+                    strokeWidth={isSelected || isHoveredEdge ? ecoEdgeSW + 2 : ecoEdgeSW}
                     fill="none"
                     strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}
                     style={{
-                      filter: isSelected ? "drop-shadow(0 0 4px rgba(233,30,140,0.6))" : undefined,
-                      transition: "stroke 0.3s, stroke-width 0.2s",
+                      filter: isSelected
+                        ? "drop-shadow(0 0 4px rgba(233,30,140,0.6))"
+                        : isHoveredEdge
+                          ? "drop-shadow(0 0 6px rgba(99,102,241,0.7))"
+                          : isConnected
+                            ? "drop-shadow(0 0 3px rgba(99,102,241,0.4))"
+                            : undefined,
+                      transition: "stroke 0.2s, stroke-width 0.15s",
                     }}
                   />
                 ))}
@@ -1151,8 +1228,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     pointerEvents: edge.isDeprecated ? "none" : "stroke",
                   }}
                   onClick={(e) => { e.stopPropagation(); if (!edge.isDeprecated) handleEdgeClick(edge.id); }}
-                  onMouseEnter={() => { if (edgeMeta) onHover(edgeMeta.name, edgeMeta.summary); }}
-                  onMouseLeave={onHoverEnd}
+                  onMouseEnter={() => { setHoveredEdgeId(edge.id); if (edgeMeta) onHover(edgeMeta.name, edgeMeta.summary); }}
+                  onMouseLeave={() => { setHoveredEdgeId(null); onHoverEnd(); }}
                 />
               </g>
             );
@@ -1205,8 +1282,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                   onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                   onClick={(e) => handleNodeClick(e, node.id)}
                   onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
-                  onMouseEnter={() => { if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
-                  onMouseLeave={onHoverEnd}
+                  onMouseEnter={() => { setHoveredNodeId(node.id); if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
+                  onMouseLeave={() => { setHoveredNodeId(null); onHoverEnd(); }}
                 >
                   {/* Sphere body */}
                   <div
@@ -1228,7 +1305,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       userSelect: "none",
                     }}
                   />
-                  {/* Label — hidden by default, shown on hover via CSS */}
+                  {/* Label — hidden by default, shown on hover via CSS; hidden at low zoom */}
                   <div className="eco-label" style={{
                     position: "absolute",
                     top: SPHERE_SZ + 6,
@@ -1246,6 +1323,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     zIndex: 100,
                     boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
                     border: `1px solid ${ecoNodeNeon(node.id, node.isCustom)}44`,
+                    // LOD: force-hide label when zoomed out (overrides CSS hover rule)
+                    opacity: showLabels ? undefined : 0,
+                    pointerEvents: showLabels ? undefined : "none",
+                    transition: "opacity 0.2s",
                   }}>
                     {node.label}
                     {node.subcategory && !isDep && (
@@ -1286,12 +1367,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                 onClick={(e) => handleNodeClick(e, node.id)}
                 onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
-                onMouseEnter={() => { if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
-                onMouseLeave={onHoverEnd}
+                onMouseEnter={() => { setHoveredNodeId(node.id); if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
+                onMouseLeave={() => { setHoveredNodeId(null); onHoverEnd(); }}
               >
                 {node.initials}
 
-                {/* Node label */}
+                {/* Node label — hidden at low zoom (LOD) */}
                 <div style={{
                   position: "absolute", top: 65, whiteSpace: "nowrap",
                   background: node.labelBg, padding: "4px 10px",
@@ -1301,6 +1382,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                   boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
                   border: `1px solid ${node.labelBorderColor}`,
                   textAlign: "center", pointerEvents: "none",
+                  opacity: showLabels ? 1 : 0,
+                  transition: "opacity 0.2s",
                 }}>
                   {node.label}
                   {node.subcategory && !isDep && (
@@ -1395,10 +1478,26 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             onClick={(e) => e.stopPropagation()}
           >
             {ctxMenu.type === "canvas" && (
-              <button className="w-full text-left px-4 py-2 hover:bg-indigo-50 hover:text-indigo-600 font-medium flex items-center gap-2 transition-colors"
-                onClick={() => { setAddForm({ cx: ctxMenu.cx, cy: ctxMenu.cy, label: "", initials: "", role: "person" }); setCtxMenu(null); }}>
-                <span className="text-indigo-500 font-bold">+</span> Add Node Here
-              </button>
+              <>
+                <button className="w-full text-left px-4 py-2 hover:bg-indigo-50 hover:text-indigo-600 font-medium flex items-center gap-2 transition-colors"
+                  onClick={() => { setAddForm({ cx: ctxMenu.cx, cy: ctxMenu.cy, label: "", initials: "", role: "person" }); setCtxMenu(null); }}>
+                  <span className="text-indigo-500 font-bold">+</span> Add Node Here
+                </button>
+                <button className="w-full text-left px-4 py-2 hover:bg-violet-50 hover:text-violet-600 font-medium flex items-center gap-2 transition-colors"
+                  onClick={() => {
+                    const groupColors = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"];
+                    const id    = `group-${Date.now()}`;
+                    const color = groupColors[(serverState?.settings?.workflowGroups?.length ?? 0) % groupColors.length];
+                    const name  = "New Group";
+                    const newGroup = { id, name, color, nodeIds: [] };
+                    setServerState((prev) => prev ? { ...prev, settings: { ...prev.settings, workflowGroups: [...(prev.settings?.workflowGroups ?? []), newGroup] }, lastUpdated: Date.now() } : prev);
+                    fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ action: "upsertWorkflowGroup", group: newGroup }) }).catch(console.error);
+                    setCtxMenu(null);
+                  }}>
+                  <span className="text-violet-500">⬡</span> Create Workflow Group
+                </button>
+              </>
             )}
             {ctxMenu.type === "node" && (
               <>
@@ -1406,6 +1505,43 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                   onClick={() => { setConnectFrom(ctxMenu.nodeId); setCtxMenu(null); }}>
                   <span className="text-indigo-500">↗</span> Connect from here
                 </button>
+                {/* Add to group submenu */}
+                {(serverState?.settings?.workflowGroups ?? []).length > 0 && (
+                  <div className="relative group/grp">
+                    <button className="w-full text-left px-4 py-2 hover:bg-violet-50 hover:text-violet-600 font-medium flex items-center justify-between gap-2 transition-colors">
+                      <span><span className="text-violet-400">⬡</span> Add to group</span>
+                      <span className="text-slate-300 text-xs">›</span>
+                    </button>
+                    <div className="absolute left-full top-0 hidden group-hover/grp:block bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[160px] z-[300]">
+                      {(serverState?.settings?.workflowGroups ?? []).map((g) => {
+                        const already = g.nodeIds.includes(ctxMenu.nodeId);
+                        return (
+                          <button
+                            key={g.id}
+                            className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm flex items-center gap-2"
+                            onClick={() => {
+                              const updated = { ...g, nodeIds: already
+                                ? g.nodeIds.filter((nid) => nid !== ctxMenu.nodeId)
+                                : [...new Set([...g.nodeIds, ctxMenu.nodeId])] };
+                              setServerState((prev) => {
+                                if (!prev) return prev;
+                                const groups = (prev.settings?.workflowGroups ?? []).map((x) => x.id === g.id ? updated : x);
+                                return { ...prev, settings: { ...prev.settings, workflowGroups: groups }, lastUpdated: Date.now() };
+                              });
+                              fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ action: "upsertWorkflowGroup", group: updated }) }).catch(console.error);
+                              setCtxMenu(null);
+                            }}
+                          >
+                            <span style={{ width: 10, height: 10, borderRadius: 2, background: g.color, display: "inline-block", flexShrink: 0 }} />
+                            <span className="truncate">{g.name}</span>
+                            {already && <span className="ml-auto text-slate-400 text-[10px]">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {!CORE_IDS.has(ctxMenu.nodeId) && (
                   <button className="w-full text-left px-4 py-2 hover:bg-red-50 hover:text-red-600 font-medium flex items-center gap-2 transition-colors border-t border-gray-100 mt-1"
                     onClick={() => {

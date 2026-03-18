@@ -12,10 +12,13 @@ import {
   updateNodeDelay,
   updateSettings,
   updateMetadata,
+  upsertWorkflowGroup,
+  deleteWorkflowGroup,
   type CustomNodeConfig,
   type CustomEdgeConfig,
   type NodePosition,
   type GlobalSettings,
+  type WorkflowGroup,
 } from '@/lib/serverState';
 
 // Performance: client can pass ?since=<lastUpdated> to get a lightweight
@@ -57,6 +60,8 @@ export async function PUT(request: NextRequest) {
       statusColor?: string; summary?: string;
       processes?: string[]; connections?: string[];
     };
+    group?: WorkflowGroup;
+    groupId?: string;
   };
 
   switch (body.action) {
@@ -100,6 +105,12 @@ export async function PUT(request: NextRequest) {
       break;
     case 'resetLayout':
       resetLayout();
+      break;
+    case 'upsertWorkflowGroup':
+      if (body.group) upsertWorkflowGroup(body.group);
+      break;
+    case 'deleteWorkflowGroup':
+      if (body.groupId) deleteWorkflowGroup(body.groupId);
       break;
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });

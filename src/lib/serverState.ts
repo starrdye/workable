@@ -35,6 +35,22 @@ export interface CustomEdgeConfig {
 }
 
 /**
+ * A named workflow group — a labelled region covering a subset of nodes in
+ * both the process-map and the web-map views.  Rendered as a coloured
+ * bounding-box behind the member nodes so users can visually chunk their
+ * workflow into meaningful sub-flows (e.g. "Morning Routine").
+ */
+export interface WorkflowGroup {
+  id: string;
+  /** Display name shown inside the region rectangle. */
+  name: string;
+  /** Hex colour used for the fill and border of the region (e.g. "#6366F1"). */
+  color: string;
+  /** IDs of nodes that belong to this group. */
+  nodeIds: string[];
+}
+
+/**
  * A self-owned task / to-do attached to a node (shown as interactive dots
  * around the node in the ecosystem web-map view).
  */
@@ -67,6 +83,8 @@ export interface GlobalSettings {
   }>;
   /** Visual mode for the ecosystem web-map: controls edge density rendering. */
   ecoEdgeDensity?: "normal" | "dense" | "ultra";
+  /** Named workflow groups — rendered as coloured regions behind their nodes. */
+  workflowGroups?: WorkflowGroup[];
   /**
    * Core node IDs to hide in both views.  Used by templates that replace the
    * default Ridgeview nodes with their own custom node set.
@@ -378,6 +396,23 @@ export function importState(data: {
   state.customEdges  = data.customEdges;
   if (data.settings) state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
   state.lastUpdated  = Date.now();
+}
+
+/** Create or fully replace a workflow group by id. */
+export function upsertWorkflowGroup(group: WorkflowGroup) {
+  const state = global.__graphState!;
+  if (!state.settings.workflowGroups) state.settings.workflowGroups = [];
+  state.settings.workflowGroups = state.settings.workflowGroups.filter((g) => g.id !== group.id);
+  state.settings.workflowGroups.push(group);
+  state.lastUpdated = Date.now();
+}
+
+/** Remove a workflow group by id. */
+export function deleteWorkflowGroup(groupId: string) {
+  const state = global.__graphState!;
+  if (!state.settings.workflowGroups) return;
+  state.settings.workflowGroups = state.settings.workflowGroups.filter((g) => g.id !== groupId);
+  state.lastUpdated = Date.now();
 }
 
 /** Restore positions to the snapshot taken at last importState call. */

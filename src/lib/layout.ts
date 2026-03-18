@@ -126,6 +126,21 @@ export function hierarchicalLayout(
 
   const ids = nodes.map((n) => n.id);
 
+  // ── Spacing constants ────────────────────────────────────────────────────
+  const padX = 80;
+  const padY = 70;
+  const usableW = canvasW - padX * 2;
+  const usableH = canvasH - padY * 2;
+  /** Minimum gap between layer centre-lines. Prevents nodes from nearly touching
+   *  in tall graphs. Nodes may go slightly off-canvas — user can pan. */
+  const MIN_LAYER_SPACING = 130;
+  /** Minimum horizontal gap between node centres in the same layer/row. */
+  const MIN_NODE_SPACING_X = 110;
+  /** Split dense layers into two sub-rows when count exceeds this. */
+  const MAX_PER_ROW   = 4;
+  /** Vertical offset between the two sub-rows for dense layers. */
+  const ROW_OFFSET_PX = 50;
+
   // Build predecessor / successor maps
   const successors: Record<string, Set<string>>   = {};
   const predecessors: Record<string, Set<string>> = {};
@@ -159,12 +174,9 @@ export function hierarchicalLayout(
   }
 
   // Handle nodes in cycles or disconnected (assign them to an extra layer)
-  // Use reduce instead of spread to avoid stack-overflow on large graphs
   let maxLayer = Object.values(layer).reduce((m, l) => Math.max(m, l), 0);
   for (const id of ids) {
-    if (layer[id] === undefined) {
-      layer[id] = ++maxLayer;
-    }
+    if (layer[id] === undefined) layer[id] = ++maxLayer;
   }
   maxLayer = Object.values(layer).reduce((m, l) => Math.max(m, l), 0);
 
@@ -178,67 +190,116 @@ export function hierarchicalLayout(
       const preds = [...predecessors[id]].filter((p) => layer[p] === l - 1);
       if (preds.length === 0) return Infinity;
       const posInPrevLayer = layers[l - 1];
-      const avgIdx = preds.reduce((s, p) => s + posInPrevLayer.indexOf(p), 0) / preds.length;
-      return avgIdx;
+      return preds.reduce((s, p) => s + posInPrevLayer.indexOf(p), 0) / preds.length;
     };
     layers[l].sort((a, b) => bary(a) - bary(b));
   }
 
-  // Scale to canvas
-  const padX = 80;
-  const padY = 80;
-  const usableW = canvasW - padX * 2;
-  const usableH = canvasH - padY * 2;
-
-  // ── Dense-layer row wrapping ──────────────────────────────────────────────
-  //
-  // When a layer has many nodes they can crowd together horizontally, making
-  // labels unreadable.  If a layer exceeds MAX_PER_ROW nodes we split it into
-  // two sub-rows that are offset vertically by ±ROW_OFFSET_PX, keeping each
-  // row's nodes comfortably spaced while staying within the canvas width.
-  const MAX_PER_ROW   = 5;   // layers with ≤5 nodes stay on a single row
-  const ROW_OFFSET_PX = 28;  // vertical offset between the two sub-rows (px)
-
-  const positions: PositionMap = {};
-
+  // ── Adaptive vertical spacing ────────────────────────────────────────────
+  // Use at least MIN_LAYER_SPACING between layer centres.  When the natural
+  // spacing from usableH is larger, keep it (sparse graph stays compact).
   const numLayers = maxLayer + 1;
+  const naturalSpacing = numLayers > 1 ? usableH / (numLayers - 1) : 0;
+  const layerSpacingY  = Math.max(MIN_LAYER_SPACING, naturalSpacing);
+
+  // ── X-position helper: average of already-placed neighbour positions ─────
+  const positions: PositionMap = {};
+  /** Average X of a set of node IDs that already have assigned positions. */
+  function avgPlacedX(nodeIds: Iterable<string>): number | null {
+    const xs = [...nodeIds].map((id) => positions[id]?.x).filter((x) => x !== undefined) as number[];
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  }
+
+  // ── Top-down placement pass ──────────────────────────────────────────────
   for (let l = 0; l <= maxLayer; l++) {
     const layerNodes = layers[l];
     const count      = layerNodes.length;
 
-    // Y position for this layer (centre of the layer band)
-    const y = numLayers === 1
-      ? canvasH / 2
-      : padY + (l / (numLayers - 1)) * usableH;
+    // Layer centre Y (may exceed canvasH — user can pan)
+    const y = numLayers === 1 ? canvasH / 2 : padY + l * layerSpacingY;
 
-    // z: layer 0 slightly in front, middle layers at equator, last slightly in front
+    // z: first layer slightly in front, last slightly at back
     const baseZ = Math.cos((l / Math.max(maxLayer, 1)) * Math.PI * 0.5) * 0.5;
 
     if (count > MAX_PER_ROW) {
-      // Split into two rows: even-indexed → top row, odd-indexed → bottom row
+      // Split into two sub-rows: even indices → top row, odd → bottom row
       const topNodes = layerNodes.filter((_, i) => i % 2 === 0);
       const botNodes = layerNodes.filter((_, i) => i % 2 === 1);
-      const placeRow = (nodes: string[], yOffset: number) => {
-        const n = nodes.length;
-        nodes.forEach((id, i) => {
-          const x = n === 1
-            ? canvasW / 2
-            : padX + (i / (n - 1)) * usableW;
+
+      const placeRow = (rowNodes: string[], yOffset: number) => {
+        const n = rowNodes.length;
+        rowNodes.forEach((id, i) => {
+          const evenX = n === 1 ? canvasW / 2 : padX + (i / (n - 1)) * usableW;
+          const predX = avgPlacedX(predecessors[id]);
+          // For single-node sub-rows, bias toward predecessor; else use even spread
+          const x = n === 1 ? (predX ?? evenX) : evenX;
           const jitter = idToJitter(id, 0.2);
-          const z = Math.max(-1, Math.min(1, baseZ + jitter));
-          positions[id] = { x: Math.round(x), y: Math.round(y + yOffset), z };
+          positions[id] = { x: Math.round(Math.max(padX, Math.min(canvasW - padX, x))), y: Math.round(y + yOffset), z: Math.max(-1, Math.min(1, baseZ + jitter)) };
         });
       };
       placeRow(topNodes, -ROW_OFFSET_PX);
       placeRow(botNodes,  ROW_OFFSET_PX);
+
+    } else if (count === 1) {
+      // Single-node layer: x = average of predecessor X positions (top-down),
+      // falling back to canvas centre if nothing placed yet.
+      const id   = layerNodes[0];
+      const predX = avgPlacedX(predecessors[id]);
+      const x    = predX ?? canvasW / 2;
+      const jitter = idToJitter(id, 0.2);
+      positions[id] = { x: Math.round(Math.max(padX, Math.min(canvasW - padX, x))), y: Math.round(y), z: Math.max(-1, Math.min(1, baseZ + jitter)) };
+
     } else {
+      // Normal layer: even horizontal spread
       for (let i = 0; i < count; i++) {
-        const x = count === 1
-          ? canvasW / 2
-          : padX + (i / (count - 1)) * usableW;
+        const x = padX + (i / (count - 1)) * usableW;
         const jitter = idToJitter(layerNodes[i], 0.2);
-        const z = Math.max(-1, Math.min(1, baseZ + jitter));
-        positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y), z };
+        positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y), z: Math.max(-1, Math.min(1, baseZ + jitter)) };
+      }
+    }
+  }
+
+  // ── Bottom-up refinement for single-node layers ───────────────────────────
+  // Blend the predecessor-based X with the average X of successors that have
+  // now been placed.  This smooths out linear chains into a gentle staircase
+  // rather than a rigid vertical column.
+  for (let l = maxLayer - 1; l >= 0; l--) {
+    if (layers[l].length !== 1) continue;
+    const id = layers[l][0];
+    const succX = avgPlacedX(successors[id]);
+    if (succX === null) continue;
+    const predX = avgPlacedX(predecessors[id]);
+    // Weighted blend: 50 % predecessors, 50 % successors
+    const blendX = predX !== null ? (predX + succX) / 2 : succX;
+    const clamped = Math.max(padX, Math.min(canvasW - padX, blendX));
+    positions[id] = { ...positions[id], x: Math.round(clamped) };
+  }
+
+  // ── Horizontal overlap resolution ────────────────────────────────────────
+  // For each layer, sort placed nodes by X and push neighbours apart if they
+  // are closer than MIN_NODE_SPACING_X.  Three passes converge quickly.
+  for (let l = 0; l <= maxLayer; l++) {
+    // Group by approximate Y bucket (handles split sub-rows)
+    const byYBucket = new Map<number, string[]>();
+    for (const id of layers[l]) {
+      const bucket = Math.round((positions[id]?.y ?? 0) / 10) * 10;
+      if (!byYBucket.has(bucket)) byYBucket.set(bucket, []);
+      byYBucket.get(bucket)!.push(id);
+    }
+    for (const [, rowNodes] of byYBucket) {
+      if (rowNodes.length < 2) continue;
+      for (let pass = 0; pass < 3; pass++) {
+        rowNodes.sort((a, b) => (positions[a]?.x ?? 0) - (positions[b]?.x ?? 0));
+        for (let i = 1; i < rowNodes.length; i++) {
+          const prev = rowNodes[i - 1];
+          const curr = rowNodes[i];
+          const gap = (positions[curr]?.x ?? 0) - (positions[prev]?.x ?? 0);
+          if (gap < MIN_NODE_SPACING_X) {
+            const push = (MIN_NODE_SPACING_X - gap) / 2;
+            if (positions[prev]) positions[prev] = { ...positions[prev], x: Math.round(Math.max(padX,            positions[prev].x - push)) };
+            if (positions[curr]) positions[curr] = { ...positions[curr], x: Math.round(Math.min(canvasW - padX, positions[curr].x + push)) };
+          }
+        }
       }
     }
   }
