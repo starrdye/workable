@@ -52,24 +52,31 @@ export default function Home() {
   const activeApiKey = aiConfig.keys[aiConfig.provider]?.trim() ?? "";
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
 
-  // ── AI workflow generation from StartScreen ─────────────────────────────
-  const handleAiParsed = async (result: AIParsedResult) => {
+  // ── Shared importState helper ────────────────────────────────────────────
+  const importStateAndStart = async (result: AIParsedResult) => {
     await fetch("/api/graph-state", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action:            "importState",
-        customNodes:       result.customNodes,
-        customEdges:       result.customEdges,
-        baselinePositions: result.baselinePositions,
-        ecosystemPositions:result.ecosystemPositions,
-        settings:          result.metadataOverrides
-          ? { metadataOverrides: result.metadataOverrides }
-          : undefined,
+        action:             "importState",
+        customNodes:        result.customNodes,
+        customEdges:        result.customEdges,
+        baselinePositions:  result.baselinePositions,
+        ecosystemPositions: result.ecosystemPositions,
+        settings: {
+          ...(result.metadataOverrides ? { metadataOverrides: result.metadataOverrides } : {}),
+          ...(result.settings ?? {}),
+        },
       }),
     }).catch(console.error);
     setIsAppStarted(true);
   };
+
+  // ── AI workflow generation from StartScreen ─────────────────────────────
+  const handleAiParsed = (result: AIParsedResult) => importStateAndStart(result);
+
+  // ── Template selection from gallery ──────────────────────────────────────
+  const handleTemplateLoad = (result: AIParsedResult) => importStateAndStart(result);
 
   // ── AI optimization analysis ────────────────────────────────────────────
   const handleAiAnalyze = async () => {
@@ -171,6 +178,7 @@ export default function Home() {
           onStart={() => setIsAppStarted(true)}
           onImportAndStart={handleImportAndStart}
           onAiParsed={handleAiParsed}
+          onTemplateLoad={handleTemplateLoad}
           aiConfig={aiConfig}
           onSaveConfig={handleSaveAiConfig}
           onOpenSettings={() => setShowAISettings(true)}

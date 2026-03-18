@@ -47,6 +47,11 @@ export interface GlobalSettings {
   }>;
   /** Visual mode for the ecosystem web-map: controls edge density rendering. */
   ecoEdgeDensity?: "normal" | "dense" | "ultra";
+  /**
+   * Core node IDs to hide in both views.  Used by templates that replace the
+   * default Ridgeview nodes with their own custom node set.
+   */
+  hiddenCoreNodes?: string[];
 }
 
 export interface ServerGraphState {

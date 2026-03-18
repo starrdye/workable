@@ -56,6 +56,8 @@ interface WorkflowApiState {
     nodePause: number;
     edgeWeightOverrides: Record<string, { sequence?: number; weight?: number }>;
     nodeDelayOverrides: Record<string, number>;
+    /** Core node IDs to hide — set by templates that use their own node sets. */
+    hiddenCoreNodes?: string[];
   };
   lastUpdated: number;
   _positionsHash?: string;
@@ -530,10 +532,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     const [baselineNodes, setBaselineNodes] = useState<CanvasNode[]>([]);
     const [ecosystemNodes, setEcosystemNodes] = useState<CanvasNode[]>([]);
 
-    const nodes = useMemo(
-      () => (isEcosystem ? ecosystemNodes : baselineNodes),
-      [isEcosystem, baselineNodes, ecosystemNodes]
-    );
+    const nodes = useMemo(() => {
+      const hidden = new Set(serverState?.settings?.hiddenCoreNodes ?? []);
+      const base   = (isEcosystem ? ecosystemNodes : baselineNodes)
+        .filter((n) => !hidden.has(n.id));
+      return base;
+    }, [isEcosystem, baselineNodes, ecosystemNodes, serverState]);
     const edges = useMemo(
       () => buildEdges(isEcosystem, showImprovements, serverState?.customEdges || []),
       [isEcosystem, showImprovements, serverState?.customEdges]
@@ -550,17 +554,30 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       setEcosystemNodes(buildEcosystemNodes(serverState.ecosystemPositions, serverState.customNodes, showImprovements));
     }, [serverState, showImprovements]);
 
-    // Initial fetch
+    // Initial fetch — load both static workflow metadata and dynamic graph state
+    // in parallel so hiddenCoreNodes / customNodes from a freshly imported
+    // template are applied immediately, with no race between the two fetches.
     useEffect(() => {
-      fetch("/api/workflow").then((r) => r.json()).then((d) => {
-        setServerState({ ...d, baselinePositions: d.layout.baselinePositions, ecosystemPositions: d.layout.ecosystemPositions });
-        lastPollTs.current = d.lastUpdated;
+      Promise.all([
+        fetch("/api/workflow").then((r) => r.json()),
+        fetch("/api/graph-state").then((r) => r.json()),
+      ]).then(([workflow, graphState]) => {
+        setServerState({
+          ...workflow,
+          ...graphState,
+          // Prefer live positions from graph-state; fall back to workflow layout
+          baselinePositions:  graphState.baselinePositions  ?? workflow.layout?.baselinePositions,
+          ecosystemPositions: graphState.ecosystemPositions ?? workflow.layout?.ecosystemPositions,
+        });
+        lastPollTs.current = graphState.lastUpdated ?? 0;
       }).catch(console.error);
     }, []);
 
-    // Poll every 3 s
+    // Poll graph-state immediately on mount, then every 3 s.
+    // The immediate call ensures hiddenCoreNodes / customNodes from a freshly
+    // imported template are applied without waiting for the first interval tick.
     useEffect(() => {
-      const t = setInterval(() => {
+      const poll = () => {
         fetch("/api/graph-state").then((r) => r.json()).then((s: WorkflowApiState & { _positionsHash?: string }) => {
           if (s.lastUpdated > lastPollTs.current) {
             lastPollTs.current = s.lastUpdated;
@@ -574,7 +591,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             });
           }
         }).catch(console.error);
-      }, 3000);
+      };
+      poll(); // fire immediately so freshly imported templates show correctly
+      const t = setInterval(poll, 3000);
       return () => clearInterval(t);
     }, []);
 
