@@ -205,10 +205,10 @@ function TemplateCard({
 // ── Template preview map (static — defined outside component to avoid recreation) ──
 
 const TEMPLATE_PREVIEWS: Record<string, React.ReactNode> = {
-  blank:            <PreviewBlank />,
-  ridgeview:        <PreviewFew />,
-  "product-launch": <PreviewSome />,
-  "data-platform":  <PreviewMany />,
+  blank:              <PreviewBlank />,
+  "morning-routine":  <PreviewFew />,
+  "project-workflow": <PreviewSome />,
+  "full-week":        <PreviewMany />,
 };
 
 // ── Template gallery overlay ──────────────────────────────────────────────────
@@ -236,9 +236,9 @@ function TemplateGallery({
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">Choose a Template</h2>
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight">Choose a Starting Point</h2>
             <p className="text-sm text-slate-500 mt-0.5">
-              Each template shows how the layout adapts to different graph sizes.
+              Personal workflow templates — from a simple daily routine to a full work week.
             </p>
           </div>
         </div>
@@ -391,10 +391,10 @@ export function StartScreen({
             <div>
               <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
                 <Zap className="w-8 h-8 text-indigo-600" />
-                Ecosystem Data Engine
+                Workable
               </h1>
               <p className="text-gray-500 mt-1.5 text-sm">
-                Start a new workflow, generate one with AI, or load an existing CSV export.
+                Map your personal workflow, spot bottlenecks, and optimise how you work — powered by your own notes.
               </p>
             </div>
 
@@ -469,7 +469,7 @@ export function StartScreen({
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                Or describe your workflow in plain English
+                Or paste your notes / describe your daily workflow
               </label>
               <textarea
                 rows={3}
@@ -481,7 +481,7 @@ export function StartScreen({
                     ? "border-indigo-300 focus:border-indigo-600 focus:ring-indigo-600"
                     : "border-gray-300 focus:border-indigo-600 focus:ring-indigo-600"
                 }`}
-                placeholder="e.g., Xingye gets input from NAV back office, uses a script to parse data, then Mary reviews it before it goes to the Dashboard…"
+                placeholder="e.g., Every morning I check emails, then update my task list in Notion, before a stand-up with the team, then deep work until lunch…"
               />
               {hasInstructions && !activeKey && (
                 <p className="text-xs text-amber-600 flex items-center gap-1">

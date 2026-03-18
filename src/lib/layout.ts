@@ -190,6 +190,15 @@ export function hierarchicalLayout(
   const usableW = canvasW - padX * 2;
   const usableH = canvasH - padY * 2;
 
+  // ── Dense-layer row wrapping ──────────────────────────────────────────────
+  //
+  // When a layer has many nodes they can crowd together horizontally, making
+  // labels unreadable.  If a layer exceeds MAX_PER_ROW nodes we split it into
+  // two sub-rows that are offset vertically by ±ROW_OFFSET_PX, keeping each
+  // row's nodes comfortably spaced while staying within the canvas width.
+  const MAX_PER_ROW   = 5;   // layers with ≤5 nodes stay on a single row
+  const ROW_OFFSET_PX = 28;  // vertical offset between the two sub-rows (px)
+
   const positions: PositionMap = {};
 
   const numLayers = maxLayer + 1;
@@ -197,22 +206,40 @@ export function hierarchicalLayout(
     const layerNodes = layers[l];
     const count      = layerNodes.length;
 
-    // Y position for this layer
+    // Y position for this layer (centre of the layer band)
     const y = numLayers === 1
       ? canvasH / 2
       : padY + (l / (numLayers - 1)) * usableH;
 
-    // z: layer 0 slightly in front, middle layers at equator, last layer slightly in front
-    // Formula: cos((l / maxLayer) * π * 0.5) * 0.5  →  0.5 at l=0, ~0 at mid, 0.3 at last
+    // z: layer 0 slightly in front, middle layers at equator, last slightly in front
     const baseZ = Math.cos((l / Math.max(maxLayer, 1)) * Math.PI * 0.5) * 0.5;
 
-    for (let i = 0; i < count; i++) {
-      const x = count === 1
-        ? canvasW / 2
-        : padX + (i / (count - 1)) * usableW;
-      const jitter = idToJitter(layerNodes[i], 0.2);
-      const z = Math.max(-1, Math.min(1, baseZ + jitter));
-      positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y), z };
+    if (count > MAX_PER_ROW) {
+      // Split into two rows: even-indexed → top row, odd-indexed → bottom row
+      const topNodes = layerNodes.filter((_, i) => i % 2 === 0);
+      const botNodes = layerNodes.filter((_, i) => i % 2 === 1);
+      const placeRow = (nodes: string[], yOffset: number) => {
+        const n = nodes.length;
+        nodes.forEach((id, i) => {
+          const x = n === 1
+            ? canvasW / 2
+            : padX + (i / (n - 1)) * usableW;
+          const jitter = idToJitter(id, 0.2);
+          const z = Math.max(-1, Math.min(1, baseZ + jitter));
+          positions[id] = { x: Math.round(x), y: Math.round(y + yOffset), z };
+        });
+      };
+      placeRow(topNodes, -ROW_OFFSET_PX);
+      placeRow(botNodes,  ROW_OFFSET_PX);
+    } else {
+      for (let i = 0; i < count; i++) {
+        const x = count === 1
+          ? canvasW / 2
+          : padX + (i / (count - 1)) * usableW;
+        const jitter = idToJitter(layerNodes[i], 0.2);
+        const z = Math.max(-1, Math.min(1, baseZ + jitter));
+        positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y), z };
+      }
     }
   }
 

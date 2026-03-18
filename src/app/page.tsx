@@ -211,7 +211,7 @@ export default function Home() {
           </button>
           <Zap className="w-7 h-7 text-indigo-600" />
           <h1 className="text-xl font-bold tracking-tight">
-            Ridgeview <span className="text-indigo-600">Workflow Twin</span>
+            <span className="text-indigo-600">Workable</span>
           </h1>
         </div>
 
@@ -288,7 +288,7 @@ export default function Home() {
         {/* Left sidebar */}
         <aside className="w-80 bg-white border-r border-slate-200 p-6 flex flex-col gap-6 z-40 relative shadow-sm">
           <section>
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">Network Scenarios</h2>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">View Mode</h2>
             <div className="space-y-3">
               <button
                 className={`w-full text-left p-4 rounded-2xl border-2 transition group ${
@@ -298,11 +298,11 @@ export default function Home() {
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={`font-bold text-sm ${!showImprovements ? "text-indigo-600" : "text-slate-600 group-hover:text-indigo-500"}`}>
-                    Baseline Workflow
+                    Current Workflow
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Xingye compiles data via Tools, gets Mary&apos;s OK, then Edward&apos;s OK before Dashboard.
+                  Your workflow as it is today — every step, handoff, and tool you actually use.
                 </p>
               </button>
 
@@ -314,11 +314,11 @@ export default function Home() {
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={`font-bold text-sm ${showImprovements ? "text-emerald-600" : "text-slate-600 group-hover:text-emerald-500"}`}>
-                    Automated Check
+                    Optimised Workflow
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Edward bypassed. Once Mary approves, Ridgeview Dashboard generates directly.
+                  AI-suggested improvements overlaid — see what steps to automate, delegate, or cut.
                 </p>
               </button>
             </div>
@@ -326,9 +326,9 @@ export default function Home() {
 
           <section className="mt-auto">
             <p className="text-xs text-slate-400 italic text-center border-t border-slate-100 pt-4">
-              Tip: Drag nodes to rearrange. Right-click canvas to add a node. Press{" "}
+              Tip: Drag nodes to rearrange. Right-click canvas to add a step. Press{" "}
               <kbd className="bg-slate-100 border border-slate-200 rounded px-1 font-mono text-[10px]">Del</kbd>{" "}
-              to remove selected.
+              to remove. Use <em>AI Analyze</em> to get optimisation suggestions.
             </p>
           </section>
         </aside>

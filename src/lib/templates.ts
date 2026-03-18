@@ -68,146 +68,163 @@ export const TEMPLATES: Template[] = [
     edges: [],
   },
 
-  // ── 1. Ridgeview Workflow (default) ──────────────────────────────────────
+  // ── 1. Morning Routine (~7 nodes) ─────────────────────────────────────────
+  //
+  // Personal daily startup: single person at centre, tools and outputs radiate
+  // outward.  Showcases few-entity straight/simple layout.
   {
-    id: "ridgeview",
-    name: "Ridgeview Workflow",
-    description: "NAV fund pipeline: data ingestion → parsing → review → dashboard. The classic 7-node starter.",
+    id: "morning-routine",
+    name: "Morning Routine",
+    description: "Personal daily startup: wake-up → review → plan → deep work. A simple 7-step flow centered on you.",
     density: "few",
     nodeCount: 7,
     edgeCount: 8,
-    useBuiltins: true,
-    nodes: [],
-    edges: [],
+    nodes: [
+      { id: "me",       label: "You",            initials: "ME", role: "person"   },
+      { id: "inbox",    label: "Email / Inbox",  initials: "IN", role: "external" },
+      { id: "calendar", label: "Calendar",       initials: "CA", role: "tool"     },
+      { id: "notes",    label: "Notes / Journal",initials: "NT", role: "tool"     },
+      { id: "todoist",  label: "Task List",      initials: "TL", role: "tool"     },
+      { id: "standup",  label: "Team Stand-up",  initials: "SU", role: "person"   },
+      { id: "deepwork", label: "Deep Work Block",initials: "DW", role: "output"   },
+    ],
+    edges: [
+      { source: "inbox",    target: "me",       sequence: 1 },
+      { source: "calendar", target: "me",       sequence: 1 },
+      { source: "me",       target: "notes",    sequence: 2 },
+      { source: "me",       target: "todoist",  sequence: 2 },
+      { source: "notes",    target: "standup",  sequence: 3 },
+      { source: "todoist",  target: "standup",  sequence: 3 },
+      { source: "standup",  target: "deepwork", sequence: 4 },
+      { source: "todoist",  target: "deepwork", sequence: 4 },
+    ],
   },
 
-  // ── 2. Product Launch Pipeline (~14 nodes) ────────────────────────────────
+  // ── 2. Project Workflow (~14 nodes) ──────────────────────────────────────
   //
-  // Showcases: single bezier edges (PM hub has degree 6 → would trigger bundle
-  // in a denser graph), clean radial rings, barycenter-ordered layers.
+  // One person coordinating tools, collaborators, and deliverables.
+  // Showcases bezier edges + moderate radial rings.
   {
-    id: "product-launch",
-    name: "Product Launch",
-    description: "Full product cycle from stakeholder to launch analytics. ~14 people & tools, moderate density.",
+    id: "project-workflow",
+    name: "Project Workflow",
+    description: "You at the hub: idea → research → writing → review → publish. ~14 steps with tools and collaborators.",
     density: "some",
     nodeCount: 14,
-    edgeCount: 19,
+    edgeCount: 17,
     nodes: [
-      { id: "stakeholder", label: "Stakeholder",    initials: "SH", role: "external" },
-      { id: "pm",          label: "Product Manager",initials: "PM", role: "person"   },
-      { id: "cto",         label: "CTO",            initials: "CT", role: "person"   },
-      { id: "designer",    label: "UX Designer",    initials: "UX", role: "person"   },
-      { id: "figma",       label: "Figma",          initials: "FG", role: "tool"     },
-      { id: "fe-dev",      label: "Frontend Dev",   initials: "FE", role: "person"   },
-      { id: "be-dev",      label: "Backend Dev",    initials: "BE", role: "person"   },
-      { id: "prod-db",     label: "Database",       initials: "DB", role: "tool"     },
-      { id: "jira",        label: "Jira Board",     initials: "JR", role: "tool"     },
-      { id: "qa",          label: "QA Engineer",    initials: "QA", role: "person"   },
-      { id: "deploy",      label: "Deployment",     initials: "DP", role: "tool"     },
-      { id: "mktg",        label: "Marketing",      initials: "MK", role: "person"   },
-      { id: "content",     label: "Content Writer", initials: "CW", role: "person"   },
-      { id: "analytics",   label: "Analytics",      initials: "AN", role: "output"   },
+      { id: "me2",       label: "You",             initials: "ME", role: "person"   },
+      { id: "idea",      label: "Idea / Brief",    initials: "ID", role: "external" },
+      { id: "research",  label: "Research",        initials: "RS", role: "tool"     },
+      { id: "notion",    label: "Notion",          initials: "NO", role: "tool"     },
+      { id: "outline",   label: "Outline",         initials: "OL", role: "tool"     },
+      { id: "draft",     label: "Draft",           initials: "DR", role: "output"   },
+      { id: "loom",      label: "Loom / Record",   initials: "LM", role: "tool"     },
+      { id: "reviewer1", label: "Reviewer A",      initials: "R1", role: "person"   },
+      { id: "reviewer2", label: "Reviewer B",      initials: "R2", role: "person"   },
+      { id: "figma2",    label: "Figma / Design",  initials: "FG", role: "tool"     },
+      { id: "feedback",  label: "Feedback Loop",   initials: "FB", role: "external" },
+      { id: "publish",   label: "Publish",         initials: "PB", role: "output"   },
+      { id: "metrics",   label: "Analytics",       initials: "AN", role: "output"   },
+      { id: "archive",   label: "Archive / Docs",  initials: "AR", role: "tool"     },
     ],
     edges: [
-      { source: "stakeholder", target: "pm",       sequence: 1 },
-      // PM is the central hub — degree 7 → triggers 4-arc bundle in eco view
-      { source: "pm",          target: "designer",  sequence: 2 },
-      { source: "pm",          target: "cto",       sequence: 2 },
-      { source: "pm",          target: "jira",      sequence: 2 },
-      { source: "pm",          target: "qa",        sequence: 2 },
-      { source: "pm",          target: "mktg",      sequence: 2 },
-      { source: "pm",          target: "content",   sequence: 2 },
-      { source: "pm",          target: "analytics", sequence: 9 },
-      { source: "designer",    target: "figma",     sequence: 3 },
-      { source: "cto",         target: "be-dev",    sequence: 3 },
-      { source: "figma",       target: "fe-dev",    sequence: 4 },
-      { source: "jira",        target: "fe-dev",    sequence: 4 },
-      { source: "jira",        target: "be-dev",    sequence: 4 },
-      { source: "be-dev",      target: "prod-db",   sequence: 5 },
-      { source: "fe-dev",      target: "deploy",    sequence: 6 },
-      { source: "be-dev",      target: "deploy",    sequence: 6 },
-      { source: "deploy",      target: "qa",        sequence: 7 },
-      { source: "qa",          target: "mktg",      sequence: 8 },
-      { source: "mktg",        target: "analytics", sequence: 9 },
+      { source: "idea",      target: "me2",      sequence: 1 },
+      { source: "me2",       target: "research",  sequence: 2 },
+      { source: "me2",       target: "notion",    sequence: 2 },
+      { source: "research",  target: "outline",   sequence: 3 },
+      { source: "notion",    target: "outline",   sequence: 3 },
+      { source: "outline",   target: "draft",     sequence: 4 },
+      { source: "draft",     target: "loom",      sequence: 5 },
+      { source: "draft",     target: "figma2",    sequence: 5 },
+      { source: "draft",     target: "reviewer1", sequence: 5 },
+      { source: "draft",     target: "reviewer2", sequence: 5 },
+      { source: "reviewer1", target: "feedback",  sequence: 6 },
+      { source: "reviewer2", target: "feedback",  sequence: 6 },
+      { source: "feedback",  target: "me2",       sequence: 6 },
+      { source: "figma2",    target: "publish",   sequence: 7 },
+      { source: "loom",      target: "publish",   sequence: 7 },
+      { source: "publish",   target: "metrics",   sequence: 8 },
+      { source: "publish",   target: "archive",   sequence: 8 },
     ],
   },
 
-  // ── 3. Data Platform Architecture (~22 nodes) ─────────────────────────────
+  // ── 3. Full Work Week (~22 nodes) ─────────────────────────────────────────
   //
-  // Showcases: 4-arc bundles (warehouse degree 9), concentric force rings
-  // (ring 1 & 2 each have > 4 nodes), deep 4-ring radial structure.
+  // Showcases 4-arc bundles (you hub degree 9), concentric force rings
+  // (ring with >4 nodes), deep 4-ring radial structure.  Dense-layer wrapping
+  // keeps the 2D process map legible even with 22 nodes.
   {
-    id: "data-platform",
-    name: "Data Platform",
-    description: "Enterprise data architecture: 5 sources, ingestion, processing, storage, serving, and governance.",
+    id: "full-week",
+    name: "Full Work Week",
+    description: "Your complete weekly system: inputs, deep work blocks, meetings, reviews, and outputs — all mapped.",
     density: "many",
     nodeCount: 22,
-    edgeCount: 28,
+    edgeCount: 27,
     nodes: [
-      // ── Data Sources (external) ──────────────────────────────────────
-      { id: "crm",      label: "CRM System",     initials: "CR", role: "external" },
-      { id: "erp",      label: "ERP System",     initials: "ER", role: "external" },
-      { id: "iot",      label: "IoT Sensors",    initials: "IO", role: "external" },
-      { id: "web",      label: "Web Events",     initials: "WB", role: "tool"     },
-      { id: "partner",  label: "Partner API",    initials: "PA", role: "external" },
-      // ── Ingestion layer ──────────────────────────────────────────────
-      { id: "kafka",    label: "Kafka",          initials: "KF", role: "tool"     },
-      { id: "batch",    label: "Batch ETL",      initials: "BT", role: "tool"     },
-      { id: "apigw",    label: "API Gateway",    initials: "GW", role: "tool"     },
-      // ── Processing layer ─────────────────────────────────────────────
-      { id: "spark",    label: "Spark Cluster",  initials: "SP", role: "tool"     },
-      { id: "dbt",      label: "dbt Transform",  initials: "DT", role: "tool"     },
-      { id: "mlpipe",   label: "ML Pipeline",    initials: "ML", role: "tool"     },
-      { id: "dq",       label: "Data Quality",   initials: "DQ", role: "tool"     },
-      // ── Storage layer ────────────────────────────────────────────────
-      { id: "lake",     label: "Data Lake",      initials: "LK", role: "tool"     },
-      { id: "wh",       label: "Data Warehouse", initials: "WH", role: "tool"     }, // hub
-      { id: "featstore",label: "Feature Store",  initials: "FS", role: "tool"     },
-      { id: "cache",    label: "Redis Cache",    initials: "RC", role: "tool"     },
-      // ── Consumers ────────────────────────────────────────────────────
-      { id: "bi",       label: "BI Team",        initials: "BI", role: "person"   },
-      { id: "ds",       label: "Data Science",   initials: "DS", role: "person"   },
-      { id: "product",  label: "Product Team",   initials: "PR", role: "person"   },
-      { id: "exec",     label: "Exec Dashboard", initials: "EX", role: "output"   },
-      { id: "mlserve",  label: "ML Serving",     initials: "MS", role: "tool"     },
-      // ── Governance ───────────────────────────────────────────────────
-      { id: "catalog",  label: "Data Catalog",   initials: "DC", role: "tool"     },
+      // ── Inputs (external triggers) ────────────────────────────────────
+      { id: "email",    label: "Email",          initials: "EM", role: "external" },
+      { id: "slack",    label: "Slack / Chat",   initials: "SL", role: "external" },
+      { id: "news",     label: "News / RSS",     initials: "NW", role: "external" },
+      { id: "client",   label: "Client Request", initials: "CR", role: "external" },
+      { id: "ideas",    label: "Ideas Inbox",    initials: "II", role: "external" },
+      // ── Capture & Planning ────────────────────────────────────────────
+      { id: "capture",  label: "Daily Capture",  initials: "DC", role: "tool"     },
+      { id: "calendar2",label: "Calendar",       initials: "CA", role: "tool"     },
+      { id: "taskmgr",  label: "Task Manager",   initials: "TM", role: "tool"     },
+      // ── You (hub) ─────────────────────────────────────────────────────
+      { id: "you",      label: "You",            initials: "ME", role: "person"   },
+      // ── Deep work blocks ─────────────────────────────────────────────
+      { id: "deepw1",   label: "Deep Work A.M.", initials: "D1", role: "tool"     },
+      { id: "deepw2",   label: "Deep Work P.M.", initials: "D2", role: "tool"     },
+      { id: "research2",label: "Research",       initials: "RS", role: "tool"     },
+      // ── Collaboration ─────────────────────────────────────────────────
+      { id: "standup2", label: "Stand-up",       initials: "SU", role: "person"   },
+      { id: "collab1",  label: "Collaborator A", initials: "C1", role: "person"   },
+      { id: "collab2",  label: "Collaborator B", initials: "C2", role: "person"   },
+      { id: "review2",  label: "Review Meeting", initials: "RM", role: "person"   },
+      // ── Tools ────────────────────────────────────────────────────────
+      { id: "notion2",  label: "Notion / Docs",  initials: "NO", role: "tool"     },
+      { id: "github2",  label: "GitHub / Code",  initials: "GH", role: "tool"     },
+      // ── Outputs ──────────────────────────────────────────────────────
+      { id: "deliverable",label: "Deliverable",  initials: "DL", role: "output"   },
+      { id: "published",  label: "Published",    initials: "PB", role: "output"   },
+      { id: "weekreview", label: "Week Review",  initials: "WR", role: "output"   },
+      { id: "kpi",        label: "KPIs / Metrics",initials: "KP",role: "output"   },
     ],
     edges: [
-      // Sources → Ingestion
-      { source: "crm",     target: "kafka",     sequence: 1 },
-      { source: "erp",     target: "batch",     sequence: 1 },
-      { source: "iot",     target: "kafka",     sequence: 1 },
-      { source: "web",     target: "kafka",     sequence: 1 },
-      { source: "partner", target: "apigw",     sequence: 1 },
-      // Ingestion → Processing
-      { source: "kafka",   target: "spark",     sequence: 2 },
-      { source: "kafka",   target: "mlpipe",    sequence: 2 },
-      { source: "batch",   target: "spark",     sequence: 2 },
-      { source: "apigw",   target: "spark",     sequence: 2 },
-      { source: "apigw",   target: "dbt",       sequence: 2 },
-      // Processing → Storage
-      { source: "spark",   target: "lake",      sequence: 3 },
-      { source: "spark",   target: "dq",        sequence: 3 },
-      { source: "lake",    target: "dbt",       sequence: 3 },
-      { source: "lake",    target: "catalog",   sequence: 3 },
-      { source: "dbt",     target: "wh",        sequence: 4 },
-      { source: "dbt",     target: "featstore", sequence: 4 },
-      { source: "dq",      target: "wh",        sequence: 4 },
-      { source: "mlpipe",  target: "featstore", sequence: 4 },
-      // Warehouse → Consumers  (wh degree = 9 → 4-arc bundle)
-      { source: "wh",      target: "bi",        sequence: 5 },
-      { source: "wh",      target: "ds",        sequence: 5 },
-      { source: "wh",      target: "product",   sequence: 5 },
-      { source: "wh",      target: "exec",      sequence: 5 },
-      { source: "wh",      target: "cache",     sequence: 5 },
-      // Feature serving
-      { source: "featstore",target: "mlserve",  sequence: 5 },
-      { source: "cache",   target: "mlserve",   sequence: 5 },
-      { source: "mlserve", target: "product",   sequence: 6 },
-      { source: "mlserve", target: "ds",        sequence: 6 },
-      // Governance
-      { source: "catalog", target: "wh",        sequence: 4 },
+      // Inputs → Capture
+      { source: "email",   target: "capture",   sequence: 1 },
+      { source: "slack",   target: "capture",   sequence: 1 },
+      { source: "news",    target: "capture",   sequence: 1 },
+      { source: "client",  target: "capture",   sequence: 1 },
+      { source: "ideas",   target: "capture",   sequence: 1 },
+      // Capture → You (hub, degree 9+ → 4-arc bundle in eco view)
+      { source: "capture",  target: "you",      sequence: 2 },
+      { source: "calendar2",target: "you",      sequence: 2 },
+      { source: "taskmgr",  target: "you",      sequence: 2 },
+      // You → Deep work + collab
+      { source: "you",      target: "deepw1",   sequence: 3 },
+      { source: "you",      target: "deepw2",   sequence: 3 },
+      { source: "you",      target: "research2",sequence: 3 },
+      { source: "you",      target: "standup2", sequence: 3 },
+      { source: "you",      target: "collab1",  sequence: 3 },
+      { source: "you",      target: "collab2",  sequence: 3 },
+      // Deep work → tools + outputs
+      { source: "deepw1",   target: "notion2",  sequence: 4 },
+      { source: "deepw1",   target: "github2",  sequence: 4 },
+      { source: "deepw2",   target: "deliverable",sequence: 5 },
+      { source: "research2",target: "notion2",  sequence: 4 },
+      // Collab → review
+      { source: "collab1",  target: "review2",  sequence: 4 },
+      { source: "collab2",  target: "review2",  sequence: 4 },
+      { source: "standup2", target: "taskmgr",  sequence: 4 },
+      // Outputs
+      { source: "notion2",  target: "published",sequence: 5 },
+      { source: "github2",  target: "deliverable",sequence: 5 },
+      { source: "review2",  target: "deliverable",sequence: 5 },
+      { source: "deliverable",target: "kpi",    sequence: 6 },
+      { source: "published",  target: "kpi",    sequence: 6 },
+      { source: "kpi",        target: "weekreview",sequence: 7 },
     ],
   },
 ];
