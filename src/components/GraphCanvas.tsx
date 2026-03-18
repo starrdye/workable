@@ -25,6 +25,7 @@ export interface GraphCanvasProps {
 
 interface CanvasNode {
   id: string;  x: number;  y: number;
+  z?: number;  // simulated depth: -1.0 (back) to +1.0 (front)
   initials: string;  label: string;
   subcategory?: string;  isHub?: boolean;
   bottleneck?: boolean;  bottleneckText?: string;
@@ -47,9 +48,9 @@ type CtxMenu =
   | { type: "node";   x: number; y: number; nodeId: string };
 interface AddForm { cx: number; cy: number; label: string; initials: string; role: "person" | "tool" | "external" | "output"; }
 interface WorkflowApiState {
-  baselinePositions:  Record<string, { x: number; y: number }>;
-  ecosystemPositions: Record<string, { x: number; y: number }>;
-  customNodes: Array<{ id: string; labelInitials: string; label: string; nodeType: "neural"|"eco"; role?: string; textColor?: string; position: { x: number; y: number }; outputDelay?: number }>;
+  baselinePositions:  Record<string, { x: number; y: number; z?: number }>;
+  ecosystemPositions: Record<string, { x: number; y: number; z?: number }>;
+  customNodes: Array<{ id: string; labelInitials: string; label: string; nodeType: "neural"|"eco"; role?: string; textColor?: string; position: { x: number; y: number; z?: number }; outputDelay?: number }>;
   customEdges: Array<{ id: string; source: string; target: string; sequence?: number; weight?: number; isCustom?: boolean; isImprovementOnly?: boolean }>;
   settings: {
     nodePause: number;
@@ -57,14 +58,68 @@ interface WorkflowApiState {
     nodeDelayOverrides: Record<string, number>;
   };
   lastUpdated: number;
+  _positionsHash?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SZ = 56;  // node box size
 const R  = SZ / 2; // radius / half-size
-const ECO_NODE_SZ = 44; // smaller nodes in ecosystem/web-map view
+const ECO_NODE_SZ = 44; // smaller nodes in ecosystem/web-map view (kept for reference)
+const SPHERE_SZ = 20; // diameter of 3D neon sphere in ecosystem view
 function nodeRadius(isEco: boolean): number {
-  return isEco ? ECO_NODE_SZ / 2 : R;
+  return isEco ? SPHERE_SZ / 2 : R;
+}
+
+// Neon color per ecosystem node — maps to sphere gradient theme
+const ECO_NEON: Record<string, string> = {
+  xy:   "#00BCD4",  // cyan  hub
+  nav:  "#E91E8C",  // magenta  external
+  mary: "#C084FC",  // violet  collaborator
+  ed:   "#F59E0B",  // amber   bottleneck (unchanged)
+};
+function ecoNodeNeon(id: string, isCustom?: boolean): string {
+  return ECO_NEON[id] || (isCustom ? "#10B981" : "#0EA5E9");
+}
+
+// Neon radial-gradient sphere — MiroFish 3D Signal Theme
+function sphereGradient(nodeId: string, isBottleneck?: boolean, isDeprecated?: boolean): string {
+  if (isDeprecated) return "radial-gradient(circle at 30% 30%, #f1f5f9 0%, #cbd5e1 55%, #94a3b8 100%)";
+  if (isBottleneck) return "radial-gradient(circle at 30% 30%, #fef08a 0%, #f59e0b 55%, #78350f 100%)";
+  if (nodeId === "xy"   || nodeId === "XY") return "radial-gradient(circle at 30% 30%, #e0ffff 0%, #00bcd4 55%, #006064 100%)";
+  if (nodeId === "nav"  || nodeId === "NB") return "radial-gradient(circle at 30% 30%, #fce4ec 0%, #e91e8c 55%, #4a0033 100%)";
+  if (nodeId === "mary" || nodeId === "MM") return "radial-gradient(circle at 30% 30%, #f3e8ff 0%, #c084fc 55%, #4a0072 100%)";
+  if (nodeId === "ed"   || nodeId === "EC") return "radial-gradient(circle at 30% 30%, #fef08a 0%, #f59e0b 55%, #78350f 100%)";
+  // Custom nodes — emerald
+  return "radial-gradient(circle at 30% 30%, #e0ffe0 0%, #00ff88 55%, #004422 100%)";
+}
+
+// Neon glow box-shadow per node
+function sphereGlow(nodeId: string, isBottleneck?: boolean, isDeprecated?: boolean, depthScale = 1): string {
+  if (isDeprecated) return "none";
+  if (isBottleneck) return `0 0 10px rgba(245,158,11,0.6), 0 0 24px rgba(245,158,11,0.3), inset 0 1px 2px rgba(255,255,255,0.5)`;
+  const glowMap: Record<string, string> = {
+    xy:   "0 0 10px rgba(0,188,212,0.7), 0 0 24px rgba(0,188,212,0.3), inset 0 1px 2px rgba(255,255,255,0.6)",
+    nav:  "0 0 10px rgba(233,30,140,0.7), 0 0 24px rgba(233,30,140,0.3), inset 0 1px 2px rgba(255,255,255,0.6)",
+    mary: "0 0 10px rgba(192,132,252,0.7), 0 0 24px rgba(192,132,252,0.3), inset 0 1px 2px rgba(255,255,255,0.6)",
+  };
+  return glowMap[nodeId] || `0 ${Math.round(depthScale * 3)}px ${Math.round(depthScale * 8)}px rgba(0,0,0,0.2), inset 0 1px 2px rgba(255,255,255,0.5)`;
+}
+
+// Satellite mini-spheres around each main eco node (MiroFish dense cluster effect)
+function getSatellites(cx: number, cy: number, id: string, count = 10): Array<{x: number; y: number; r: number; opacity: number}> {
+  const out: Array<{x: number; y: number; r: number; opacity: number}> = [];
+  let h = 5381;
+  for (const c of id) h = ((h << 5) + h) ^ c.charCodeAt(0);
+  for (let i = 0; i < count; i++) {
+    const s1 = Math.abs((h * (i * 7 + 13)) | 0);
+    const s2 = Math.abs((h * (i * 11 + 5)) | 0);
+    const s3 = Math.abs((h * (i * 3 + 17)) | 0);
+    const radius = 16 + (s1 % 42);
+    const angle  = (s2 % 628) / 100;
+    const dotR   = 1.2 + (s3 % 3) * 0.5;
+    out.push({ x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle), r: dotR, opacity: 0.35 + (s3 % 45) / 100 });
+  }
+  return out;
 }
 
 // Default border/text per node ID (baseline view)
@@ -126,13 +181,14 @@ function ecoJitter(id: string): number {
 }
 
 function buildBaselineNodes(
-  pos: Record<string, { x: number; y: number }>,
+  pos: Record<string, { x: number; y: number; z?: number }>,
   customNodes: WorkflowApiState["customNodes"],
   showImprovements: boolean,
 ): CanvasNode[] {
   const ids = ["nav","script","db","xy","mary","ed","cy"];
   const out: CanvasNode[] = ids.map((id) => {
     const p = pos[id] || { x: 100, y: 100 };
+    const z = p.z; // may be undefined for baseline — that's fine, baseline uses no depth effects
     const s = BASE_STYLE[id];
     const isBottleneck = id === "ed";
     const isDep  = isBottleneck && showImprovements;
@@ -140,7 +196,7 @@ function buildBaselineNodes(
     const border = isDep ? "#E2E8F0" : isUpgr ? "#10B981" : s.border;
     const text   = isDep ? "#94A3B8" : isUpgr ? "#10B981" : s.text;
     return {
-      id, x: p.x, y: p.y,
+      id, x: p.x, y: p.y, z,
       initials: BASE_LABELS[id].initials,
       label:    BASE_LABELS[id].label,
       bottleneck: isBottleneck, bottleneckText: isBottleneck ? "Queue: 2.3 Days" : undefined,
@@ -154,7 +210,7 @@ function buildBaselineNodes(
   customNodes.forEach((cn) => {
     const p = pos[cn.id] || cn.position;
     const clr = cn.textColor || ROLE_COLOR[cn.role || ""] || "#4F46E5";
-    out.push({ id: cn.id, x: p.x, y: p.y, initials: cn.labelInitials, label: cn.label,
+    out.push({ id: cn.id, x: p.x, y: p.y, z: p.z, initials: cn.labelInitials, label: cn.label,
       borderColor: clr, textColor: clr, isEco: false,
       labelBg: "rgba(255,255,255,0.95)", labelBorderColor: "#E2E8F0", isCustom: true });
   });
@@ -162,34 +218,36 @@ function buildBaselineNodes(
 }
 
 function buildEcosystemNodes(
-  pos: Record<string, { x: number; y: number }>,
+  pos: Record<string, { x: number; y: number; z?: number }>,
   customNodes: WorkflowApiState["customNodes"],
   showImprovements: boolean,
 ): CanvasNode[] {
   const ids = ["nav","xy","mary","ed"];
   const out: CanvasNode[] = ids.map((id) => {
     const p = pos[id] || { x: 100, y: 100 };
+    const z = p.z;
     const isBottleneck = id === "ed";
     const isDep = isBottleneck && showImprovements;
-    const border = isDep ? "#E2E8F0" : isBottleneck ? "#F59E0B" : "#0EA5E9";
-    const text   = isDep ? "#94A3B8" : isBottleneck ? "#F59E0B" : "#0284C7";
+    const neon = ecoNodeNeon(id);
+    const border = isDep ? "#E2E8F0" : neon;
+    const text   = isDep ? "#94A3B8" : neon;
     return {
-      id, x: p.x, y: p.y,
+      id, x: p.x, y: p.y, z,
       initials: BASE_LABELS[id].initials, label: BASE_LABELS[id].label,
       subcategory: ECO_SUB[id], isHub: id === "xy",
       bottleneck: isBottleneck, bottleneckText: isBottleneck ? "Queue: 2.3 Days" : undefined,
       isDeprecated: isDep,
       borderColor: border, textColor: text,
       isEco: true,
-      labelBg: isDep ? "#fff" : "#F0F9FF",
-      labelBorderColor: isDep ? "#F1F5F9" : (isBottleneck ? "#FDE68A" : "#BAE6FD"),
-      labelTextColor: isDep ? "#94A3B8" : "#0F172A",
+      labelBg: isDep ? "#fff" : "rgba(255,255,255,0.92)",
+      labelBorderColor: isDep ? "#F1F5F9" : neon + "55",
+      labelTextColor: isDep ? "#94A3B8" : "#1e293b",
     };
   });
   customNodes.forEach((cn) => {
     const p = pos[cn.id] || cn.position;
     const clr = cn.textColor || "#0EA5E9";
-    out.push({ id: cn.id, x: p.x, y: p.y, initials: cn.labelInitials, label: cn.label,
+    out.push({ id: cn.id, x: p.x, y: p.y, z: p.z, initials: cn.labelInitials, label: cn.label,
       borderColor: clr, textColor: clr, isEco: true,
       labelBg: "#F0F9FF", labelBorderColor: "#BAE6FD", isCustom: true });
   });
@@ -503,10 +561,17 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     // Poll every 3 s
     useEffect(() => {
       const t = setInterval(() => {
-        fetch("/api/graph-state").then((r) => r.json()).then((s: WorkflowApiState) => {
+        fetch("/api/graph-state").then((r) => r.json()).then((s: WorkflowApiState & { _positionsHash?: string }) => {
           if (s.lastUpdated > lastPollTs.current) {
             lastPollTs.current = s.lastUpdated;
-            setServerState((prev) => prev ? { ...prev, ...s } : s);
+            setServerState((prev) => {
+              // Skip re-render if positions hash hasn't changed (only metadata/settings updated)
+              if (prev && s._positionsHash && (prev as typeof prev & { _positionsHash?: string })._positionsHash === s._positionsHash) {
+                // Only update settings/customEdges/customNodes, not positions
+                return { ...prev, settings: s.settings, customNodes: s.customNodes, customEdges: s.customEdges, lastUpdated: s.lastUpdated, _positionsHash: s._positionsHash } as WorkflowApiState;
+              }
+              return prev ? { ...prev, ...s } : s;
+            });
           }
         }).catch(console.error);
       }, 3000);
@@ -757,7 +822,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       <div
         ref={canvasRef}
         className="w-full h-full relative overflow-hidden select-none"
-        style={{ background: "#F8FAFC", cursor: connectFrom ? "crosshair" : "default" }}
+        style={{
+          background: "#F8FAFC",
+          cursor: connectFrom ? "crosshair" : "default",
+        }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
@@ -767,13 +835,40 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* Blueprint dot background */}
         <div className="absolute inset-0 pointer-events-none opacity-40"
           style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
-        <style dangerouslySetInnerHTML={{ __html: seqStyles.join("\n") }} />
+        <style dangerouslySetInnerHTML={{ __html: seqStyles.join("\n") + `
+          .eco-sphere-wrapper { position: absolute; }
+          .eco-sphere-wrapper .eco-label {
+            opacity: 0;
+            transition: opacity 0.18s ease;
+            pointer-events: none;
+          }
+          .eco-sphere-wrapper:hover .eco-label {
+            opacity: 1;
+          }
+        ` }} />
 
-        {/* ── SVG edge layer — bezier curves ─────────────────── */}
+        {/* ── SVG edge layer — bezier curves + satellite clusters ─────────────────── */}
         <svg
           className="absolute inset-0 w-full h-full"
           style={{ zIndex: 10, overflow: "visible", pointerEvents: "none" }}
         >
+          {/* MiroFish satellite mini-spheres — dense cluster halo around each eco node */}
+          {isEcosystem && nodes.filter(n => n.isEco).map(node => {
+            const cx = node.x + SPHERE_SZ / 2;
+            const cy = node.y + SPHERE_SZ / 2;
+            const fill = ecoNodeNeon(node.id, node.isCustom);
+            const z = node.z ?? 0;
+            const baseOpacity = 0.3 + (z + 1) * 0.2;
+            return getSatellites(cx, cy, node.id, 12).map((s, i) => (
+              <circle
+                key={`${node.id}-sat-${i}`}
+                cx={s.x} cy={s.y} r={s.r}
+                fill={fill}
+                opacity={s.opacity * baseOpacity * (node.isDeprecated ? 0.3 : 1)}
+              />
+            ));
+          })}
+
           {edges.map((edge) => {
             const src = nodeMap[edge.source]; const tgt = nodeMap[edge.target];
             if (!src || !tgt) return null;
@@ -793,39 +888,63 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
             const cpx = mx - (dy / Math.max(len, 1)) * curvature;
             const cpy = my + (dx / Math.max(len, 1)) * curvature;
-            const d = `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`;
+
+            // 3D edge depth — vary opacity and stroke-width based on avg z of endpoints
+            const srcZ = src.z ?? 0;
+            const tgtZ = tgt.z ?? 0;
+            const avgZ = (srcZ + tgtZ) / 2;
+
+            // In ecosystem view, tilt the control point slightly based on z difference to simulate 3D bow
+            const zDiff = isEcosystem ? (srcZ - tgtZ) * 30 : 0;
+            const cpxFinal = cpx;
+            const cpyFinal = cpy + zDiff;
+            const d = `M ${x1} ${y1} Q ${cpxFinal} ${cpyFinal} ${x2} ${y2}`;
 
             const isSelected = selectedId === edge.id && selectedType === "edge";
-            const baseStroke  = edge.isUpgraded ? "#10B981" : isEcosystem ? "rgba(185, 28, 28, 0.13)" : "#94A3B8";
-            const selStroke   = isEcosystem ? "#0EA5E9" : "#4F46E5";
-            const pulseColor  = edge.isUpgraded ? "#10B981" : isEcosystem ? "rgba(220, 38, 38, 0.7)" : "#4F46E5";
-            const sw = isEcosystem ? 1.0 : 1.5;
             const edgeMeta = EDGE_META[edge.id];
-            const opacity = edge.isDeprecated ? 0.15 : 1;
+            const sw = isEcosystem ? 1.0 : 1.5;
+
+            // MiroFish arc bundle: 4 arcs with alternating spread for sweeping overlap effect
+            const arcPaths = isEcosystem ? [0, 1, 2, 3].map(a => {
+              const sign = a % 2 === 0 ? 1 : -1;
+              const spread = (a * 0.6 + ecoJitter(edge.id + String(a)) * 0.5) * baseCurvature * 0.28;
+              const nx = -dy / Math.max(len, 1);
+              const ny = dx / Math.max(len, 1);
+              const cpxA = cpxFinal + sign * spread * nx;
+              const cpyA = cpyFinal + sign * spread * ny;
+              return `M ${x1} ${y1} Q ${cpxA} ${cpyA} ${x2} ${y2}`;
+            }) : [d];
+
+            // MiroFish red arcs on light background; upgraded edges stay green
+            const ecoEdgeOpacity = edge.isDeprecated ? 0.04 : Math.max(0.08, 0.18 + (avgZ + 1) * 0.1);
+            const ecoEdgeSW = Math.max(0.5, sw * (0.6 + (avgZ + 1) * 0.25));
+            const miroArcColor = edge.isUpgraded ? "rgba(16,185,129," : "rgba(220,50,70,";
+            const selStroke = isEcosystem ? "#e91e8c" : "#4F46E5";
+            const pulseColor = edge.isUpgraded ? "#10B981" : isEcosystem ? "rgba(220,50,70,0.7)" : "#4F46E5";
 
             return (
-              <g key={edge.id} style={{ opacity, transition: "opacity 0.5s" }}>
-                {/* Base curved path */}
-                <path
-                  d={d} pathLength="1"
-                  stroke={isSelected ? selStroke : baseStroke}
-                  strokeWidth={isSelected ? sw + 1.5 : sw}
-                  fill="none"
-                  strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}
-                  style={{
-                    filter: isSelected
-                      ? (isEcosystem ? "drop-shadow(0 0 5px rgba(14,165,233,0.6))" : "drop-shadow(0 0 5px rgba(79,70,229,0.5))")
-                      : undefined,
-                    transition: "stroke 0.3s, stroke-width 0.2s",
-                    ...(isEcosystem ? { mixBlendMode: "multiply" as const } : {}),
-                  }}
-                />
+              <g key={edge.id} style={{ opacity: isEcosystem ? ecoEdgeOpacity : (edge.isDeprecated ? 0.15 : 1), transition: "opacity 0.5s" }}>
+                {/* MiroFish arc bundle — 4 sweeping bezier paths */}
+                {arcPaths.map((arcD, ai) => (
+                  <path
+                    key={ai}
+                    d={arcD} pathLength="1"
+                    stroke={isSelected ? selStroke : (isEcosystem ? `${miroArcColor}${(0.18 - ai * 0.02).toFixed(2)})` : (edge.isUpgraded ? "#10B981" : "#94A3B8"))}
+                    strokeWidth={isSelected ? ecoEdgeSW + 1.5 : ecoEdgeSW}
+                    fill="none"
+                    strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}
+                    style={{
+                      filter: isSelected ? "drop-shadow(0 0 4px rgba(233,30,140,0.6))" : undefined,
+                      transition: "stroke 0.3s, stroke-width 0.2s",
+                    }}
+                  />
+                ))}
                 {/* Animated travelling pulse */}
                 {!edge.isDeprecated && (
                   <path
-                    d={d} pathLength="1"
+                    d={arcPaths[0]} pathLength="1"
                     stroke={pulseColor}
-                    strokeWidth={sw + 1.5}
+                    strokeWidth={ecoEdgeSW + 1.0}
                     fill="none"
                     strokeDasharray="0.06 1"
                     style={{ animation: `svgflow-${edge.sequence || 1} ${cycleDur}s linear infinite` }}
@@ -855,7 +974,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             if (!src) return null;
             return (
               <line
-                x1={src.x + R} y1={src.y + R}
+                x1={src.x + (src.isEco ? SPHERE_SZ / 2 : R)} y1={src.y + (src.isEco ? SPHERE_SZ / 2 : R)}
                 x2={mousePos.x} y2={mousePos.y}
                 stroke="#F59E0B" strokeWidth={2} strokeDasharray="8 4" opacity={0.7}
                 style={{ pointerEvents: "none" }}
@@ -865,71 +984,148 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         </svg>
 
         {/* ── Node layer ────────────────────────────────────── */}
-        {nodes.map((node) => {
-          const isDep  = node.isDeprecated;
-          const isBotl = node.bottleneck && !isDep;
-          const isCircle = !node.isEco;
-          const isSelected = selectedId === node.id && selectedType === "node";
-          const isConnSrc  = connectFrom === node.id;
-          const nodeMeta   = NODE_META[node.id];
+        {(() => {
+          // Painter's algorithm: sort ecosystem nodes back-to-front so front nodes overdraw back ones
+          const sortedNodes = isEcosystem
+            ? [...nodes].sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
+            : nodes;
 
-          return (
-            <div
-              key={node.id}
-              data-nodeid={node.id}
-              style={{
-                position: "absolute", left: node.x, top: node.y,
-                width: node.isEco ? ECO_NODE_SZ : SZ, height: node.isEco ? ECO_NODE_SZ : SZ,
-                background: "white",
-                borderRadius: isCircle ? "50%" : "14px",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontWeight: 700, fontSize: node.isEco ? 11 : 14,
-                border: `${node.isEco ? (node.isHub ? 2.5 : 1.5) : (node.isHub ? 3 : 2)}px solid ${node.borderColor}`,
-                color: node.textColor,
-                boxShadow: isBotl ? undefined
-                  : node.isEco ? "0 3px 14px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12)"
-                  : "0 4px 6px -1px rgba(0,0,0,0.1)",
-                zIndex: 20,
-                opacity: isDep ? 0.3 : 1,
-                cursor: dragRef.current?.nodeId === node.id ? "grabbing" : (connectFrom ? "pointer" : "grab"),
-                userSelect: "none",
-                transition: "border-color 0.5s, opacity 0.5s, box-shadow 0.5s",
-                outline: isSelected ? `3px solid ${node.isEco ? "#38BDF8" : "#818CF8"}` : isConnSrc ? "3px dashed #F59E0B" : "none",
-                outlineOffset: "3px",
-              }}
-              className={isBotl ? "bottleneck-glow" : ""}
-              onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-              onClick={(e) => handleNodeClick(e, node.id)}
-              onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
-              onMouseEnter={() => { if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
-              onMouseLeave={onHoverEnd}
-            >
-              {node.initials}
+          return sortedNodes.map((node) => {
+            const isDep  = node.isDeprecated;
+            const isBotl = node.bottleneck && !isDep;
+            const isCircle = !node.isEco;
+            const isSelected = selectedId === node.id && selectedType === "node";
+            const isConnSrc  = connectFrom === node.id;
+            const nodeMeta   = NODE_META[node.id];
 
-              {/* Node label */}
-              <div style={{
-                position: "absolute", top: node.isEco ? 52 : 65, whiteSpace: "nowrap",
-                background: node.labelBg, padding: "4px 10px",
-                borderRadius: node.isEco ? "8px" : "20px",
-                fontSize: 11, fontWeight: 600,
-                color: node.labelTextColor || "#334155",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                border: `1px solid ${node.labelBorderColor}`,
-                textAlign: "center", pointerEvents: "none",
-              }}>
-                {node.label}
-                {node.subcategory && !isDep && (
-                  <div style={{ fontSize: 9, fontWeight: 400, color: node.isEco ? "#38BDF8" : "#F59E0B", marginTop: 1 }}>
-                    {node.subcategory}
+            // ── Ecosystem 3D sphere ───────────────────────────────────────────
+            if (node.isEco) {
+              const z = node.z ?? 0;
+              const depthOpacity = isDep ? 0.2 : 0.3 + (z + 1) * 0.35;
+              const depthScale   = 0.60 + (z + 1) * 0.20;
+              const depthBlur    = Math.max(0, (-z) * 2.0);  // only blur nodes behind equator (z < 0)
+              const depthZIndex  = Math.round(10 + (z + 1) * 10);
+
+              return (
+                <div
+                  key={node.id}
+                  className="eco-sphere-wrapper"
+                  style={{ position: "absolute", left: node.x, top: node.y, zIndex: depthZIndex }}
+                  data-nodeid={node.id}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                  onClick={(e) => handleNodeClick(e, node.id)}
+                  onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
+                  onMouseEnter={() => { if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
+                  onMouseLeave={onHoverEnd}
+                >
+                  {/* Sphere body */}
+                  <div
+                    className={isBotl ? "bottleneck-glow" : ""}
+                    style={{
+                      width: SPHERE_SZ,
+                      height: SPHERE_SZ,
+                      background: sphereGradient(node.id, isBotl, isDep),
+                      borderRadius: "50%",
+                      boxShadow: sphereGlow(node.id, isBotl, isDep, depthScale),
+                      opacity: depthOpacity,
+                      transform: `scale(${depthScale})`,
+                      transformOrigin: "center center",
+                      filter: depthBlur > 0.3 ? `blur(${depthBlur.toFixed(1)}px)` : undefined,
+                      transition: "opacity 0.4s, filter 0.4s, transform 0.4s, box-shadow 0.3s",
+                      outline: isSelected ? "2px solid rgba(56,189,248,0.9)" : isConnSrc ? "2px dashed #F59E0B" : "none",
+                      outlineOffset: "3px",
+                      cursor: dragRef.current?.nodeId === node.id ? "grabbing" : (connectFrom ? "pointer" : "grab"),
+                      userSelect: "none",
+                    }}
+                  />
+                  {/* Label — hidden by default, shown on hover via CSS */}
+                  <div className="eco-label" style={{
+                    position: "absolute",
+                    top: SPHERE_SZ + 6,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    whiteSpace: "nowrap",
+                    background: "rgba(255,255,255,0.92)",
+                    backdropFilter: "blur(6px)",
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: "#1e293b",
+                    textAlign: "center",
+                    zIndex: 100,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+                    border: `1px solid ${ecoNodeNeon(node.id, node.isCustom)}44`,
+                  }}>
+                    {node.label}
+                    {node.subcategory && !isDep && (
+                      <div style={{ fontSize: 8, color: ecoNodeNeon(node.id, node.isCustom), marginTop: 1 }}>{node.subcategory}</div>
+                    )}
+                    {node.bottleneckText && !isDep && (
+                      <div style={{ fontSize: 8, color: "#f59e0b", marginTop: 1 }}>{node.bottleneckText}</div>
+                    )}
                   </div>
-                )}
-                {node.bottleneckText && !isDep && (
-                  <div style={{ fontSize: 9, color: "#F59E0B", marginTop: 1 }}>{node.bottleneckText}</div>
-                )}
+                </div>
+              );
+            }
+
+            // ── Baseline flat node (unchanged) ────────────────────────────────
+            return (
+              <div
+                key={node.id}
+                data-nodeid={node.id}
+                style={{
+                  position: "absolute", left: node.x, top: node.y,
+                  width: SZ, height: SZ,
+                  background: "white",
+                  borderRadius: isCircle ? "50%" : "14px",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontWeight: 700, fontSize: 14,
+                  border: `${node.isHub ? 3 : 2}px solid ${node.borderColor}`,
+                  color: node.textColor,
+                  boxShadow: isBotl ? undefined : "0 4px 6px -1px rgba(0,0,0,0.1)",
+                  zIndex: 20,
+                  opacity: isDep ? 0.3 : 1,
+                  cursor: dragRef.current?.nodeId === node.id ? "grabbing" : (connectFrom ? "pointer" : "grab"),
+                  userSelect: "none",
+                  transition: "border-color 0.5s, opacity 0.5s, box-shadow 0.5s",
+                  outline: isSelected ? `3px solid #818CF8` : isConnSrc ? "3px dashed #F59E0B" : "none",
+                  outlineOffset: "3px",
+                }}
+                className={isBotl ? "bottleneck-glow" : ""}
+                onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                onClick={(e) => handleNodeClick(e, node.id)}
+                onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
+                onMouseEnter={() => { if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
+                onMouseLeave={onHoverEnd}
+              >
+                {node.initials}
+
+                {/* Node label */}
+                <div style={{
+                  position: "absolute", top: 65, whiteSpace: "nowrap",
+                  background: node.labelBg, padding: "4px 10px",
+                  borderRadius: "20px",
+                  fontSize: 11, fontWeight: 600,
+                  color: node.labelTextColor || "#334155",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+                  border: `1px solid ${node.labelBorderColor}`,
+                  textAlign: "center", pointerEvents: "none",
+                }}>
+                  {node.label}
+                  {node.subcategory && !isDep && (
+                    <div style={{ fontSize: 9, fontWeight: 400, color: "#F59E0B", marginTop: 1 }}>
+                      {node.subcategory}
+                    </div>
+                  )}
+                  {node.bottleneckText && !isDep && (
+                    <div style={{ fontSize: 9, color: "#F59E0B", marginTop: 1 }}>{node.bottleneckText}</div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
 
         {/* ── Context menu ─────────────────────────────────── */}
         {ctxMenu && (
