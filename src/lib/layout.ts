@@ -36,6 +36,74 @@ function idToJitter(id: string, scale: number): number {
   return ((h >>> 0) % 1000) / 1000 * scale - scale / 2;
 }
 
+/**
+ * Concentric Force Rings — intra-ring angular repulsion pass.
+ *
+ * When a ring has many nodes the equal-spacing formula produces crowded /
+ * overlapping labels.  This short 1-D force simulation works purely in angular
+ * space: each node repels its ring-neighbours until the minimum arc-gap
+ * (≈ node diameter + 40 % breathing room) is respected.
+ *
+ * Sparse rings (≤ 4 nodes) skip this pass entirely — their even spacing is
+ * already correct and applying forces would shift the familiar 4-node layout
+ * unnecessarily.
+ *
+ * @param initialAngles  Starting angles in radians (one per node).
+ * @param nodeGlyphPx    Approximate pixel radius of one rendered node circle.
+ * @param ringR          Ring radius in canvas pixels.
+ * @param iterations     Simulation steps (default 80 gives good convergence).
+ */
+function resolveRingAngles(
+  initialAngles: number[],
+  nodeGlyphPx: number,
+  ringR: number,
+  iterations = 80,
+): number[] {
+  const n = initialAngles.length;
+  if (n <= 1) return initialAngles;
+
+  // Minimum angular gap so glyph circles don't touch (+40 % breathing room).
+  // Capped at full circle / n so nodes can't wrap past each other.
+  const minArcLen = nodeGlyphPx * 2 * 1.4;
+  const minAngGap = ringR > 0
+    ? Math.min(minArcLen / ringR, (2 * Math.PI) / n)
+    : (2 * Math.PI) / n;
+
+  let a = [...initialAngles];
+
+  for (let step = 0; step < iterations; step++) {
+    const forces = new Array<number>(n).fill(0);
+    const cooling = 1 - step / iterations;
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        // Angular difference normalised to (−π, π]
+        let diff = a[j] - a[i];
+        while (diff >  Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+
+        const absDiff = Math.abs(diff);
+        if (absDiff < minAngGap * 2) {
+          // Soft-spring repulsion proportional to overlap, cooled by temperature
+          const overlap = minAngGap - absDiff / 2;
+          const force   = overlap * 0.25 * cooling;
+          const sign    = diff >= 0 ? 1 : -1;
+          forces[i] -= sign * force;
+          forces[j] += sign * force;
+        }
+      }
+    }
+
+    // Cap displacement by a temperature that shrinks with iterations
+    const maxStep = 0.05 * cooling;
+    a = a.map((angle, i) =>
+      angle + Math.sign(forces[i]) * Math.min(Math.abs(forces[i]), maxStep),
+    );
+  }
+
+  return a;
+}
+
 // ── 1. Hierarchical (Sugiyama-style layered) layout ───────────────────────────
 //
 // Algorithm overview:
@@ -256,9 +324,21 @@ export function radialWebLayout(
     const phi = (r / Math.max(maxRing, 1)) * Math.PI; // 0 at center → π at outermost ring
     const baseZ = Math.cos(phi);                        // 1.0 at center, -1.0 at outermost
 
+    // Initial angles: even spacing + small deterministic per-node jitter
+    const initialAngles = ringNodes.map((id, i) =>
+      startAngle + (2 * Math.PI * i) / count + idToJitter(id, 0.18),
+    );
+
+    // Concentric Force Rings: resolve angular overlaps for crowded rings.
+    // Threshold > 4 keeps the familiar sparse-graph layout unchanged.
+    const NODE_GLYPH_PX = 14; // approximate rendered radius of an eco-sphere (px)
+    const resolved = count > 4
+      ? resolveRingAngles(initialAngles, NODE_GLYPH_PX, radius)
+      : initialAngles;
+
     for (let i = 0; i < count; i++) {
       const nodeId = ringNodes[i];
-      const angle = startAngle + (2 * Math.PI * i) / count + idToJitter(nodeId, 0.18);
+      const angle  = resolved[i];
       const zJitter = idToJitter(nodeId, 0.24);
       const z = Math.max(-1, Math.min(1, baseZ + zJitter));
       positions[nodeId] = {

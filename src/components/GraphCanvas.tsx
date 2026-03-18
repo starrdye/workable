@@ -760,6 +760,14 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       },
     }));
 
+    // ── Option D: per-node degree map for adaptive edge styling ─────────────
+    // Drives: straight line (deg ≤ 2) → single bezier (deg 3-5) → bundle (deg ≥ 6)
+    const nodeDeg: Record<string, number> = {};
+    edges.forEach(e => {
+      nodeDeg[e.source] = (nodeDeg[e.source] || 0) + 1;
+      nodeDeg[e.target] = (nodeDeg[e.target] || 0) + 1;
+    });
+
     // ── Generate dynamic keyframes for sequential animation ─────────────
     const activeEdges = edges.filter(e => !e.isDeprecated);
     const seqMap = new Map<number, number>(); // sequence -> max weight
@@ -904,19 +912,35 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             const edgeMeta = EDGE_META[edge.id];
             const sw = isEcosystem ? 1.0 : 1.5;
 
-            // MiroFish arc bundle: 4 arcs with alternating spread for sweeping overlap effect
-            const arcPaths = isEcosystem ? [0, 1, 2, 3].map(a => {
-              const sign = a % 2 === 0 ? 1 : -1;
-              const spread = (a * 0.6 + ecoJitter(edge.id + String(a)) * 0.5) * baseCurvature * 0.28;
-              const nx = -dy / Math.max(len, 1);
-              const ny = dx / Math.max(len, 1);
-              const cpxA = cpxFinal + sign * spread * nx;
-              const cpyA = cpyFinal + sign * spread * ny;
-              return `M ${x1} ${y1} Q ${cpxA} ${cpyA} ${x2} ${y2}`;
-            }) : [d];
+            // ── Option D: adaptive arc count based on endpoint degree ────────────
+            // degree ≤ 2  → straight line   (clean, uncluttered sparse graphs)
+            // degree 3–5  → single bezier   (gentle curve, moderate density)
+            // degree ≥ 6  → 4-arc bundle    (MiroFish sweeping bundle, high density)
+            const srcDeg  = nodeDeg[edge.source] || 0;
+            const tgtDeg  = nodeDeg[edge.target] || 0;
+            const maxDeg  = Math.max(srcDeg, tgtDeg);
+            const arcMode = isEcosystem
+              ? (maxDeg >= 6 ? "bundle" : maxDeg >= 3 ? "bezier" : "straight")
+              : "bezier"; // baseline always uses single bezier
 
-            // MiroFish red arcs on light background; upgraded edges stay green
-            const ecoEdgeOpacity = edge.isDeprecated ? 0.04 : Math.max(0.08, 0.18 + (avgZ + 1) * 0.1);
+            const straightD = `M ${x1} ${y1} L ${x2} ${y2}`;
+            const arcPaths =
+              arcMode === "bundle"
+                ? [0, 1, 2, 3].map(a => {
+                    const sign   = a % 2 === 0 ? 1 : -1;
+                    const spread = (a * 0.6 + ecoJitter(edge.id + String(a)) * 0.5) * baseCurvature * 0.28;
+                    const nx = -dy / Math.max(len, 1);
+                    const ny =  dx / Math.max(len, 1);
+                    return `M ${x1} ${y1} Q ${cpxFinal + sign * spread * nx} ${cpyFinal + sign * spread * ny} ${x2} ${y2}`;
+                  })
+                : arcMode === "bezier"
+                  ? [d]           // single bezier (d already computed above)
+                  : [straightD];  // straight line — no curvature
+
+            // MiroFish red arcs on light background; upgraded edges stay green.
+            // Straight lines get slightly higher opacity since there is no multi-arc overlap.
+            const baseArcOpacity = arcMode === "straight" ? 0.50 : arcMode === "bezier" ? 0.35 : 0.18;
+            const ecoEdgeOpacity = edge.isDeprecated ? 0.04 : Math.max(0.08, baseArcOpacity + (avgZ + 1) * 0.08);
             const ecoEdgeSW = Math.max(0.5, sw * (0.6 + (avgZ + 1) * 0.25));
             const miroArcColor = edge.isUpgraded ? "rgba(16,185,129," : "rgba(220,50,70,";
             const selStroke = isEcosystem ? "#e91e8c" : "#4F46E5";
@@ -924,12 +948,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
             return (
               <g key={edge.id} style={{ opacity: isEcosystem ? ecoEdgeOpacity : (edge.isDeprecated ? 0.15 : 1), transition: "opacity 0.5s" }}>
-                {/* MiroFish arc bundle — 4 sweeping bezier paths */}
+                {/* Adaptive edges: straight / single bezier / 4-arc bundle based on degree */}
                 {arcPaths.map((arcD, ai) => (
                   <path
                     key={ai}
                     d={arcD} pathLength="1"
-                    stroke={isSelected ? selStroke : (isEcosystem ? `${miroArcColor}${(0.18 - ai * 0.02).toFixed(2)})` : (edge.isUpgraded ? "#10B981" : "#94A3B8"))}
+                    stroke={isSelected ? selStroke : (isEcosystem ? `${miroArcColor}${(baseArcOpacity - ai * 0.02).toFixed(2)})` : (edge.isUpgraded ? "#10B981" : "#94A3B8"))}
                     strokeWidth={isSelected ? ecoEdgeSW + 1.5 : ecoEdgeSW}
                     fill="none"
                     strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}

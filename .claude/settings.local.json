@@ -5,7 +5,9 @@
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(ls /Users/a1-6/Documents/trae_projects/overflow/*.md)",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }
