@@ -22,7 +22,19 @@ export interface LayoutEdge {
   target: string;
 }
 
-export type PositionMap = Record<string, { x: number; y: number }>;
+export type PositionMap = Record<string, { x: number; y: number; z?: number }>;
+
+// ── Shared helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Deterministic per-id jitter in the range [-scale/2, +scale/2].
+ * Uses a simple djb2-style hash so the same id always produces the same value.
+ */
+function idToJitter(id: string, scale: number): number {
+  let h = 5381;
+  for (const c of id) h = ((h << 5) + h) ^ c.charCodeAt(0);
+  return ((h >>> 0) % 1000) / 1000 * scale - scale / 2;
+}
 
 // ── 1. Hierarchical (Sugiyama-style layered) layout ───────────────────────────
 //
@@ -121,11 +133,17 @@ export function hierarchicalLayout(
       ? canvasH / 2
       : padY + (l / (numLayers - 1)) * usableH;
 
+    // z: layer 0 slightly in front, middle layers at equator, last layer slightly in front
+    // Formula: cos((l / maxLayer) * π * 0.5) * 0.5  →  0.5 at l=0, ~0 at mid, 0.3 at last
+    const baseZ = Math.cos((l / Math.max(maxLayer, 1)) * Math.PI * 0.5) * 0.5;
+
     for (let i = 0; i < count; i++) {
       const x = count === 1
         ? canvasW / 2
         : padX + (i / (count - 1)) * usableW;
-      positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y) };
+      const jitter = idToJitter(layerNodes[i], 0.2);
+      const z = Math.max(-1, Math.min(1, baseZ + jitter));
+      positions[layerNodes[i]] = { x: Math.round(x), y: Math.round(y), z };
     }
   }
 
@@ -213,7 +231,7 @@ export function radialWebLayout(
     const radius = ringRadius(r);
 
     if (r === 0) {
-      positions[ringNodes[0]] = { x: Math.round(cx), y: Math.round(cy) };
+      positions[ringNodes[0]] = { x: Math.round(cx), y: Math.round(cy), z: 0.0 };
       continue;
     }
 
@@ -230,23 +248,23 @@ export function radialWebLayout(
       return avg(aParents) - avg(bParents);
     });
 
-    // Per-node angular micro-jitter to simulate organic clustering
-    // Uses a deterministic hash so positions are stable
-    function idToJitter(id: string, scale: number): number {
-      let h = 5381;
-      for (const c of id) h = ((h << 5) + h) ^ c.charCodeAt(0);
-      return ((h >>> 0) % 1000) / 1000 * scale - scale / 2;
-    }
-
     const count = ringNodes.length;
     // Slight angular offset per ring for an organic, non-symmetric look
     const startAngle = -Math.PI / 2 + r * 0.4;
 
+    // z: sphere projection — ring 0 (center) at front, outermost ring at back
+    const phi = (r / Math.max(maxRing, 1)) * Math.PI; // 0 at center → π at outermost ring
+    const baseZ = Math.cos(phi);                        // 1.0 at center, -1.0 at outermost
+
     for (let i = 0; i < count; i++) {
-      const angle = startAngle + (2 * Math.PI * i) / count + idToJitter(ringNodes[i], 0.18);
-      positions[ringNodes[i]] = {
+      const nodeId = ringNodes[i];
+      const angle = startAngle + (2 * Math.PI * i) / count + idToJitter(nodeId, 0.18);
+      const zJitter = idToJitter(nodeId, 0.24);
+      const z = Math.max(-1, Math.min(1, baseZ + zJitter));
+      positions[nodeId] = {
         x: Math.round(cx + radius * Math.cos(angle)),
         y: Math.round(cy + radius * Math.sin(angle)),
+        z,
       };
     }
   }
@@ -352,10 +370,26 @@ export function forceDirectedLayout(
     temperature -= cooling;
   }
 
-  // Round to integers
+  // Build degree map for z assignment
+  const degree: Record<string, number> = {};
+  for (const n of nodes) degree[n.id] = 0;
+  for (const e of edges) {
+    if (degree[e.source] !== undefined) degree[e.source]++;
+    if (degree[e.target] !== undefined) degree[e.target]++;
+  }
+
+  const maxDeg = Math.max(...Object.values(degree), 1);
+
+  // Round to integers and assign z based on degree centrality:
+  // high-degree nodes are "closer" to viewer (z near 0/front), leaf nodes near ±1
   const result: PositionMap = {};
   for (const n of nodes) {
-    result[n.id] = { x: Math.round(pos[n.id].x), y: Math.round(pos[n.id].y) };
+    const normalizedDeg = degree[n.id] / maxDeg;
+    // nodes with more connections are closer to viewer (higher z)
+    const baseZ = normalizedDeg * 0.8; // 0.0 to 0.8
+    const jitter = idToJitter(n.id, 0.2); // ±0.1
+    const z = Math.max(-1, Math.min(1, baseZ + jitter));
+    result[n.id] = { x: Math.round(pos[n.id].x), y: Math.round(pos[n.id].y), z };
   }
   return result;
 }
