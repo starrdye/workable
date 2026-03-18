@@ -14,7 +14,6 @@ export interface GraphCanvasRef {
 }
 
 export interface GraphCanvasProps {
-  isEcosystem:      boolean;
   showImprovements: boolean;
   selectedId:       string | null;
   selectedType:     "node" | "edge" | null;
@@ -23,19 +22,22 @@ export interface GraphCanvasProps {
   onHover:          (name: string, summary: string) => void;
   onHoverEnd:       () => void;
   onDeleteNode:     (id: string) => void;
+  /** Highlight nodes whose name/initials contain this query. Non-matching nodes are dimmed. */
+  searchQuery?:     string;
+  /** Filter nodes by role and/or workflow group. Empty array = no filter applied. */
+  activeFilters?:   { roles: string[]; groupIds: string[] };
 }
 
 interface CanvasNode {
   id: string;  x: number;  y: number;
-  z?: number;  // simulated depth: -1.0 (back) to +1.0 (front)
   initials: string;  label: string;
-  subcategory?: string;  isHub?: boolean;
+  subcategory?: string;
   bottleneck?: boolean;  bottleneckText?: string;
   isDeprecated?: boolean;  isUpgraded?: boolean;
   borderColor: string;  textColor: string;
-  isEco: boolean;
   labelBg: string;  labelBorderColor: string;  labelTextColor?: string;
   isCustom?: boolean;
+  role?: string; // for filter support
 }
 interface CanvasEdge {
   id: string;  source: string;  target: string;
@@ -50,24 +52,21 @@ type CtxMenu =
   | { type: "node";   x: number; y: number; nodeId: string };
 interface AddForm { cx: number; cy: number; label: string; initials: string; role: "person" | "tool" | "external" | "output"; }
 interface WorkflowApiState {
-  baselinePositions:  Record<string, { x: number; y: number; z?: number }>;
-  ecosystemPositions: Record<string, { x: number; y: number; z?: number }>;
-  customNodes: Array<{ id: string; labelInitials: string; label: string; nodeType: "neural"|"eco"; role?: string; textColor?: string; position: { x: number; y: number; z?: number }; outputDelay?: number }>;
+  baselinePositions:  Record<string, { x: number; y: number }>;
+  ecosystemPositions: Record<string, { x: number; y: number }>;
+  customNodes: Array<{ id: string; labelInitials: string; label: string; nodeType: "neural"|"eco"; role?: string; textColor?: string; position: { x: number; y: number }; outputDelay?: number }>;
   customEdges: Array<{ id: string; source: string; target: string; sequence?: number; weight?: number; isCustom?: boolean; isImprovementOnly?: boolean }>;
   settings: {
     nodePause: number;
     edgeWeightOverrides: Record<string, { sequence?: number; weight?: number }>;
     nodeDelayOverrides: Record<string, number>;
-    /** Core node IDs to hide — set by templates that use their own node sets. */
     hiddenCoreNodes?: string[];
-    /** Per-node metadata overrides — includes tasks, name, status, etc. */
     metadataOverrides?: Record<string, {
       name?: string; role?: string; status?: string; statusColor?: string;
       summary?: string; processes?: string[]; connections?: string[];
       constraints?: string;
       tasks?: import("@/lib/serverState").NodeTask[];
     }>;
-    /** Named workflow groups rendered as coloured regions behind their nodes. */
     workflowGroups?: Array<{ id: string; name: string; color: string; nodeIds: string[] }>;
   };
   lastUpdated: number;
@@ -75,79 +74,22 @@ interface WorkflowApiState {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const SZ = 56;  // node box size
-const R  = SZ / 2; // radius / half-size
-const ECO_NODE_SZ = 44; // smaller nodes in ecosystem/web-map view (kept for reference)
-const SPHERE_SZ = 20; // diameter of 3D neon sphere in ecosystem view
-function nodeRadius(isEco: boolean): number {
-  return isEco ? SPHERE_SZ / 2 : R;
-}
+const SZ = 56;
+const R  = SZ / 2;
 
-// Neon color per ecosystem node — maps to sphere gradient theme
-const ECO_NEON: Record<string, string> = {
-  xy:   "#00BCD4",  // cyan  hub
-  nav:  "#E91E8C",  // magenta  external
-  mary: "#C084FC",  // violet  collaborator
-  ed:   "#F59E0B",  // amber   bottleneck (unchanged)
-};
-function ecoNodeNeon(id: string, isCustom?: boolean): string {
-  return ECO_NEON[id] || (isCustom ? "#10B981" : "#0EA5E9");
-}
-
-// Neon radial-gradient sphere — MiroFish 3D Signal Theme
-function sphereGradient(nodeId: string, isBottleneck?: boolean, isDeprecated?: boolean): string {
-  if (isDeprecated) return "radial-gradient(circle at 30% 30%, #f1f5f9 0%, #cbd5e1 55%, #94a3b8 100%)";
-  if (isBottleneck) return "radial-gradient(circle at 30% 30%, #fef08a 0%, #f59e0b 55%, #78350f 100%)";
-  if (nodeId === "xy"   || nodeId === "XY") return "radial-gradient(circle at 30% 30%, #e0ffff 0%, #00bcd4 55%, #006064 100%)";
-  if (nodeId === "nav"  || nodeId === "NB") return "radial-gradient(circle at 30% 30%, #fce4ec 0%, #e91e8c 55%, #4a0033 100%)";
-  if (nodeId === "mary" || nodeId === "MM") return "radial-gradient(circle at 30% 30%, #f3e8ff 0%, #c084fc 55%, #4a0072 100%)";
-  if (nodeId === "ed"   || nodeId === "EC") return "radial-gradient(circle at 30% 30%, #fef08a 0%, #f59e0b 55%, #78350f 100%)";
-  // Custom nodes — emerald
-  return "radial-gradient(circle at 30% 30%, #e0ffe0 0%, #00ff88 55%, #004422 100%)";
-}
-
-// Neon glow box-shadow per node
-function sphereGlow(nodeId: string, isBottleneck?: boolean, isDeprecated?: boolean, depthScale = 1): string {
-  if (isDeprecated) return "none";
-  if (isBottleneck) return `0 0 10px rgba(245,158,11,0.6), 0 0 24px rgba(245,158,11,0.3), inset 0 1px 2px rgba(255,255,255,0.5)`;
-  const glowMap: Record<string, string> = {
-    xy:   "0 0 10px rgba(0,188,212,0.7), 0 0 24px rgba(0,188,212,0.3), inset 0 1px 2px rgba(255,255,255,0.6)",
-    nav:  "0 0 10px rgba(233,30,140,0.7), 0 0 24px rgba(233,30,140,0.3), inset 0 1px 2px rgba(255,255,255,0.6)",
-    mary: "0 0 10px rgba(192,132,252,0.7), 0 0 24px rgba(192,132,252,0.3), inset 0 1px 2px rgba(255,255,255,0.6)",
-  };
-  return glowMap[nodeId] || `0 ${Math.round(depthScale * 3)}px ${Math.round(depthScale * 8)}px rgba(0,0,0,0.2), inset 0 1px 2px rgba(255,255,255,0.5)`;
-}
-
-// Satellite mini-spheres around each main eco node (MiroFish dense cluster effect)
-function getSatellites(cx: number, cy: number, id: string, count = 10): Array<{x: number; y: number; r: number; opacity: number}> {
-  const out: Array<{x: number; y: number; r: number; opacity: number}> = [];
-  let h = 5381;
-  for (const c of id) h = ((h << 5) + h) ^ c.charCodeAt(0);
-  for (let i = 0; i < count; i++) {
-    const s1 = Math.abs((h * (i * 7 + 13)) | 0);
-    const s2 = Math.abs((h * (i * 11 + 5)) | 0);
-    const s3 = Math.abs((h * (i * 3 + 17)) | 0);
-    const radius = 16 + (s1 % 42);
-    const angle  = (s2 % 628) / 100;
-    const dotR   = 1.2 + (s3 % 3) * 0.5;
-    out.push({ x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle), r: dotR, opacity: 0.35 + (s3 % 45) / 100 });
-  }
-  return out;
-}
-
-// Task dot status colours (shown as small circles around eco nodes in web-map view)
+// Task dot status colours
 const TASK_STATUS_COLOR: Record<NodeTask["status"], string> = {
-  "todo":        "#94A3B8",  // slate  — not started
-  "in-progress": "#3B82F6",  // blue   — active
-  "done":        "#10B981",  // emerald— complete
-  "blocked":     "#EF4444",  // red    — needs help
-  "review":      "#A855F7",  // purple — awaiting review
+  "todo":        "#94A3B8",
+  "in-progress": "#3B82F6",
+  "done":        "#10B981",
+  "blocked":     "#EF4444",
+  "review":      "#A855F7",
 };
 const TASK_PRIORITY_LABEL: Record<NodeTask["priority"], string> = {
   low: "↓ Low", medium: "→ Med", high: "↑ High",
 };
 
-// Default border/text per node ID (baseline view)
+// Default border/text per core node ID
 const BASE_STYLE: Record<string, { border: string; text: string }> = {
   nav:    { border: "#CBD5E1", text: "#475569" },
   script: { border: "#E2E8F0", text: "#64748B" },
@@ -166,11 +108,14 @@ const BASE_LABELS: Record<string, { initials: string; label: string }> = {
   ed:     { initials: "EC",  label: "Edward" },
   cy:     { initials: "RV",  label: "Ridgeview Dashboard" },
 };
-const ECO_SUB: Record<string, string> = { nav: "External", xy: "Hub", mary: "Collaborator", ed: "Manager" };
-// ROLE_COLOR imported from @/lib/constants — single source of truth.
+// Role labels for core nodes (used for filter matching)
+const BASE_ROLE: Record<string, string> = {
+  nav: "external", script: "tool", db: "tool",
+  xy: "person", mary: "person", ed: "person", cy: "output",
+};
+const ECO_SUB: Record<string, string> = { xy: "Hub", mary: "Collaborator", ed: "Manager" };
 const CORE_IDS = new Set<string>(CORE_NODE_IDS);
 
-// Workflow node metadata (for tooltip / analysis panel)
 const NODE_META: Record<string, { name: string; summary: string }> = {
   nav:    { name: "NAV Back Office",     summary: "Provides initial raw data for the fund." },
   script: { name: "Parsing Script",      summary: "Parses raw NAV data into standardized formats." },
@@ -192,118 +137,63 @@ const EDGE_META: Record<string, { name: string; summary: string }> = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function hashDelay(id: string): number {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 100;
-  return (h / 100) * 2;
-}
-
-// Deterministic per-edge jitter so parallel edges fan out organically
-function ecoJitter(id: string): number {
-  let h = 5381;
-  for (const c of id) h = ((h << 5) + h) ^ c.charCodeAt(0);
-  return ((h >>> 0) % 1000) / 1000 - 0.5; // -0.5 … +0.5
-}
-
-function buildBaselineNodes(
-  pos: Record<string, { x: number; y: number; z?: number }>,
+function buildNodes(
+  pos: Record<string, { x: number; y: number }>,
   customNodes: WorkflowApiState["customNodes"],
   showImprovements: boolean,
 ): CanvasNode[] {
   const ids = CORE_NODE_IDS;
   const out: CanvasNode[] = [...ids].map((id) => {
     const p = pos[id] || { x: 100, y: 100 };
-    const z = p.z; // may be undefined for baseline — that's fine, baseline uses no depth effects
     const s = BASE_STYLE[id];
     const isBottleneck = id === "ed";
     const isDep  = isBottleneck && showImprovements;
-    const isUpgr = id === "cy"  && showImprovements;
+    const isUpgr = id === "cy" && showImprovements;
     const border = isDep ? "#E2E8F0" : isUpgr ? "#10B981" : s.border;
     const text   = isDep ? "#94A3B8" : isUpgr ? "#10B981" : s.text;
     return {
-      id, x: p.x, y: p.y, z,
+      id, x: p.x, y: p.y,
       initials: BASE_LABELS[id].initials,
       label:    BASE_LABELS[id].label,
+      subcategory: ECO_SUB[id],
       bottleneck: isBottleneck, bottleneckText: isBottleneck ? "Queue: 2.3 Days" : undefined,
       isDeprecated: isDep, isUpgraded: isUpgr,
       borderColor: border, textColor: text,
-      isEco: false,
       labelBg: "rgba(255,255,255,0.95)", labelBorderColor: isDep ? "#F1F5F9" : "#E2E8F0",
       labelTextColor: isDep ? "#94A3B8" : "#334155",
+      role: BASE_ROLE[id] ?? "tool",
     };
   });
   customNodes.forEach((cn) => {
     const p = pos[cn.id] || cn.position;
     const clr = cn.textColor || ROLE_COLOR[cn.role || ""] || "#4F46E5";
-    out.push({ id: cn.id, x: p.x, y: p.y, z: p.z, initials: cn.labelInitials, label: cn.label,
-      borderColor: clr, textColor: clr, isEco: false,
-      labelBg: "rgba(255,255,255,0.95)", labelBorderColor: "#E2E8F0", isCustom: true });
+    out.push({
+      id: cn.id, x: p.x, y: p.y,
+      initials: cn.labelInitials, label: cn.label,
+      borderColor: clr, textColor: clr,
+      labelBg: "rgba(255,255,255,0.95)", labelBorderColor: "#E2E8F0",
+      isCustom: true,
+      role: cn.role ?? "tool",
+    });
   });
   return out;
 }
 
-function buildEcosystemNodes(
-  pos: Record<string, { x: number; y: number; z?: number }>,
-  customNodes: WorkflowApiState["customNodes"],
-  showImprovements: boolean,
-): CanvasNode[] {
-  const ids = ["nav","xy","mary","ed"] as const;
-  const out: CanvasNode[] = ids.map((id) => {
-    const p = pos[id] || { x: 100, y: 100 };
-    const z = p.z;
-    const isBottleneck = id === "ed";
-    const isDep = isBottleneck && showImprovements;
-    const neon = ecoNodeNeon(id);
-    const border = isDep ? "#E2E8F0" : neon;
-    const text   = isDep ? "#94A3B8" : neon;
-    return {
-      id, x: p.x, y: p.y, z,
-      initials: BASE_LABELS[id].initials, label: BASE_LABELS[id].label,
-      subcategory: ECO_SUB[id], isHub: id === "xy",
-      bottleneck: isBottleneck, bottleneckText: isBottleneck ? "Queue: 2.3 Days" : undefined,
-      isDeprecated: isDep,
-      borderColor: border, textColor: text,
-      isEco: true,
-      labelBg: isDep ? "#fff" : "rgba(255,255,255,0.92)",
-      labelBorderColor: isDep ? "#F1F5F9" : neon + "55",
-      labelTextColor: isDep ? "#94A3B8" : "#1e293b",
-    };
-  });
-  customNodes.forEach((cn) => {
-    const p = pos[cn.id] || cn.position;
-    const clr = cn.textColor || "#0EA5E9";
-    out.push({ id: cn.id, x: p.x, y: p.y, z: p.z, initials: cn.labelInitials, label: cn.label,
-      borderColor: clr, textColor: clr, isEco: true,
-      labelBg: "#F0F9FF", labelBorderColor: "#BAE6FD", isCustom: true });
-  });
-  return out;
-}
-
-function buildEdges(isEcosystem: boolean, showImprovements: boolean, customEdges: WorkflowApiState["customEdges"]): CanvasEdge[] {
-  const base: CanvasEdge[] = isEcosystem
-    ? [
-        // Ecosystem: NAV feeds Xingye, Xingye compiles, passes to Mary, Mary escalates to Ed (deprecated on improvements)
-        { id: "nav-xy",  source: "nav",  target: "xy",   sequence: 1, weight: 1 },
-        { id: "xy-mary", source: "xy",   target: "mary", sequence: 2, weight: 2 },   // Xingye compiles (takes time)
-        { id: "mary-ed", source: "mary", target: "ed",   sequence: 3, weight: 1.5, isDeprecated: showImprovements },
-      ]
-    : [
-        { id: "nav-xy",    source: "nav",    target: "xy", sequence: 1, weight: 1 },
-        { id: "xy-script", source: "xy",     target: "script", sequence: 2, weight: 1 },
-        { id: "script-xy", source: "script", target: "xy", sequence: 3, weight: 1 },
-        { id: "db-xy",     source: "db",     target: "xy", sequence: 3, weight: 1 },
-        { id: "xy-mary",   source: "xy",     target: "mary", sequence: 4, weight: 1 },
-        // Baseline: Mary -> Edward (slow bottleneck) -> Dashboard
-        { id: "mary-ed",   source: "mary",   target: "ed",   sequence: 5, weight: 1.5, isDeprecated: showImprovements },
-        { id: "ed-cy",     source: "ed",     target: "cy",   sequence: 6, weight: 6,   isDeprecated: showImprovements },
-        // Improvements: Mary -> Dashboard directly (faster, weight 1.2 = slight processing)
-        ...(showImprovements ? [{ id: "mary-cy", source: "mary", target: "cy", sequence: 5, weight: 1.2, isUpgraded: true }] : []),
-      ];
+function buildEdges(showImprovements: boolean, customEdges: WorkflowApiState["customEdges"]): CanvasEdge[] {
+  const base: CanvasEdge[] = [
+    { id: "nav-xy",    source: "nav",    target: "xy",     sequence: 1, weight: 1 },
+    { id: "xy-script", source: "xy",     target: "script", sequence: 2, weight: 1 },
+    { id: "script-xy", source: "script", target: "xy",     sequence: 3, weight: 1 },
+    { id: "db-xy",     source: "db",     target: "xy",     sequence: 3, weight: 1 },
+    { id: "xy-mary",   source: "xy",     target: "mary",   sequence: 4, weight: 1 },
+    { id: "mary-ed",   source: "mary",   target: "ed",     sequence: 5, weight: 1.5, isDeprecated: showImprovements },
+    { id: "ed-cy",     source: "ed",     target: "cy",     sequence: 6, weight: 6,   isDeprecated: showImprovements },
+    ...(showImprovements ? [{ id: "mary-cy", source: "mary", target: "cy", sequence: 5, weight: 1.2, isUpgraded: true }] : []),
+  ];
 
   const existing = new Set(base.map((e) => e.id));
   customEdges.forEach((ce) => {
     if (!existing.has(ce.id)) {
-      // isImprovementOnly: edge only visible when improvements are ON
       const isOnlyWhenImproved = !!ce.isImprovementOnly;
       base.push({
         id: ce.id, source: ce.source, target: ce.target,
@@ -322,9 +212,7 @@ function csvCell(v: string | number): string {
   const s = String(v);
   return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
 }
-function csvRow(...cells: (string | number)[]): string {
-  return cells.map(csvCell).join(",");
-}
+function csvRow(...cells: (string | number)[]): string { return cells.map(csvCell).join(","); }
 function parseCsvRow(line: string): string[] {
   const out: string[] = []; let f = ""; let q = false;
   for (let i = 0; i < line.length; i++) {
@@ -338,12 +226,11 @@ function parseCsvRow(line: string): string[] {
 }
 
 function buildCsvExport(
-  baselineNodes: CanvasNode[],
-  ecosystemNodes: CanvasNode[],
+  nodes: CanvasNode[],
   customNodes: WorkflowApiState["customNodes"],
   customEdges: WorkflowApiState["customEdges"],
   settings: WorkflowApiState["settings"],
-  edgesWithParams: CanvasEdge[], // live edges including built-in ones
+  edgesWithParams: CanvasEdge[],
 ): string {
   const lines: string[] = [];
   lines.push("# Ridgeview Workflow Export");
@@ -351,58 +238,43 @@ function buildCsvExport(
   lines.push("# Version: 2.0");
   lines.push("");
 
-  // ── PROCESS_MAP tab ─────────────────────────────────────────────
   lines.push("[PROCESS_MAP]");
   lines.push("id,initials,label,x,y");
-  baselineNodes.forEach((n) => lines.push(csvRow(n.id, n.initials, n.label, Math.round(n.x), Math.round(n.y))));
+  nodes.forEach((n) => lines.push(csvRow(n.id, n.initials, n.label, Math.round(n.x), Math.round(n.y))));
   lines.push("");
 
-  // ── ECOSYSTEM tab ────────────────────────────────────────────────
+  // Keep ECOSYSTEM section for CSV compatibility (import won't break)
   lines.push("[ECOSYSTEM]");
   lines.push("id,initials,label,x,y");
-  ecosystemNodes.forEach((n) => lines.push(csvRow(n.id, n.initials, n.label, Math.round(n.x), Math.round(n.y))));
   lines.push("");
 
-  // ── CUSTOM_NODES tab ─────────────────────────────────────────────
   lines.push("[CUSTOM_NODES]");
   lines.push("id,initials,label,nodeType,role,textColor,outputDelay,baseline_x,baseline_y,ecosystem_x,ecosystem_y");
   customNodes.forEach((cn) => {
-    const bPos = baselineNodes.find((n) => n.id === cn.id);
-    const ePos = ecosystemNodes.find((n) => n.id === cn.id);
+    const bPos = nodes.find((n) => n.id === cn.id);
     lines.push(csvRow(
       cn.id, cn.labelInitials, cn.label, cn.nodeType, cn.role || "", cn.textColor || "",
       cn.outputDelay ?? 1,
       bPos ? Math.round(bPos.x) : Math.round(cn.position.x),
       bPos ? Math.round(bPos.y) : Math.round(cn.position.y),
-      ePos ? Math.round(ePos.x) : Math.round(cn.position.x),
-      ePos ? Math.round(ePos.y) : Math.round(cn.position.y),
+      bPos ? Math.round(bPos.x) : Math.round(cn.position.x),
+      bPos ? Math.round(bPos.y) : Math.round(cn.position.y),
     ));
   });
   lines.push("");
 
-  // ── RELATIONS tab (all edges including built-ins) ─────────────────
   lines.push("[RELATIONS]");
   lines.push("id,source,target,sequence,weight,source_type");
   edgesWithParams.forEach((e) => {
     const isCustomEdge = customEdges.some(ce => ce.id === e.id);
-    lines.push(csvRow(
-      e.id, e.source, e.target,
-      e.sequence ?? 1,
-      e.weight ?? 1,
-      isCustomEdge ? "custom" : "builtin",
-    ));
+    lines.push(csvRow(e.id, e.source, e.target, e.sequence ?? 1, e.weight ?? 1, isCustomEdge ? "custom" : "builtin"));
   });
   lines.push("");
 
-  // ── SETTINGS tab ─────────────────────────────────────────────────
   lines.push("[SETTINGS]");
   lines.push("key,value");
   lines.push(csvRow("nodePause", settings.nodePause));
-  // Per-node output delays
-  Object.entries(settings.nodeDelayOverrides || {}).forEach(([id, v]) => {
-    lines.push(csvRow(`nodeDelay.${id}`, v));
-  });
-  // Per-edge weight overrides (for built-in edges that have user-set values)
+  Object.entries(settings.nodeDelayOverrides || {}).forEach(([id, v]) => lines.push(csvRow(`nodeDelay.${id}`, v)));
   Object.entries(settings.edgeWeightOverrides || {}).forEach(([id, v]) => {
     if (v.weight !== undefined)   lines.push(csvRow(`edgeWeight.${id}`, v.weight));
     if (v.sequence !== undefined) lines.push(csvRow(`edgeSeq.${id}`, v.sequence));
@@ -423,7 +295,6 @@ function parseCsvImport(text: string): {
   const customNodes: WorkflowApiState["customNodes"] = [];
   const customEdges: WorkflowApiState["customEdges"] = [];
   const settings: WorkflowApiState["settings"] = { nodePause: 1, edgeWeightOverrides: {}, nodeDelayOverrides: {} };
-  const relationOverrides: Record<string, { sequence: number; weight: number }> = {};
 
   let section = "";
   let headers: string[] = [];
@@ -431,11 +302,7 @@ function parseCsvImport(text: string): {
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
-    if (line.startsWith("[") && line.endsWith("]")) {
-      section = line.slice(1, -1);
-      headers = [];
-      continue;
-    }
+    if (line.startsWith("[") && line.endsWith("]")) { section = line.slice(1, -1); headers = []; continue; }
     const cells = parseCsvRow(line);
     if (headers.length === 0) { headers = cells; continue; }
     const row: Record<string, string> = {};
@@ -457,35 +324,29 @@ function parseCsvImport(text: string): {
         position: { x: parseFloat(row.baseline_x) || 0, y: parseFloat(row.baseline_y) || 0 },
       });
     }
-    // RELATIONS section handles both custom and builtin edges
     else if (section === "RELATIONS" && row.id) {
       const seq = parseInt(row.sequence) || 1;
       const w   = parseFloat(row.weight) || 1;
       if (row.source_type === "custom") {
         customEdges.push({ id: row.id, source: row.source, target: row.target, sequence: seq, weight: w, isCustom: true });
       } else {
-        // Builtin edge — store as weight override
-        settings.edgeWeightOverrides[row.id] = { sequence: seq, weight: w };
-        relationOverrides[row.id] = { sequence: seq, weight: w };
+        settings.edgeWeightOverrides![row.id] = { sequence: seq, weight: w };
       }
     }
-    // Legacy CUSTOM_EDGES section (v1.0 compatibility)
-    else if (section === "CUSTOM_EDGES" && row.id)
+    else if (section === "CUSTOM_EDGES" && row.id) // legacy compat
       customEdges.push({ id: row.id, source: row.source, target: row.target, sequence: parseInt(row.sequence) || 1, weight: parseFloat(row.weight) || 1, isCustom: true });
     else if (section === "SETTINGS" && row.key) {
       const val = parseFloat(row.value);
       if (row.key === "nodePause") settings.nodePause = val;
-      else if (row.key.startsWith("nodeDelay.")) {
-        const nodeId = row.key.replace("nodeDelay.", "");
-        settings.nodeDelayOverrides[nodeId] = val;
-      } else if (row.key.startsWith("edgeWeight.")) {
-        const edgeId = row.key.replace("edgeWeight.", "");
-        if (!settings.edgeWeightOverrides[edgeId]) settings.edgeWeightOverrides[edgeId] = {};
-        settings.edgeWeightOverrides[edgeId].weight = val;
+      else if (row.key.startsWith("nodeDelay.")) settings.nodeDelayOverrides![row.key.replace("nodeDelay.", "")] = val;
+      else if (row.key.startsWith("edgeWeight.")) {
+        const id = row.key.replace("edgeWeight.", "");
+        if (!settings.edgeWeightOverrides![id]) settings.edgeWeightOverrides![id] = {};
+        settings.edgeWeightOverrides![id].weight = val;
       } else if (row.key.startsWith("edgeSeq.")) {
-        const edgeId = row.key.replace("edgeSeq.", "");
-        if (!settings.edgeWeightOverrides[edgeId]) settings.edgeWeightOverrides[edgeId] = {};
-        settings.edgeWeightOverrides[edgeId].sequence = Math.round(val);
+        const id = row.key.replace("edgeSeq.", "");
+        if (!settings.edgeWeightOverrides![id]) settings.edgeWeightOverrides![id] = {};
+        settings.edgeWeightOverrides![id].sequence = Math.round(val);
       }
     }
   }
@@ -493,7 +354,7 @@ function parseCsvImport(text: string): {
 }
 
 // ─── PNG export ───────────────────────────────────────────────────────────────
-function buildSvgExport(nodes: CanvasNode[], edges: CanvasEdge[], isEcosystem: boolean): string {
+function buildSvgExport(nodes: CanvasNode[], edges: CanvasEdge[]): string {
   const W = 1200, H = 700;
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:#F8FAFC;font-family:Inter,sans-serif;">`,
@@ -505,15 +366,13 @@ function buildSvgExport(nodes: CanvasNode[], edges: CanvasEdge[], isEcosystem: b
   edges.forEach((e) => {
     const s = nodeMap[e.source], t = nodeMap[e.target];
     if (!s || !t) return;
-    const stroke = e.isUpgraded ? "#10B981" : isEcosystem ? "#7DD3FC" : "#CBD5E1";
-    parts.push(`<line x1="${s.x+R}" y1="${s.y+R}" x2="${t.x+R}" y2="${t.y+R}" stroke="${stroke}" stroke-width="${isEcosystem?3:2}" opacity="${e.isDeprecated?0.15:1}"/>`);
+    const stroke = e.isUpgraded ? "#10B981" : "#CBD5E1";
+    parts.push(`<line x1="${s.x+R}" y1="${s.y+R}" x2="${t.x+R}" y2="${t.y+R}" stroke="${stroke}" stroke-width="2" opacity="${e.isDeprecated?0.15:1}"/>`);
   });
   nodes.forEach((n) => {
     const op = n.isDeprecated ? 0.3 : 1;
-    const bc = n.borderColor, tc = n.textColor;
-    if (n.isEco) parts.push(`<rect x="${n.x}" y="${n.y}" width="56" height="56" rx="14" fill="white" stroke="${bc}" stroke-width="2" opacity="${op}"/>`);
-    else         parts.push(`<circle cx="${n.x+R}" cy="${n.y+R}" r="${R}" fill="white" stroke="${bc}" stroke-width="2" opacity="${op}"/>`);
-    parts.push(`<text x="${n.x+R}" y="${n.y+R+5}" text-anchor="middle" font-size="13" font-weight="700" fill="${tc}" opacity="${op}">${n.initials}</text>`);
+    parts.push(`<circle cx="${n.x+R}" cy="${n.y+R}" r="${R}" fill="white" stroke="${n.borderColor}" stroke-width="2" opacity="${op}"/>`);
+    parts.push(`<text x="${n.x+R}" y="${n.y+R+5}" text-anchor="middle" font-size="13" font-weight="700" fill="${n.textColor}" opacity="${op}">${n.initials}</text>`);
     parts.push(`<text x="${n.x+R}" y="${n.y+72}" text-anchor="middle" font-size="10" fill="#334155">${n.label}</text>`);
   });
   parts.push("</svg>");
@@ -542,39 +401,75 @@ function downloadBlob(content: string, filename: string, mime: string) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
   function GraphCanvas({
-    isEcosystem, showImprovements, selectedId, selectedType,
+    showImprovements, selectedId, selectedType,
     onSelectNode, onDeselect, onHover, onHoverEnd, onDeleteNode,
+    searchQuery = "",
+    activeFilters = { roles: [], groupIds: [] },
   }, ref) {
     const canvasRef = useRef<HTMLDivElement>(null);
 
-    // Server state
     const [serverState, setServerState] = useState<WorkflowApiState | null>(null);
     const lastPollTs = useRef(0);
 
-    // Derived node / edge arrays
-    const [baselineNodes, setBaselineNodes] = useState<CanvasNode[]>([]);
-    const [ecosystemNodes, setEcosystemNodes] = useState<CanvasNode[]>([]);
+    const [canvasNodes, setCanvasNodes] = useState<CanvasNode[]>([]);
 
     const nodes = useMemo(() => {
       const hidden = new Set(serverState?.settings?.hiddenCoreNodes ?? []);
-      const base   = (isEcosystem ? ecosystemNodes : baselineNodes)
-        .filter((n) => !hidden.has(n.id));
-      return base;
-    }, [isEcosystem, baselineNodes, ecosystemNodes, serverState]);
-    const edges = useMemo(
-      () => buildEdges(isEcosystem, showImprovements, serverState?.customEdges || []),
-      [isEcosystem, showImprovements, serverState?.customEdges]
-    );
-    const nodeMap = useMemo(
-      () => Object.fromEntries(nodes.map((n) => [n.id, n])),
-      [nodes]
-    );
+      return canvasNodes.filter((n) => !hidden.has(n.id));
+    }, [canvasNodes, serverState]);
 
-    // ── Hover highlight state — declared early so connectedEdgeIds can reference it ──
+    const edges = useMemo(
+      () => buildEdges(showImprovements, serverState?.customEdges || []),
+      [showImprovements, serverState?.customEdges]
+    );
+    const nodeMap = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
+
+    // ── Search + Filter visibility ──────────────────────────────────────────
+    /** Set of node IDs that pass current search query. null = no search active. */
+    const searchMatchIds = useMemo(() => {
+      if (!searchQuery.trim()) return null;
+      const q = searchQuery.toLowerCase();
+      return new Set(
+        nodes
+          .filter((n) => n.label.toLowerCase().includes(q) || n.initials.toLowerCase().includes(q))
+          .map((n) => n.id)
+      );
+    }, [searchQuery, nodes]);
+
+    /** Set of node IDs in any of the active filter groups. null = no group filter. */
+    const groupFilterNodeIds = useMemo(() => {
+      if (!activeFilters.groupIds.length) return null;
+      const groupSet = new Set(activeFilters.groupIds);
+      const ids = new Set<string>();
+      (serverState?.settings?.workflowGroups ?? []).forEach((g) => {
+        if (groupSet.has(g.id)) g.nodeIds.forEach((id) => ids.add(id));
+      });
+      return ids;
+    }, [activeFilters.groupIds, serverState?.settings?.workflowGroups]);
+
+    /** Compute per-node visibility opacity: 1 = visible, 0.12 = dimmed */
+    function nodeOpacity(nodeId: string): number {
+      // Search takes priority
+      if (searchMatchIds !== null && !searchMatchIds.has(nodeId)) return 0.12;
+      // Role filter
+      if (activeFilters.roles.length > 0) {
+        const node = nodeMap[nodeId];
+        if (node && !activeFilters.roles.includes(node.role ?? "")) return 0.12;
+      }
+      // Group filter
+      if (groupFilterNodeIds !== null && !groupFilterNodeIds.has(nodeId)) return 0.12;
+      return 1;
+    }
+
+    function isNodeHighlighted(nodeId: string): boolean {
+      if (searchMatchIds !== null && searchMatchIds.has(nodeId)) return true;
+      return false;
+    }
+
+    // ── Hover highlight ──────────────────────────────────────────────────────
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
-    /** Set of edge IDs connected to the currently hovered node — drives dimming. */
     const connectedEdgeIds = useMemo(() => {
       if (!hoveredNodeId) return null;
       return new Set(edges.filter((e) => e.source === hoveredNodeId || e.target === hoveredNodeId).map((e) => e.id));
@@ -582,34 +477,26 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
     // ── Pan + Zoom ────────────────────────────────────────────────────────────
     const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, scale: 1 });
-    // Mutable ref so wheel/pan handlers always see fresh values without stale closure
     const vtRef  = useRef({ x: 0, y: 0, scale: 1 });
     const panRef = useRef<{ sx: number; sy: number; svx: number; svy: number } | null>(null);
-    // Separate flag so handlePaneClick can skip deselect when canvas was panned
     const isPanningRef = useRef(false);
 
     useEffect(() => { vtRef.current = viewTransform; }, [viewTransform]);
 
-    /** Convert a viewport client position to canvas-space (pre-transform). */
     const clientToCanvas = useCallback((clientX: number, clientY: number) => {
       const rect = canvasRef.current!.getBoundingClientRect();
       const vt = vtRef.current;
-      return { x: (clientX - rect.left - vt.x) / vt.scale,
-               y: (clientY - rect.top  - vt.y) / vt.scale };
+      return { x: (clientX - rect.left - vt.x) / vt.scale, y: (clientY - rect.top - vt.y) / vt.scale };
     }, []);
 
-    // Wheel → zoom towards cursor
     const handleWheel = useCallback((e: WheelEvent) => {
       e.preventDefault();
       const rect = canvasRef.current!.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
       const vt = vtRef.current;
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       const ns = Math.max(0.15, Math.min(4, vt.scale * factor));
-      const next = { x: mx - (mx - vt.x) * (ns / vt.scale),
-                     y: my - (my - vt.y) * (ns / vt.scale),
-                     scale: ns };
+      const next = { x: mx - (mx - vt.x) * (ns / vt.scale), y: my - (my - vt.y) * (ns / vt.scale), scale: ns };
       vtRef.current = next;
       setViewTransform(next);
     }, []);
@@ -623,16 +510,11 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     // ── Task dot popup ────────────────────────────────────────────────────────
     const [taskPopup, setTaskPopup] = useState<{ task: NodeTask; px: number; py: number } | null>(null);
 
-    // Rebuild nodes when server state or options change
     useEffect(() => {
       if (!serverState) return;
-      setBaselineNodes(buildBaselineNodes(serverState.baselinePositions, serverState.customNodes, showImprovements));
-      setEcosystemNodes(buildEcosystemNodes(serverState.ecosystemPositions, serverState.customNodes, showImprovements));
+      setCanvasNodes(buildNodes(serverState.baselinePositions, serverState.customNodes, showImprovements));
     }, [serverState, showImprovements]);
 
-    // Initial fetch — load both static workflow metadata and dynamic graph state
-    // in parallel so hiddenCoreNodes / customNodes from a freshly imported
-    // template are applied immediately, with no race between the two fetches.
     useEffect(() => {
       Promise.all([
         fetch("/api/workflow").then((r) => r.json()),
@@ -641,26 +523,20 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         setServerState({
           ...workflow,
           ...graphState,
-          // Prefer live positions from graph-state; fall back to workflow layout
-          baselinePositions:  graphState.baselinePositions  ?? workflow.layout?.baselinePositions,
-          ecosystemPositions: graphState.ecosystemPositions ?? workflow.layout?.ecosystemPositions,
+          baselinePositions: graphState.baselinePositions ?? workflow.layout?.baselinePositions,
+          ecosystemPositions: graphState.ecosystemPositions ?? workflow.layout?.ecosystemPositions ?? {},
         });
         lastPollTs.current = graphState.lastUpdated ?? 0;
       }).catch(console.error);
     }, []);
 
-    // Poll graph-state immediately on mount, then every 3 s.
-    // The immediate call ensures hiddenCoreNodes / customNodes from a freshly
-    // imported template are applied without waiting for the first interval tick.
     useEffect(() => {
       const poll = () => {
         fetch("/api/graph-state").then((r) => r.json()).then((s: WorkflowApiState & { _positionsHash?: string }) => {
           if (s.lastUpdated > lastPollTs.current) {
             lastPollTs.current = s.lastUpdated;
             setServerState((prev) => {
-              // Skip re-render if positions hash hasn't changed (only metadata/settings updated)
               if (prev && s._positionsHash && (prev as typeof prev & { _positionsHash?: string })._positionsHash === s._positionsHash) {
-                // Only update settings/customEdges/customNodes, not positions
                 return { ...prev, settings: s.settings, customNodes: s.customNodes, customEdges: s.customEdges, lastUpdated: s.lastUpdated, _positionsHash: s._positionsHash } as WorkflowApiState;
               }
               return prev ? { ...prev, ...s } : s;
@@ -668,71 +544,59 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           }
         }).catch(console.error);
       };
-      poll(); // fire immediately so freshly imported templates show correctly
+      poll();
       const t = setInterval(poll, 3000);
       return () => clearInterval(t);
     }, []);
 
     // ── Drag ──────────────────────────────────────────────────────────────────
     const dragRef = useRef<DragState | null>(null);
-
     const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
     const [addForm, setAddForm] = useState<AddForm | null>(null);
     const [connectFrom, setConnectFrom] = useState<string | null>(null);
-    const [mousePos, setMousePos]       = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
     const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
       if (e.button !== 0) return;
       e.stopPropagation();
       const { x, y } = clientToCanvas(e.clientX, e.clientY);
-      const node = (isEcosystem ? ecosystemNodes : baselineNodes).find((n) => n.id === nodeId)!;
+      const node = canvasNodes.find((n) => n.id === nodeId)!;
       dragRef.current = { nodeId, offsetX: x - node.x, offsetY: y - node.y, hasMoved: false };
-    }, [isEcosystem, baselineNodes, ecosystemNodes, clientToCanvas]);
+    }, [canvasNodes, clientToCanvas]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
-      // Pan gesture — active when panning canvas (no node drag)
       if (panRef.current && !dragRef.current) {
-        const dx = e.clientX - panRef.current.sx;
-        const dy = e.clientY - panRef.current.sy;
+        const dx = e.clientX - panRef.current.sx, dy = e.clientY - panRef.current.sy;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isPanningRef.current = true;
         if (isPanningRef.current) {
           const next = { x: panRef.current.svx + dx, y: panRef.current.svy + dy, scale: vtRef.current.scale };
-          vtRef.current = next;
-          setViewTransform(next);
+          vtRef.current = next; setViewTransform(next);
         }
         return;
       }
-
-      // Canvas-space position (accounts for pan/zoom)
       const { x, y } = clientToCanvas(e.clientX, e.clientY);
       if (connectFrom) setMousePos({ x, y });
-
       const d = dragRef.current;
       if (!d) return;
-      const newX = x - d.offsetX;
-      const newY = y - d.offsetY;
+      const newX = x - d.offsetX, newY = y - d.offsetY;
       d.hasMoved = true;
-      const updater = (ns: CanvasNode[]) => ns.map((n) => n.id === d.nodeId ? { ...n, x: newX, y: newY } : n);
-      if (isEcosystem) setEcosystemNodes(updater); else setBaselineNodes(updater);
-    }, [isEcosystem, connectFrom, clientToCanvas]);
+      setCanvasNodes((ns) => ns.map((n) => n.id === d.nodeId ? { ...n, x: newX, y: newY } : n));
+    }, [connectFrom, clientToCanvas]);
 
     const handleMouseUp = useCallback(() => {
-      panRef.current = null; // end any active pan gesture
+      panRef.current = null;
       const d = dragRef.current;
       if (!d) return;
       if (d.hasMoved) {
-        const node = (isEcosystem ? ecosystemNodes : baselineNodes).find((n) => n.id === d.nodeId);
+        const node = canvasNodes.find((n) => n.id === d.nodeId);
         if (node) {
-          const view = isEcosystem ? "ecosystem" : "baseline";
           fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "updatePosition", view, nodeId: node.id, position: { x: node.x, y: node.y } }),
+            body: JSON.stringify({ action: "updatePosition", view: "baseline", nodeId: node.id, position: { x: node.x, y: node.y } }),
           }).catch(console.error);
         }
       }
       dragRef.current = null;
-    }, [isEcosystem, baselineNodes, ecosystemNodes]);
-
-    // ── Context menu / Add Node ───────────────────────────────────────────────
+    }, [canvasNodes]);
 
     const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("[data-nodeid]")) return;
@@ -762,12 +626,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       setAddForm(null);
     };
 
-    // ── Connect mode ──────────────────────────────────────────────────────────
     const handleNodeClick = useCallback((e: React.MouseEvent, nodeId: string) => {
       e.stopPropagation();
       if (dragRef.current?.hasMoved) return;
       setCtxMenu(null);
-
       if (connectFrom) {
         if (connectFrom !== nodeId) {
           const edgeId = `${connectFrom}-${nodeId}`;
@@ -775,12 +637,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           const isOpt = window.confirm(
             'Mark this connection as "Optimized Route" (Improvements Only)?\n\nOK = only shown when Improvements mode is ON\nCancel = always shown (standard connection)'
           );
-          const newEdge = {
-            id: edgeId, source: connectFrom, target: nodeId,
-            sequence: nextSeq, isCustom: true,
-            isImprovementOnly: isOpt,
-            weight: 1,
-          };
+          const newEdge = { id: edgeId, source: connectFrom, target: nodeId, sequence: nextSeq, isCustom: true, isImprovementOnly: isOpt, weight: 1 };
           setServerState((prev) => prev ? { ...prev, customEdges: [...prev.customEdges.filter(e2 => e2.id !== edgeId), newEdge], lastUpdated: Date.now() } : prev);
           fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "addEdge", edge: newEdge }),
@@ -790,7 +647,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         return;
       }
       onSelectNode(nodeId, "node");
-    }, [connectFrom, onSelectNode]);
+    }, [connectFrom, onSelectNode, edges]);
 
     const handleEdgeClick = useCallback((edgeId: string) => {
       if (dragRef.current?.hasMoved) return;
@@ -800,14 +657,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
     const handlePaneClick = useCallback(() => {
       if (dragRef.current?.hasMoved) return;
-      // Suppress deselect if the mouse moved during this pane drag (pan gesture)
       if (isPanningRef.current) { isPanningRef.current = false; return; }
       setCtxMenu(null); setConnectFrom(null); setTaskPopup(null);
       setHoveredNodeId(null); setHoveredEdgeId(null);
       onDeselect();
     }, [onDeselect]);
 
-    // ── Delete key ────────────────────────────────────────────────────────────
     useEffect(() => {
       const onKey = (e: KeyboardEvent) => {
         if (e.key !== "Delete" && e.key !== "Backspace") return;
@@ -825,11 +680,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             body: JSON.stringify({ action: "deleteNode", nodeId: selectedId }),
           }).catch(console.error);
         } else if (selectedType === "edge") {
-          setServerState((prev) => prev ? {
-            ...prev,
-            customEdges: prev.customEdges.filter(e2 => e2.id !== selectedId),
-            lastUpdated: Date.now(),
-          } : prev);
+          setServerState((prev) => prev ? { ...prev, customEdges: prev.customEdges.filter(e2 => e2.id !== selectedId), lastUpdated: Date.now() } : prev);
           fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "deleteEdge", edgeId: selectedId }),
           }).catch(console.error);
@@ -840,16 +691,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       return () => window.removeEventListener("keydown", onKey);
     }, [selectedId, selectedType, onDeleteNode, onDeselect]);
 
-    // ── Export / Import ───────────────────────────────────────────────────────
     useImperativeHandle(ref, () => ({
-      exportPng: () => {
-        downloadSvgAsPng(buildSvgExport(nodes, edges, isEcosystem));
-      },
+      exportPng: () => downloadSvgAsPng(buildSvgExport(nodes, edges)),
       exportCsv: () => {
         if (!serverState) return;
         const csv = buildCsvExport(
-          baselineNodes, ecosystemNodes,
-          serverState.customNodes, serverState.customEdges,
+          canvasNodes, serverState.customNodes, serverState.customEdges,
           serverState.settings || { nodePause: 1, edgeWeightOverrides: {}, nodeDelayOverrides: {} },
           edges,
         );
@@ -869,77 +716,47 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       },
     }));
 
-    // ── Option D: per-node degree map for adaptive edge styling ─────────────
-    // Drives: straight line (deg ≤ 2) → single bezier (deg 3-5) → bundle (deg ≥ 6)
+    // ── Degree map for edge thickness ─────────────────────────────────────────
     const nodeDeg: Record<string, number> = {};
     edges.forEach(e => {
       nodeDeg[e.source] = (nodeDeg[e.source] || 0) + 1;
       nodeDeg[e.target] = (nodeDeg[e.target] || 0) + 1;
     });
+    const maxNodeDeg = useMemo(() => Math.max(...Object.values(nodeDeg), 1), [nodeDeg]);
 
-    // ── Generate dynamic keyframes for sequential animation ─────────────
+    // ── Sequential animation keyframes ────────────────────────────────────────
     const activeEdges = edges.filter(e => !e.isDeprecated);
-    const seqMap = new Map<number, number>(); // sequence -> max weight
+    const seqMap = new Map<number, number>();
     activeEdges.forEach(e => {
-      const s = e.sequence || 1;
-      const w = e.weight || 1;
+      const s = e.sequence || 1, w = e.weight || 1;
       seqMap.set(s, Math.max(seqMap.get(s) || 1, w));
     });
-
-    const seqTimes: { seq: number; start: number; duration: number }[] = [];
     const sortedSeqs = Array.from(seqMap.keys()).sort((a, b) => a - b);
-    
     let totalWeight = 0;
-    const nodePause = serverState?.settings?.nodePause ?? 1.0; // from server settings
-
+    const nodePause = serverState?.settings?.nodePause ?? 1.0;
+    const seqTimes: { seq: number; start: number; duration: number }[] = [];
     sortedSeqs.forEach(seq => {
       if (totalWeight > 0) totalWeight += nodePause;
       const w = seqMap.get(seq)!;
       seqTimes.push({ seq, start: totalWeight, duration: w });
       totalWeight += w;
     });
-
-    totalWeight += 3.0; // Pause at the end before next cycle begins
-
+    totalWeight += 3.0;
     const cycleDur = Math.max(4, totalWeight * 1.1);
-    const seqStyles: string[] = [];
 
-    seqTimes.forEach(({ seq, start, duration }) => {
+    const seqStyles = seqTimes.map(({ seq, start, duration }) => {
       const startPct = (start / totalWeight) * 100;
-      const endPct = ((start + duration) / totalWeight) * 100;
-
-      // Legacy anim for any remaining div-based usage
-      seqStyles.push(`
-        @keyframes anim-seq-${seq} {
-          0% { left: -40px; opacity: 0; }
-          ${Math.max(0, startPct - 0.01)}% { left: -40px; opacity: 0; }
-          ${startPct}% { left: -40px; opacity: 1; }
-          ${endPct}% { left: 100%; opacity: 1; }
-          ${Math.min(100, endPct + 0.01)}% { left: 100%; opacity: 0; }
-          100% { left: 100%; opacity: 0; }
-        }
-      `);
-
-      // SVG stroke-dashoffset animation (pathLength="1" normalises path).
-      // Dash travels from before the path start (offset=0.06) to after the end (offset=-1.06).
-      seqStyles.push(`
-        @keyframes svgflow-${seq} {
-          0%                              { stroke-dashoffset: 0.06; opacity: 0; }
-          ${Math.max(0, startPct - 0.01)}%{ stroke-dashoffset: 0.06; opacity: 0; }
-          ${startPct}%                    { stroke-dashoffset: 0.06; opacity: 0.7; }
-          ${endPct}%                      { stroke-dashoffset: -1.06; opacity: 0.7; }
-          ${Math.min(100, endPct + 0.01)}%{ stroke-dashoffset: -1.06; opacity: 0; }
-          100%                            { stroke-dashoffset: -1.06; opacity: 0; }
-        }
-      `);
+      const endPct   = ((start + duration) / totalWeight) * 100;
+      return `@keyframes svgflow-${seq} {
+        0%                               { stroke-dashoffset: 0.06; opacity: 0; }
+        ${Math.max(0, startPct - 0.01)}% { stroke-dashoffset: 0.06; opacity: 0; }
+        ${startPct}%                     { stroke-dashoffset: 0.06; opacity: 0.7; }
+        ${endPct}%                       { stroke-dashoffset: -1.06; opacity: 0.7; }
+        ${Math.min(100, endPct + 0.01)}% { stroke-dashoffset: -1.06; opacity: 0; }
+        100%                             { stroke-dashoffset: -1.06; opacity: 0; }
+      }`;
     });
 
-    // ── Compute max degree once for edge-thickness scaling ────────────────────
-    const maxNodeDeg = useMemo(() => Math.max(...Object.values(nodeDeg), 1), [nodeDeg]);
-
-    // ── Zoom LOD thresholds ───────────────────────────────────────────────────
-    // showLabels: hide all text labels when zoomed out past 42 % (reduces clutter)
-    // showEdges:  hide edge SVG entirely at very low zoom (group regions take over)
     const showLabels = viewTransform.scale >= 0.42;
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -947,12 +764,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       <div
         ref={canvasRef}
         className="w-full h-full relative overflow-hidden select-none"
-        style={{
-          background: "#F8FAFC",
-          cursor: isPanningRef.current ? "grabbing" : connectFrom ? "crosshair" : "default",
-        }}
+        style={{ background: "#F8FAFC", cursor: connectFrom ? "crosshair" : "default" }}
         onMouseDown={(e) => {
-          // Start canvas pan on left-click on empty area (not a node)
           if (e.button !== 0 || (e.target as HTMLElement).closest("[data-nodeid]")) return;
           const vt = vtRef.current;
           panRef.current = { sx: e.clientX, sy: e.clientY, svx: vt.x, svy: vt.y };
@@ -963,22 +776,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         onClick={handlePaneClick}
         onContextMenu={handleCanvasContextMenu}
       >
-        {/* Blueprint dot background — NOT part of the pan/zoom transform */}
+        {/* Blueprint dot background */}
         <div className="absolute inset-0 pointer-events-none opacity-40"
           style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
-        <style dangerouslySetInnerHTML={{ __html: seqStyles.join("\n") + `
-          .eco-sphere-wrapper { position: absolute; }
-          .eco-sphere-wrapper .eco-label {
-            opacity: 0;
-            transition: opacity 0.18s ease;
-            pointer-events: none;
-          }
-          .eco-sphere-wrapper:hover .eco-label {
-            opacity: 1;
-          }
-        ` }} />
+        <style dangerouslySetInnerHTML={{ __html: seqStyles.join("\n") }} />
 
-        {/* ── Pan / zoom transform container — SVG edges + node divs move together ── */}
+        {/* ── Pan/zoom transform container ── */}
         <div style={{
           position: "absolute", inset: 0,
           transformOrigin: "0 0",
@@ -986,46 +789,35 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           willChange: "transform",
         }}>
 
-        {/* ── SVG edge layer — bezier curves + satellite clusters + task dots ────── */}
+        {/* ── SVG layer ─────────────────────────────────────────────────────── */}
         <svg
           className="absolute inset-0 w-full h-full"
-          style={{
-            zIndex: 10, overflow: "visible", pointerEvents: "none",
-            // LOD: hide edges entirely when zoomed very far out
-            opacity: viewTransform.scale < 0.28 ? 0 : 1,
-            transition: "opacity 0.2s",
-          }}
+          style={{ zIndex: 10, overflow: "visible", pointerEvents: "none",
+            opacity: viewTransform.scale < 0.28 ? 0 : 1, transition: "opacity 0.2s" }}
         >
-          {/* ── Workflow group regions — rendered first (behind everything else) ── */}
+          {/* Workflow group regions */}
           {(serverState?.settings?.workflowGroups ?? []).map((group) => {
             const memberNodes = group.nodeIds.map((id) => nodeMap[id]).filter(Boolean);
             if (memberNodes.length === 0) return null;
-            const nodeHalfSize = memberNodes[0].isEco ? SPHERE_SZ / 2 : SZ / 2;
             const PAD = 32;
-            const xs  = memberNodes.map((n) => n.x + nodeHalfSize);
-            const ys  = memberNodes.map((n) => n.y + nodeHalfSize);
-            const minX = Math.min(...xs) - PAD - nodeHalfSize;
-            const minY = Math.min(...ys) - PAD - nodeHalfSize;
-            const maxX = Math.max(...xs) + PAD + nodeHalfSize;
-            const maxY = Math.max(...ys) + PAD + nodeHalfSize;
-            const w = maxX - minX;
-            const h = maxY - minY;
+            const xs  = memberNodes.map((n) => n.x + R);
+            const ys  = memberNodes.map((n) => n.y + R);
+            const minX = Math.min(...xs) - PAD - R;
+            const minY = Math.min(...ys) - PAD - R;
+            const maxX = Math.max(...xs) + PAD + R;
+            const maxY = Math.max(...ys) + PAD + R;
             const isLOD = viewTransform.scale < 0.42;
             return (
               <g key={group.id} style={{ pointerEvents: "none" }}>
                 <rect
-                  x={minX} y={minY} width={w} height={h}
+                  x={minX} y={minY} width={maxX - minX} height={maxY - minY}
                   rx={16} ry={16}
-                  fill={group.color + "18"}
-                  stroke={group.color + "80"}
-                  strokeWidth={isLOD ? 2 : 1.5}
-                  strokeDasharray={isLOD ? undefined : "6 3"}
+                  fill={group.color + "18"} stroke={group.color + "80"}
+                  strokeWidth={isLOD ? 2 : 1.5} strokeDasharray={isLOD ? undefined : "6 3"}
                 />
                 <text
                   x={minX + 12} y={minY + (isLOD ? 26 : 16)}
-                  fontSize={isLOD ? 16 : 11}
-                  fontWeight={700}
-                  fill={group.color}
+                  fontSize={isLOD ? 16 : 11} fontWeight={700} fill={group.color}
                   style={{ userSelect: "none" }}
                 >
                   {group.name}{isLOD && viewTransform.scale < 0.32 ? ` · ${memberNodes.length}` : ""}
@@ -1034,32 +826,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             );
           })}
 
-          {/* MiroFish satellite mini-spheres — dense cluster halo around each eco node */}
-          {isEcosystem && nodes.filter(n => n.isEco).map(node => {
-            const cx = node.x + SPHERE_SZ / 2;
-            const cy = node.y + SPHERE_SZ / 2;
-            const fill = ecoNodeNeon(node.id, node.isCustom);
-            const z = node.z ?? 0;
-            const baseOpacity = 0.3 + (z + 1) * 0.2;
-            return getSatellites(cx, cy, node.id, 12).map((s, i) => (
-              <circle
-                key={`${node.id}-sat-${i}`}
-                cx={s.x} cy={s.y} r={s.r}
-                fill={fill}
-                opacity={s.opacity * baseOpacity * (node.isDeprecated ? 0.3 : 1)}
-              />
-            ));
-          })}
-
-          {/* ── Task dots — self-owned tasks orbiting each eco node ─────────────── */}
-          {/* Each dot represents a task assigned to this entity. Color = status.   */}
-          {/* Click → viewport-positioned popup with task details.                  */}
-          {isEcosystem && nodes.filter(n => n.isEco).map(node => {
+          {/* Task dots — orbiting baseline nodes */}
+          {nodes.map(node => {
             const tasks: NodeTask[] = serverState?.settings?.metadataOverrides?.[node.id]?.tasks ?? [];
             if (!tasks.length) return null;
-            const ncx = node.x + SPHERE_SZ / 2;
-            const ncy = node.y + SPHERE_SZ / 2;
-            const taskR = 30; // orbit radius from node centre
+            const ncx = node.x + R, ncy = node.y + R;
+            const taskR = 42;
             return tasks.slice(0, 8).map((task, i) => {
               const angle = (i / Math.min(tasks.length, 8)) * Math.PI * 2 - Math.PI / 2;
               const tx = ncx + taskR * Math.cos(angle);
@@ -1067,166 +839,93 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               const color = TASK_STATUS_COLOR[task.status];
               return (
                 <g key={`${node.id}-task-${task.id}`}>
-                  {/* Connecting line from node to task dot */}
-                  <line x1={ncx} y1={ncy} x2={tx} y2={ty}
-                    stroke={color} strokeWidth="0.8" opacity="0.3" />
-                  {/* Task dot — interactive */}
+                  <line x1={ncx} y1={ncy} x2={tx} y2={ty} stroke={color} strokeWidth="0.8" opacity="0.25" />
                   <circle
-                    cx={tx} cy={ty} r={5}
-                    fill={color} stroke="white" strokeWidth="1.5"
+                    cx={tx} cy={ty} r={5} fill={color} stroke="white" strokeWidth="1.5"
                     style={{ cursor: "pointer", pointerEvents: "all", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.2))" }}
                     onClick={(e) => {
                       e.stopPropagation();
                       const rect = canvasRef.current!.getBoundingClientRect();
                       const vt = vtRef.current;
-                      setTaskPopup({
-                        task,
-                        px: rect.left + tx * vt.scale + vt.x,
-                        py: rect.top  + ty * vt.scale + vt.y,
-                      });
+                      setTaskPopup({ task, px: rect.left + tx * vt.scale + vt.x, py: rect.top + ty * vt.scale + vt.y });
                     }}
                   />
-                  {/* Priority indicator ring for high-priority tasks */}
                   {task.priority === "high" && (
-                    <circle cx={tx} cy={ty} r={7.5}
-                      fill="none" stroke={color} strokeWidth="1" opacity="0.4"
-                      strokeDasharray="3 2" />
+                    <circle cx={tx} cy={ty} r={7.5} fill="none" stroke={color} strokeWidth="1" opacity="0.4" strokeDasharray="3 2" />
                   )}
                 </g>
               );
             });
           })}
 
+          {/* Edges */}
           {edges.map((edge) => {
-            const src = nodeMap[edge.source]; const tgt = nodeMap[edge.target];
+            const src = nodeMap[edge.source], tgt = nodeMap[edge.target];
             if (!src || !tgt) return null;
 
-            const x1 = src.x + nodeRadius(src.isEco), y1 = src.y + nodeRadius(src.isEco);
-            const x2 = tgt.x + nodeRadius(tgt.isEco), y2 = tgt.y + nodeRadius(tgt.isEco);
-            // Bezier control point: perpendicular offset at midpoint for an organic curve
+            const x1 = src.x + R, y1 = src.y + R;
+            const x2 = tgt.x + R, y2 = tgt.y + R;
             const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
             const dx = x2 - x1, dy = y2 - y1;
             const len = Math.hypot(dx, dy);
-            // MiroFish sweeping arcs: much larger curvature for ecosystem, moderate for baseline
-            const baseCurvature = isEcosystem
-              ? Math.min(len * 0.62, 210)   // sweeping arcs for web-map
-              : Math.min(len * 0.28, 90);   // existing baseline behaviour
-            const jitter = isEcosystem ? ecoJitter(edge.id) * baseCurvature * 0.35 : 0;
-            const curvature = baseCurvature + jitter;
-
+            const curvature = Math.min(len * 0.28, 90);
             const cpx = mx - (dy / Math.max(len, 1)) * curvature;
             const cpy = my + (dx / Math.max(len, 1)) * curvature;
-
-            // 3D edge depth — vary opacity and stroke-width based on avg z of endpoints
-            const srcZ = src.z ?? 0;
-            const tgtZ = tgt.z ?? 0;
-            const avgZ = (srcZ + tgtZ) / 2;
-
-            // In ecosystem view, tilt the control point slightly based on z difference to simulate 3D bow
-            const zDiff = isEcosystem ? (srcZ - tgtZ) * 30 : 0;
-            const cpxFinal = cpx;
-            const cpyFinal = cpy + zDiff;
-            const d = `M ${x1} ${y1} Q ${cpxFinal} ${cpyFinal} ${x2} ${y2}`;
+            const d = `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`;
 
             const isSelected = selectedId === edge.id && selectedType === "edge";
-            const edgeMeta = EDGE_META[edge.id];
+            const edgeMeta   = EDGE_META[edge.id];
+            const srcDeg = nodeDeg[edge.source] || 0, tgtDeg = nodeDeg[edge.target] || 0;
+            const avgDeg = (srcDeg + tgtDeg) / 2;
+            const relWeight = edge.weight ?? serverState?.settings?.edgeWeightOverrides?.[edge.id]?.weight ?? 1;
+            const degScale = 0.5 + (avgDeg / maxNodeDeg) * 1.0;
+            const sw = Math.max(0.8, Math.min(5.0, 1.5 * degScale * relWeight));
 
-            // ── Option D: adaptive arc count based on endpoint degree ────────────
-            // degree ≤ 2  → straight line   (clean, uncluttered sparse graphs)
-            // degree 3–5  → single bezier   (gentle curve, moderate density)
-            // degree ≥ 6  → 4-arc bundle    (MiroFish sweeping bundle, high density)
-            const srcDeg  = nodeDeg[edge.source] || 0;
-            const tgtDeg  = nodeDeg[edge.target] || 0;
-
-            // ── Edge thickness: scales with avg endpoint degree + edge weight ─────
-            // Busier nodes produce thicker lines; higher-weight edges are thicker.
-            const relWeight  = edge.weight ?? serverState?.settings?.edgeWeightOverrides?.[edge.id]?.weight ?? 1;
-            const avgDeg     = (srcDeg + tgtDeg) / 2;
-            const degScale   = 0.5 + (avgDeg / maxNodeDeg) * 1.0;
-            const sw = isEcosystem
-              ? Math.max(0.5, Math.min(3.5, 0.9 * degScale * relWeight))
-              : Math.max(0.8, Math.min(5.0, 1.5 * degScale * relWeight));
-            const maxDeg  = Math.max(srcDeg, tgtDeg);
-            const arcMode = isEcosystem
-              ? (maxDeg >= 6 ? "bundle" : maxDeg >= 3 ? "bezier" : "straight")
-              : "bezier"; // baseline always uses single bezier
-
-            const straightD = `M ${x1} ${y1} L ${x2} ${y2}`;
-            const arcPaths =
-              arcMode === "bundle"
-                ? [0, 1, 2, 3].map(a => {
-                    const sign   = a % 2 === 0 ? 1 : -1;
-                    const spread = (a * 0.6 + ecoJitter(edge.id + String(a)) * 0.5) * baseCurvature * 0.28;
-                    const nx = -dy / Math.max(len, 1);
-                    const ny =  dx / Math.max(len, 1);
-                    return `M ${x1} ${y1} Q ${cpxFinal + sign * spread * nx} ${cpyFinal + sign * spread * ny} ${x2} ${y2}`;
-                  })
-                : arcMode === "bezier"
-                  ? [d]           // single bezier (d already computed above)
-                  : [straightD];  // straight line — no curvature
-
-            // MiroFish red arcs on light background; upgraded edges stay green.
-            // Straight lines get slightly higher opacity since there is no multi-arc overlap.
-            const baseArcOpacity = arcMode === "straight" ? 0.50 : arcMode === "bezier" ? 0.35 : 0.18;
-            const ecoEdgeOpacity = edge.isDeprecated ? 0.04 : Math.max(0.08, baseArcOpacity + (avgZ + 1) * 0.08);
-            const ecoEdgeSW = Math.max(0.5, sw * (0.6 + (avgZ + 1) * 0.25));
-            const miroArcColor = edge.isUpgraded ? "rgba(16,185,129," : "rgba(220,50,70,";
-            const selStroke = isEcosystem ? "#e91e8c" : "#4F46E5";
-            const pulseColor = edge.isUpgraded ? "#10B981" : isEcosystem ? "rgba(220,50,70,0.7)" : "#4F46E5";
-
-            // ── Hover highlight logic ───────────────────────────────────────────
             const isHoveredEdge = hoveredEdgeId === edge.id;
             const isConnected   = connectedEdgeIds?.has(edge.id) ?? false;
             const anyHover      = hoveredNodeId !== null || hoveredEdgeId !== null;
-            const baseOpacity   = isEcosystem ? ecoEdgeOpacity : (edge.isDeprecated ? 0.15 : 1);
-            const highlightOpacity = anyHover
-              ? (isHoveredEdge || isConnected ? 1 : 0.06)
-              : baseOpacity;
+            const baseOpacity   = edge.isDeprecated ? 0.15 : 1;
+            const highlightOpacity = anyHover ? (isHoveredEdge || isConnected ? 1 : 0.08) : baseOpacity;
+            const strokeColor = isSelected ? "#4F46E5"
+              : edge.isUpgraded ? "#10B981"
+              : edge.isDeprecated ? "#CBD5E1"
+              : "#94A3B8";
+            const pulseColor = edge.isUpgraded ? "#10B981" : "#4F46E5";
 
             return (
               <g key={edge.id} style={{ opacity: highlightOpacity, transition: "opacity 0.18s" }}>
-                {/* Adaptive edges: straight / single bezier / 4-arc bundle based on degree */}
-                {arcPaths.map((arcD, ai) => (
-                  <path
-                    key={ai}
-                    d={arcD} pathLength="1"
-                    stroke={isSelected ? selStroke : (isEcosystem ? `${miroArcColor}${(baseArcOpacity - ai * 0.02).toFixed(2)})` : (edge.isUpgraded ? "#10B981" : "#94A3B8"))}
-                    strokeWidth={isSelected || isHoveredEdge ? ecoEdgeSW + 2 : ecoEdgeSW}
-                    fill="none"
-                    strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}
-                    style={{
-                      filter: isSelected
-                        ? "drop-shadow(0 0 4px rgba(233,30,140,0.6))"
-                        : isHoveredEdge
-                          ? "drop-shadow(0 0 6px rgba(99,102,241,0.7))"
-                          : isConnected
-                            ? "drop-shadow(0 0 3px rgba(99,102,241,0.4))"
-                            : undefined,
-                      transition: "stroke 0.2s, stroke-width 0.15s",
-                    }}
-                  />
-                ))}
-                {/* Animated travelling pulse */}
+                <path
+                  d={d} pathLength="1"
+                  stroke={strokeColor}
+                  strokeWidth={isSelected || isHoveredEdge ? sw + 2 : sw}
+                  fill="none"
+                  strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}
+                  style={{
+                    filter: isSelected ? "drop-shadow(0 0 4px rgba(79,70,229,0.6))"
+                      : isHoveredEdge ? "drop-shadow(0 0 6px rgba(99,102,241,0.7))"
+                      : isConnected ? "drop-shadow(0 0 3px rgba(99,102,241,0.4))"
+                      : undefined,
+                    transition: "stroke 0.2s, stroke-width 0.15s",
+                  }}
+                />
                 {!edge.isDeprecated && (
-                  <path
-                    d={arcPaths[0]} pathLength="1"
-                    stroke={pulseColor}
-                    strokeWidth={ecoEdgeSW + 1.0}
-                    fill="none"
+                  <path d={d} pathLength="1" stroke={pulseColor} strokeWidth={sw + 1.0} fill="none"
                     strokeDasharray="0.06 1"
                     style={{ animation: `svgflow-${edge.sequence || 1} ${cycleDur}s linear infinite` }}
                   />
                 )}
-                {/* Wide invisible hit area for click / hover */}
-                <path
-                  d={d}
-                  stroke="transparent"
-                  strokeWidth={22}
-                  fill="none"
-                  style={{
-                    cursor: edge.isDeprecated ? "default" : "pointer",
-                    pointerEvents: edge.isDeprecated ? "none" : "stroke",
-                  }}
+                {/* Arrow head */}
+                <defs>
+                  <marker id={`arr-${edge.id}`} markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto">
+                    <path d="M0,0 L0,5 L7,2.5 z" fill={strokeColor} opacity={edge.isDeprecated ? 0.3 : 0.6} />
+                  </marker>
+                </defs>
+                <path d={d} fill="none" stroke="transparent" strokeWidth={0}
+                  markerEnd={`url(#arr-${edge.id})`}
+                  style={{ pointerEvents: "none" }} />
+                {/* Wide invisible hit area */}
+                <path d={d} stroke="transparent" strokeWidth={22} fill="none"
+                  style={{ cursor: edge.isDeprecated ? "default" : "pointer", pointerEvents: edge.isDeprecated ? "none" : "stroke" }}
                   onClick={(e) => { e.stopPropagation(); if (!edge.isDeprecated) handleEdgeClick(edge.id); }}
                   onMouseEnter={() => { setHoveredEdgeId(edge.id); if (edgeMeta) onHover(edgeMeta.name, edgeMeta.summary); }}
                   onMouseLeave={() => { setHoveredEdgeId(null); onHoverEnd(); }}
@@ -1235,244 +934,128 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             );
           })}
 
-          {/* Rubber band for connect mode */}
+          {/* Connect mode rubber band */}
           {connectFrom && (() => {
             const src = nodeMap[connectFrom];
             if (!src) return null;
             return (
-              <line
-                x1={src.x + (src.isEco ? SPHERE_SZ / 2 : R)} y1={src.y + (src.isEco ? SPHERE_SZ / 2 : R)}
-                x2={mousePos.x} y2={mousePos.y}
+              <line x1={src.x + R} y1={src.y + R} x2={mousePos.x} y2={mousePos.y}
                 stroke="#F59E0B" strokeWidth={2} strokeDasharray="8 4" opacity={0.7}
-                style={{ pointerEvents: "none" }}
-              />
+                style={{ pointerEvents: "none" }} />
             );
           })()}
         </svg>
 
-        {/* ── Node layer ────────────────────────────────────── */}
-        {(() => {
-          // Painter's algorithm: sort ecosystem nodes back-to-front so front nodes overdraw back ones
-          const sortedNodes = isEcosystem
-            ? [...nodes].sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-            : nodes;
+        {/* ── Node layer ────────────────────────────────────────── */}
+        {nodes.map((node) => {
+          const isDep    = node.isDeprecated;
+          const isBotl   = node.bottleneck && !isDep;
+          const isSelected = selectedId === node.id && selectedType === "node";
+          const isConnSrc  = connectFrom === node.id;
+          const nodeMeta   = NODE_META[node.id];
+          const opacity    = nodeOpacity(node.id);
+          const highlight  = isNodeHighlighted(node.id);
 
-          return sortedNodes.map((node) => {
-            const isDep  = node.isDeprecated;
-            const isBotl = node.bottleneck && !isDep;
-            const isCircle = !node.isEco;
-            const isSelected = selectedId === node.id && selectedType === "node";
-            const isConnSrc  = connectFrom === node.id;
-            const nodeMeta   = NODE_META[node.id];
-
-            // ── Ecosystem 3D sphere ───────────────────────────────────────────
-            if (node.isEco) {
-              const z = node.z ?? 0;
-              const depthOpacity = isDep ? 0.2 : 0.3 + (z + 1) * 0.35;
-              const depthScale   = 0.60 + (z + 1) * 0.20;
-              const depthBlur    = Math.max(0, (-z) * 2.0);  // only blur nodes behind equator (z < 0)
-              const depthZIndex  = Math.round(10 + (z + 1) * 10);
-
-              return (
-                <div
-                  key={node.id}
-                  className="eco-sphere-wrapper"
-                  style={{ position: "absolute", left: node.x, top: node.y, zIndex: depthZIndex }}
-                  data-nodeid={node.id}
-                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                  onClick={(e) => handleNodeClick(e, node.id)}
-                  onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
-                  onMouseEnter={() => { setHoveredNodeId(node.id); if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
-                  onMouseLeave={() => { setHoveredNodeId(null); onHoverEnd(); }}
-                >
-                  {/* Sphere body */}
-                  <div
-                    className={isBotl ? "bottleneck-glow" : ""}
-                    style={{
-                      width: SPHERE_SZ,
-                      height: SPHERE_SZ,
-                      background: sphereGradient(node.id, isBotl, isDep),
-                      borderRadius: "50%",
-                      boxShadow: sphereGlow(node.id, isBotl, isDep, depthScale),
-                      opacity: depthOpacity,
-                      transform: `scale(${depthScale})`,
-                      transformOrigin: "center center",
-                      filter: depthBlur > 0.3 ? `blur(${depthBlur.toFixed(1)}px)` : undefined,
-                      transition: "opacity 0.4s, filter 0.4s, transform 0.4s, box-shadow 0.3s",
-                      outline: isSelected ? "2px solid rgba(56,189,248,0.9)" : isConnSrc ? "2px dashed #F59E0B" : "none",
-                      outlineOffset: "3px",
-                      cursor: dragRef.current?.nodeId === node.id ? "grabbing" : (connectFrom ? "pointer" : "grab"),
-                      userSelect: "none",
-                    }}
-                  />
-                  {/* Label — hidden by default, shown on hover via CSS; hidden at low zoom */}
-                  <div className="eco-label" style={{
-                    position: "absolute",
-                    top: SPHERE_SZ + 6,
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    whiteSpace: "nowrap",
-                    background: "rgba(255,255,255,0.92)",
-                    backdropFilter: "blur(6px)",
-                    padding: "3px 8px",
-                    borderRadius: "6px",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: "#1e293b",
-                    textAlign: "center",
-                    zIndex: 100,
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-                    border: `1px solid ${ecoNodeNeon(node.id, node.isCustom)}44`,
-                    // LOD: force-hide label when zoomed out (overrides CSS hover rule)
-                    opacity: showLabels ? undefined : 0,
-                    pointerEvents: showLabels ? undefined : "none",
-                    transition: "opacity 0.2s",
-                  }}>
-                    {node.label}
-                    {node.subcategory && !isDep && (
-                      <div style={{ fontSize: 8, color: ecoNodeNeon(node.id, node.isCustom), marginTop: 1 }}>{node.subcategory}</div>
-                    )}
-                    {node.bottleneckText && !isDep && (
-                      <div style={{ fontSize: 8, color: "#f59e0b", marginTop: 1 }}>{node.bottleneckText}</div>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-
-            // ── Baseline flat node (unchanged) ────────────────────────────────
-            return (
-              <div
-                key={node.id}
-                data-nodeid={node.id}
-                style={{
-                  position: "absolute", left: node.x, top: node.y,
-                  width: SZ, height: SZ,
-                  background: "white",
-                  borderRadius: isCircle ? "50%" : "14px",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontWeight: 700, fontSize: 14,
-                  border: `${node.isHub ? 3 : 2}px solid ${node.borderColor}`,
-                  color: node.textColor,
-                  boxShadow: isBotl ? undefined : "0 4px 6px -1px rgba(0,0,0,0.1)",
-                  zIndex: 20,
-                  opacity: isDep ? 0.3 : 1,
-                  cursor: dragRef.current?.nodeId === node.id ? "grabbing" : (connectFrom ? "pointer" : "grab"),
-                  userSelect: "none",
-                  transition: "border-color 0.5s, opacity 0.5s, box-shadow 0.5s",
-                  outline: isSelected ? `3px solid #818CF8` : isConnSrc ? "3px dashed #F59E0B" : "none",
-                  outlineOffset: "3px",
-                }}
-                className={isBotl ? "bottleneck-glow" : ""}
-                onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                onClick={(e) => handleNodeClick(e, node.id)}
-                onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
-                onMouseEnter={() => { setHoveredNodeId(node.id); if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
-                onMouseLeave={() => { setHoveredNodeId(null); onHoverEnd(); }}
-              >
-                {node.initials}
-
-                {/* Node label — hidden at low zoom (LOD) */}
-                <div style={{
-                  position: "absolute", top: 65, whiteSpace: "nowrap",
-                  background: node.labelBg, padding: "4px 10px",
-                  borderRadius: "20px",
-                  fontSize: 11, fontWeight: 600,
-                  color: node.labelTextColor || "#334155",
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-                  border: `1px solid ${node.labelBorderColor}`,
-                  textAlign: "center", pointerEvents: "none",
-                  opacity: showLabels ? 1 : 0,
-                  transition: "opacity 0.2s",
-                }}>
-                  {node.label}
-                  {node.subcategory && !isDep && (
-                    <div style={{ fontSize: 9, fontWeight: 400, color: "#F59E0B", marginTop: 1 }}>
-                      {node.subcategory}
-                    </div>
-                  )}
-                  {node.bottleneckText && !isDep && (
-                    <div style={{ fontSize: 9, color: "#F59E0B", marginTop: 1 }}>{node.bottleneckText}</div>
-                  )}
-                </div>
+          return (
+            <div
+              key={node.id}
+              data-nodeid={node.id}
+              style={{
+                position: "absolute", left: node.x, top: node.y,
+                width: SZ, height: SZ,
+                background: "white",
+                borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontWeight: 700, fontSize: 14,
+                border: `${2}px solid ${node.borderColor}`,
+                color: node.textColor,
+                boxShadow: isBotl
+                  ? "0 0 0 3px rgba(245,158,11,0.35), 0 4px 6px -1px rgba(0,0,0,0.1)"
+                  : highlight
+                    ? "0 0 0 3px rgba(99,102,241,0.4), 0 4px 6px -1px rgba(0,0,0,0.1)"
+                    : "0 4px 6px -1px rgba(0,0,0,0.1)",
+                zIndex: 20,
+                opacity: isDep ? Math.min(0.3, opacity) : opacity,
+                cursor: dragRef.current?.nodeId === node.id ? "grabbing" : (connectFrom ? "pointer" : "grab"),
+                userSelect: "none",
+                transition: "border-color 0.5s, opacity 0.3s, box-shadow 0.3s",
+                outline: isSelected ? `3px solid #818CF8` : isConnSrc ? "3px dashed #F59E0B" : "none",
+                outlineOffset: "3px",
+              }}
+              className={isBotl ? "bottleneck-glow" : ""}
+              onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+              onClick={(e) => handleNodeClick(e, node.id)}
+              onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
+              onMouseEnter={() => { setHoveredNodeId(node.id); if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
+              onMouseLeave={() => { setHoveredNodeId(null); onHoverEnd(); }}
+            >
+              {node.initials}
+              {/* Node label */}
+              <div style={{
+                position: "absolute", top: 65, whiteSpace: "nowrap",
+                background: node.labelBg, padding: "4px 10px",
+                borderRadius: "20px", fontSize: 11, fontWeight: 600,
+                color: node.labelTextColor || "#334155",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+                border: `1px solid ${node.labelBorderColor}`,
+                textAlign: "center", pointerEvents: "none",
+                opacity: showLabels ? 1 : 0, transition: "opacity 0.2s",
+              }}>
+                {node.label}
+                {node.subcategory && !isDep && (
+                  <div style={{ fontSize: 9, fontWeight: 400, color: "#F59E0B", marginTop: 1 }}>{node.subcategory}</div>
+                )}
+                {node.bottleneckText && !isDep && (
+                  <div style={{ fontSize: 9, color: "#F59E0B", marginTop: 1 }}>{node.bottleneckText}</div>
+                )}
               </div>
-            );
-          });
-        })()}
+            </div>
+          );
+        })}
 
-        </div>{/* ── end pan/zoom transform container ─────────────── */}
+        </div>{/* end transform container */}
 
-        {/* ── Task dot popup — fixed viewport-space, outside transform ─────── */}
+        {/* ── Task dot popup ── */}
         {taskPopup && (
-          <div
-            className="fixed z-[500] pointer-events-auto"
+          <div className="fixed z-[500] pointer-events-auto"
             style={{ left: taskPopup.px + 14, top: taskPopup.py - 10 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="bg-white rounded-xl shadow-2xl border border-slate-200 p-4 w-64"
-              style={{ backdropFilter: "blur(12px)" }}
-            >
-              {/* Title row */}
+            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-4 w-64" style={{ backdropFilter: "blur(12px)" }}>
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
-                    style={{ background: TASK_STATUS_COLOR[taskPopup.task.status] }}
-                  />
-                  <span className="font-semibold text-slate-800 text-sm leading-tight truncate">
-                    {taskPopup.task.title}
-                  </span>
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5" style={{ background: TASK_STATUS_COLOR[taskPopup.task.status] }} />
+                  <span className="font-semibold text-slate-800 text-sm leading-tight truncate">{taskPopup.task.title}</span>
                 </div>
-                <button
-                  onClick={() => setTaskPopup(null)}
-                  className="text-slate-400 hover:text-slate-600 text-base leading-none flex-shrink-0 mt-0.5"
-                >×</button>
+                <button onClick={() => setTaskPopup(null)} className="text-slate-400 hover:text-slate-600 text-base leading-none flex-shrink-0 mt-0.5">×</button>
               </div>
-
-              {/* Status + Priority badges */}
               <div className="flex flex-wrap gap-1.5 mb-3">
-                <span
-                  className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-                  style={{
-                    background: TASK_STATUS_COLOR[taskPopup.task.status] + "20",
-                    color: TASK_STATUS_COLOR[taskPopup.task.status],
-                  }}
-                >
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                  style={{ background: TASK_STATUS_COLOR[taskPopup.task.status] + "20", color: TASK_STATUS_COLOR[taskPopup.task.status] }}>
                   {taskPopup.task.status.replace("-", " ")}
                 </span>
-                <span className={[
-                  "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
-                  taskPopup.task.priority === "high"   ? "bg-red-100 text-red-600"
+                <span className={["text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                  taskPopup.task.priority === "high" ? "bg-red-100 text-red-600"
                   : taskPopup.task.priority === "medium" ? "bg-amber-100 text-amber-600"
-                  : "bg-slate-100 text-slate-500",
-                ].join(" ")}>
+                  : "bg-slate-100 text-slate-500"].join(" ")}>
                   {TASK_PRIORITY_LABEL[taskPopup.task.priority]}
                 </span>
               </div>
-
-              {/* Due date */}
               {taskPopup.task.dueDate && (
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-2.5">
-                  <span>📅</span>
-                  <span>Due <strong>{taskPopup.task.dueDate}</strong></span>
+                  <span>📅</span><span>Due <strong>{taskPopup.task.dueDate}</strong></span>
                 </div>
               )}
-
-              {/* Note / description */}
               {taskPopup.task.note && (
-                <div className="text-[11px] text-slate-600 bg-slate-50 rounded-lg p-2.5 leading-relaxed border border-slate-100 whitespace-pre-wrap">
-                  {taskPopup.task.note}
-                </div>
+                <div className="text-[11px] text-slate-600 bg-slate-50 rounded-lg p-2.5 leading-relaxed border border-slate-100 whitespace-pre-wrap">{taskPopup.task.note}</div>
               )}
             </div>
           </div>
         )}
 
-        {/* ── Context menu ─────────────────────────────────── */}
+        {/* ── Context menu ── */}
         {ctxMenu && (
-          <div
-            className="fixed bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[180px] text-sm"
+          <div className="fixed bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[180px] text-sm"
             style={{ top: ctxMenu.y, left: ctxMenu.x, zIndex: 200 }}
             onMouseLeave={() => setCtxMenu(null)}
             onClick={(e) => e.stopPropagation()}
@@ -1486,10 +1069,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 <button className="w-full text-left px-4 py-2 hover:bg-violet-50 hover:text-violet-600 font-medium flex items-center gap-2 transition-colors"
                   onClick={() => {
                     const groupColors = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"];
-                    const id    = `group-${Date.now()}`;
+                    const id = `group-${Date.now()}`;
                     const color = groupColors[(serverState?.settings?.workflowGroups?.length ?? 0) % groupColors.length];
-                    const name  = "New Group";
-                    const newGroup = { id, name, color, nodeIds: [] };
+                    const newGroup = { id, name: "New Group", color, nodeIds: [] };
                     setServerState((prev) => prev ? { ...prev, settings: { ...prev.settings, workflowGroups: [...(prev.settings?.workflowGroups ?? []), newGroup] }, lastUpdated: Date.now() } : prev);
                     fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ action: "upsertWorkflowGroup", group: newGroup }) }).catch(console.error);
@@ -1505,7 +1087,6 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                   onClick={() => { setConnectFrom(ctxMenu.nodeId); setCtxMenu(null); }}>
                   <span className="text-indigo-500">↗</span> Connect from here
                 </button>
-                {/* Add to group submenu */}
                 {(serverState?.settings?.workflowGroups ?? []).length > 0 && (
                   <div className="relative group/grp">
                     <button className="w-full text-left px-4 py-2 hover:bg-violet-50 hover:text-violet-600 font-medium flex items-center justify-between gap-2 transition-colors">
@@ -1516,17 +1097,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       {(serverState?.settings?.workflowGroups ?? []).map((g) => {
                         const already = g.nodeIds.includes(ctxMenu.nodeId);
                         return (
-                          <button
-                            key={g.id}
-                            className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm flex items-center gap-2"
+                          <button key={g.id} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm flex items-center gap-2"
                             onClick={() => {
-                              const updated = { ...g, nodeIds: already
-                                ? g.nodeIds.filter((nid) => nid !== ctxMenu.nodeId)
-                                : [...new Set([...g.nodeIds, ctxMenu.nodeId])] };
+                              const updated = { ...g, nodeIds: already ? g.nodeIds.filter((nid) => nid !== ctxMenu.nodeId) : [...new Set([...g.nodeIds, ctxMenu.nodeId])] };
                               setServerState((prev) => {
                                 if (!prev) return prev;
-                                const groups = (prev.settings?.workflowGroups ?? []).map((x) => x.id === g.id ? updated : x);
-                                return { ...prev, settings: { ...prev.settings, workflowGroups: groups }, lastUpdated: Date.now() };
+                                return { ...prev, settings: { ...prev.settings, workflowGroups: (prev.settings?.workflowGroups ?? []).map((x) => x.id === g.id ? updated : x) }, lastUpdated: Date.now() };
                               });
                               fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ action: "upsertWorkflowGroup", group: updated }) }).catch(console.error);
@@ -1566,7 +1142,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           </div>
         )}
 
-        {/* ── Connect mode banner ───────────────────────────── */}
+        {/* ── Connect mode banner ── */}
         {connectFrom && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-4 py-2 rounded-full shadow flex items-center gap-2">
             <span>↗ Click a target node to connect</span>
@@ -1574,9 +1150,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           </div>
         )}
 
-        {/* ── Add Node Modal ────────────────────────────────── */}
+        {/* ── Add Node Modal ── */}
         {addForm && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setAddForm(null); }}>
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/20 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) setAddForm(null); }}>
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 border border-gray-200">
               <h3 className="font-bold text-gray-900 mb-4">Add New Node</h3>
               <div className="flex flex-col gap-3">
@@ -1615,7 +1192,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             </div>
           </div>
         )}
-        {/* ── Edge / Node Param Editor ──────────────────────── */}
+
+        {/* ── Edge / Node Param Editor (floating panel) ── */}
         {selectedId && selectedType && (() => {
           const edge = selectedType === "edge" ? edges.find(e => e.id === selectedId) : null;
           const node = selectedType === "node" ? nodes.find(n => n.id === selectedId) : null;
@@ -1660,11 +1238,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 </div>
                 <div className="text-[10px] text-slate-400 font-mono">{selectedId}</div>
               </div>
-
               {edge && (() => {
                 const overrides = serverState?.settings?.edgeWeightOverrides?.[selectedId];
                 const curSeq = overrides?.sequence ?? edge.sequence ?? 1;
-                const curWt  = overrides?.weight  ?? edge.weight  ?? 1;
+                const curWt  = overrides?.weight   ?? edge.weight  ?? 1;
                 return (
                   <div className="flex flex-col gap-3">
                     <label className="flex flex-col gap-1">
@@ -1691,16 +1268,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                   </div>
                 );
               })()}
-
               {node && (() => {
                 const curDelay = serverState?.settings?.nodeDelayOverrides?.[selectedId] ?? 1;
                 return (
                   <div className="flex flex-col gap-3">
                     <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-semibold text-slate-500">Output Delay Multiplier</span>
-                      <span className="text-[10px] text-slate-400">Applied to all outgoing edges (1 = normal, 6 = very slow)</span>
-                      <input type="number" min={0.1} max={20} step={0.1} defaultValue={curDelay}
-                        onChange={e => saveNodeDelay(parseFloat(e.target.value) || 1)}
+                      <span className="text-[11px] font-semibold text-slate-500">Output Delay (s)</span>
+                      <span className="text-[10px] text-slate-400">How long this node holds up outgoing connections</span>
+                      <input type="number" min={0} max={20} step={0.5} defaultValue={curDelay}
+                        onChange={e => saveNodeDelay(parseFloat(e.target.value) || 0)}
                         className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400 w-full" />
                     </label>
                     <label className="flex flex-col gap-1 border-t border-slate-100 pt-3">

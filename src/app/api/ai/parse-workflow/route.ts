@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, type AIProvider } from '@/lib/aiClient';
 import type { CustomNodeConfig, CustomEdgeConfig } from '@/lib/serverState';
-import { hierarchicalLayout, radialWebLayout } from '@/lib/layout';
+import { hierarchicalLayout } from '@/lib/layout';
 
 const SYSTEM_PROMPT = `You are a workflow graph parser. Convert natural language workflow descriptions into structured JSON graphs.
 
@@ -59,16 +59,9 @@ function mapRole(role: string): CustomNodeConfig['role'] {
 }
 
 function calcPositions(nodes: AINode[], edges: AIEdge[]) {
-  // Baseline view  → hierarchical (Sugiyama-style layered) layout.
-  //   Respects the directed flow of the workflow: sources at top, sinks at bottom.
   const baselinePositions = hierarchicalLayout(nodes, edges, 960, 560);
-
-  // Ecosystem view → radial web layout (Miro-style concentric rings).
-  //   The most-connected node is placed at the centre; all others radiate
-  //   outward in BFS rings — producing the "3-D web map" look.
-  const ecosystemPositions = radialWebLayout(nodes, edges, 960, 600);
-
-  return { baselinePositions, ecosystemPositions };
+  // ecosystemPositions kept as empty for CSV backward-compat
+  return { baselinePositions, ecosystemPositions: {} as Record<string, { x: number; y: number }> };
 }
 
 // Strip markdown code fences that some models add despite instructions
