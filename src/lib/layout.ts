@@ -79,8 +79,8 @@ function resolveRingAngles(
       for (let j = i + 1; j < n; j++) {
         // Angular difference normalised to (−π, π]
         let diff = a[j] - a[i];
-        while (diff >  Math.PI) diff -= 2 * Math.PI;
-        while (diff < -Math.PI) diff += 2 * Math.PI;
+        // Normalise to (-π, π] in O(1) via modulo instead of a while-loop
+        diff = ((diff + Math.PI) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI) - Math.PI;
 
         const absDiff = Math.abs(diff);
         if (absDiff < minAngGap * 2) {
@@ -159,13 +159,14 @@ export function hierarchicalLayout(
   }
 
   // Handle nodes in cycles or disconnected (assign them to an extra layer)
-  let maxLayer = Math.max(0, ...Object.values(layer));
+  // Use reduce instead of spread to avoid stack-overflow on large graphs
+  let maxLayer = Object.values(layer).reduce((m, l) => Math.max(m, l), 0);
   for (const id of ids) {
     if (layer[id] === undefined) {
       layer[id] = ++maxLayer;
     }
   }
-  maxLayer = Math.max(0, ...Object.values(layer));
+  maxLayer = Object.values(layer).reduce((m, l) => Math.max(m, l), 0);
 
   // Group nodes by layer
   const layers: string[][] = Array.from({ length: maxLayer + 1 }, () => []);
@@ -271,11 +272,11 @@ export function radialWebLayout(
     }
   }
   // Disconnected nodes → one extra ring beyond max
-  const maxRingBfs = Math.max(0, ...Object.values(ring));
+  const maxRingBfs = Object.values(ring).reduce((m, r) => Math.max(m, r), 0);
   for (const id of ids) {
     if (ring[id] === undefined) ring[id] = maxRingBfs + 1;
   }
-  const maxRing = Math.max(0, ...Object.values(ring));
+  const maxRing = Object.values(ring).reduce((m, r) => Math.max(m, r), 0);
 
   // Group nodes by ring
   const rings: string[][] = Array.from({ length: maxRing + 1 }, () => []);

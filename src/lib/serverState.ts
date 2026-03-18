@@ -103,7 +103,7 @@ function createInitialState(): ServerGraphState {
     originalEcosystemPositions: { ...DEFAULT_ECOSYSTEM },
     customNodes: [],
     customEdges: [],
-    settings: { ...DEFAULT_SETTINGS, edgeWeightOverrides: {}, nodeDelayOverrides: {}, metadataOverrides: {} },
+    settings: { ...DEFAULT_SETTINGS },
     lastUpdated: Date.now(),
   };
 }
@@ -133,13 +133,20 @@ if (!global.__graphState.originalBaselinePositions) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+// Track the lastUpdated timestamp when the hash was last computed so we
+// only re-hash when something actually changed — avoids O(n) JSON stringify
+// on every 3-second poll when the graph is idle.
+let _hashCachedAt = 0;
+
 export function getGraphState(): ServerGraphState {
   const state = global.__graphState!;
-  // Compute a lightweight positions hash for client-side change detection
-  const hashInput = JSON.stringify(state.ecosystemPositions) + JSON.stringify(state.baselinePositions);
-  let h = 0;
-  for (const c of hashInput) h = (Math.imul(31, h) + c.charCodeAt(0)) | 0;
-  state._positionsHash = h.toString(16);
+  if (state.lastUpdated !== _hashCachedAt) {
+    const hashInput = JSON.stringify(state.ecosystemPositions) + JSON.stringify(state.baselinePositions);
+    let h = 0;
+    for (const c of hashInput) h = (Math.imul(31, h) + c.charCodeAt(0)) | 0;
+    state._positionsHash = h.toString(16);
+    _hashCachedAt = state.lastUpdated;
+  }
   return state;
 }
 
@@ -164,6 +171,14 @@ export function addCustomNode(node: CustomNodeConfig) {
   state.lastUpdated = Date.now();
 }
 
+/** Resolve a node ID to its display name (core or custom). Falls back to the id itself. */
+function resolveNodeName(nodeId: string): string {
+  const coreNode = NODE_DATA[nodeId];
+  if (coreNode) return coreNode.name;
+  const customNode = global.__graphState!.customNodes.find(n => n.id === nodeId);
+  return customNode?.label ?? nodeId;
+}
+
 export function addCustomEdge(edge: CustomEdgeConfig) {
   const state = global.__graphState!;
   state.customEdges = state.customEdges.filter(e => e.id !== edge.id);
@@ -172,15 +187,7 @@ export function addCustomEdge(edge: CustomEdgeConfig) {
   // Sync back to metadata: add target node name to source's connections list
   const sourceId = edge.source;
   const targetId = edge.target;
-  
-  // Resolve target name
-  let targetName = targetId;
-  const coreNode = NODE_DATA[targetId];
-  if (coreNode) targetName = coreNode.name;
-  else {
-    const customNode = state.customNodes.find(n => n.id === targetId);
-    if (customNode) targetName = customNode.label;
-  }
+  const targetName = resolveNodeName(targetId);
 
   if (!state.settings.metadataOverrides) state.settings.metadataOverrides = {};
   if (!state.settings.metadataOverrides[sourceId]) {
@@ -310,6 +317,7 @@ export function removeNode(nodeId: string) {
   delete state.baselinePositions[nodeId];
   delete state.ecosystemPositions[nodeId];
   delete state.settings.nodeDelayOverrides[nodeId];
+  delete state.settings.metadataOverrides?.[nodeId];
   state.lastUpdated = Date.now();
 }
 
@@ -319,16 +327,7 @@ export function removeEdge(edgeId: string) {
   
   if (edge) {
     const sourceId = edge.source;
-    const targetId = edge.target;
-
-    // Resolve target name
-    let targetName = targetId;
-    const coreNode = NODE_DATA[targetId];
-    if (coreNode) targetName = coreNode.name;
-    else {
-      const customNode = state.customNodes.find(n => n.id === targetId);
-      if (customNode) targetName = customNode.label;
-    }
+    const targetName = resolveNodeName(edge.target);
 
     // Remove from metadata overrides
     if (state.settings.metadataOverrides?.[sourceId]?.connections) {

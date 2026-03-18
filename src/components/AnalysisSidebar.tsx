@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { X, Zap, Link as LinkIcon, Trash2, Settings, Check, Clock, FastForward, Activity, ShieldAlert } from "lucide-react";
+import { CORE_NODE_IDS as CORE_NODE_IDS_ARRAY } from "@/lib/constants";
 
 export interface AnalysisData {
   id: string;
@@ -29,7 +30,7 @@ interface AnalysisSidebarProps {
   metadataOverrides?: Record<string, Partial<AnalysisData>>;
 }
 
-const CORE_NODE_IDS = new Set(["nav", "script", "db", "xy", "mary", "ed", "cy"]);
+const CORE_NODE_IDS = new Set<string>(CORE_NODE_IDS_ARRAY);
 
 function EditableField({
   label, value, editing,

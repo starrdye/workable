@@ -1,3 +1,17 @@
+/** Canonical list of built-in Ridgeview core node IDs. */
+export const CORE_NODE_IDS = ["nav", "script", "db", "xy", "mary", "ed", "cy"] as const;
+
+/** Subset of core node IDs that appear in the ecosystem (web-map) view. */
+export const ECO_NODE_IDS = ["nav", "xy", "mary", "ed"] as const;
+
+/** Role → accent colour, shared by GraphCanvas and templates. */
+export const ROLE_COLOR: Record<string, string> = {
+  person:   "#4F46E5",
+  tool:     "#64748B",
+  external: "#475569",
+  output:   "#10B981",
+};
+
 export const NODE_DATA: Record<string, {
   name: string; role: string; status: string;
   statusColor?: string; summary: string;

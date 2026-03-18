@@ -16,6 +16,7 @@
  */
 
 import { hierarchicalLayout, radialWebLayout } from "./layout";
+import { CORE_NODE_IDS, ROLE_COLOR } from "./constants";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,14 +50,7 @@ export interface Template {
   edges: TplEdge[];
 }
 
-// ── Role colours (must stay in sync with GraphCanvas) ────────────────────────
-
-const ROLE_COLOR: Record<NodeRole, string> = {
-  person:   "#4F46E5",
-  tool:     "#64748B",
-  external: "#475569",
-  output:   "#10B981",
-};
+// ROLE_COLOR is imported from constants — single source of truth.
 
 // ── Template definitions ──────────────────────────────────────────────────────
 
@@ -258,6 +252,35 @@ function makeCustomEdges(edges: TplEdge[]) {
 const CANVAS_W = 900;
 const CANVAS_H = 560;
 
+// ── Precomputed layouts ───────────────────────────────────────────────────────
+//
+// Template layouts are static — compute them once at module load so that
+// template selection is instant instead of blocking the main thread each time.
+
+interface PrecomputedLayout {
+  baselinePositions:  ReturnType<typeof hierarchicalLayout>;
+  ecosystemPositions: ReturnType<typeof radialWebLayout>;
+}
+
+const _precomputed = new Map<string, PrecomputedLayout>();
+
+function getPrecomputed(template: Template): PrecomputedLayout {
+  if (_precomputed.has(template.id)) return _precomputed.get(template.id)!;
+  const layoutNodes = template.nodes.map((n) => ({ id: n.id }));
+  const layoutEdges = template.edges.map((e) => ({ source: e.source, target: e.target }));
+  const result: PrecomputedLayout = {
+    baselinePositions:  hierarchicalLayout(layoutNodes, layoutEdges, CANVAS_W, CANVAS_H),
+    ecosystemPositions: radialWebLayout   (layoutNodes, layoutEdges, CANVAS_W, CANVAS_H),
+  };
+  _precomputed.set(template.id, result);
+  return result;
+}
+
+// Warm the cache for all non-trivial templates at module load time.
+for (const t of TEMPLATES) {
+  if (!t.useBuiltins && t.nodes.length > 0) getPrecomputed(t);
+}
+
 export function buildTemplateState(template: Template): TemplateState {
   if (template.useBuiltins || template.nodes.length === 0) {
     // Ridgeview / Blank: restore core nodes, no custom content
@@ -270,12 +293,7 @@ export function buildTemplateState(template: Template): TemplateState {
     };
   }
 
-  const layoutNodes = template.nodes.map((n) => ({ id: n.id }));
-  const layoutEdges = template.edges.map((e) => ({ source: e.source, target: e.target }));
-
-  const baselinePositions  = hierarchicalLayout(layoutNodes, layoutEdges, CANVAS_W, CANVAS_H);
-  const ecosystemPositions = radialWebLayout   (layoutNodes, layoutEdges, CANVAS_W, CANVAS_H);
-
+  const { baselinePositions, ecosystemPositions } = getPrecomputed(template);
   const customNodes = makeCustomNodes(template.nodes, baselinePositions);
   const customEdges = makeCustomEdges(template.edges);
 
@@ -286,7 +304,7 @@ export function buildTemplateState(template: Template): TemplateState {
     ecosystemPositions,
     // Hide the built-in Ridgeview core nodes so only template nodes show
     settings: {
-      hiddenCoreNodes: ["nav", "script", "db", "xy", "mary", "ed", "cy"],
+      hiddenCoreNodes: [...CORE_NODE_IDS],
     },
   };
 }

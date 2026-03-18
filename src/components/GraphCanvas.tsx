@@ -3,6 +3,7 @@ import {
   forwardRef, useCallback, useEffect, useImperativeHandle,
   useMemo, useRef, useState,
 } from "react";
+import { CORE_NODE_IDS, ROLE_COLOR } from "@/lib/constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface GraphCanvasRef {
@@ -144,8 +145,8 @@ const BASE_LABELS: Record<string, { initials: string; label: string }> = {
   cy:     { initials: "RV",  label: "Ridgeview Dashboard" },
 };
 const ECO_SUB: Record<string, string> = { nav: "External", xy: "Hub", mary: "Collaborator", ed: "Manager" };
-const ROLE_COLOR: Record<string, string> = { person: "#4F46E5", tool: "#64748B", external: "#475569", output: "#10B981" };
-const CORE_IDS = new Set(["nav","script","db","xy","mary","ed","cy"]);
+// ROLE_COLOR imported from @/lib/constants — single source of truth.
+const CORE_IDS = new Set<string>(CORE_NODE_IDS);
 
 // Workflow node metadata (for tooltip / analysis panel)
 const NODE_META: Record<string, { name: string; summary: string }> = {
@@ -187,8 +188,8 @@ function buildBaselineNodes(
   customNodes: WorkflowApiState["customNodes"],
   showImprovements: boolean,
 ): CanvasNode[] {
-  const ids = ["nav","script","db","xy","mary","ed","cy"];
-  const out: CanvasNode[] = ids.map((id) => {
+  const ids = CORE_NODE_IDS;
+  const out: CanvasNode[] = [...ids].map((id) => {
     const p = pos[id] || { x: 100, y: 100 };
     const z = p.z; // may be undefined for baseline — that's fine, baseline uses no depth effects
     const s = BASE_STYLE[id];
@@ -224,7 +225,7 @@ function buildEcosystemNodes(
   customNodes: WorkflowApiState["customNodes"],
   showImprovements: boolean,
 ): CanvasNode[] {
-  const ids = ["nav","xy","mary","ed"];
+  const ids = ["nav","xy","mary","ed"] as const;
   const out: CanvasNode[] = ids.map((id) => {
     const p = pos[id] || { x: 100, y: 100 };
     const z = p.z;

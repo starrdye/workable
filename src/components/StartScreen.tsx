@@ -202,6 +202,15 @@ function TemplateCard({
   );
 }
 
+// ── Template preview map (static — defined outside component to avoid recreation) ──
+
+const TEMPLATE_PREVIEWS: Record<string, React.ReactNode> = {
+  blank:            <PreviewBlank />,
+  ridgeview:        <PreviewFew />,
+  "product-launch": <PreviewSome />,
+  "data-platform":  <PreviewMany />,
+};
+
 // ── Template gallery overlay ──────────────────────────────────────────────────
 
 function TemplateGallery({
@@ -211,12 +220,6 @@ function TemplateGallery({
   onSelect: (t: Template) => void;
   onBack:   () => void;
 }) {
-  const previews: Record<string, React.ReactNode> = {
-    blank:          <PreviewBlank />,
-    ridgeview:      <PreviewFew />,
-    "product-launch": <PreviewSome />,
-    "data-platform":  <PreviewMany />,
-  };
 
   return (
     <div className="absolute inset-0 z-[110] flex items-center justify-center bg-[#F8FAFC]"
@@ -262,7 +265,7 @@ function TemplateGallery({
             <TemplateCard
               key={t.id}
               template={t}
-              preview={previews[t.id] ?? <PreviewFew />}
+              preview={TEMPLATE_PREVIEWS[t.id] ?? <PreviewFew />}
               onSelect={onSelect}
             />
           ))}

@@ -9,6 +9,7 @@ import { AIAnalysisModal } from "@/components/AIAnalysisModal";
 import { AI_CONFIG_KEY } from "@/components/AISettingsModal";
 import { Zap, Users, AlignJustify, Download, FileText, Upload, Settings, Sparkles, ChevronLeft, LayoutGrid } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
+import type { ServerGraphState } from "@/lib/serverState";
 
 export default function Home() {
   const [isAppStarted, setIsAppStarted]           = useState(false);
@@ -17,15 +18,11 @@ export default function Home() {
   const [selectedId, setSelectedId]               = useState<string | null>(null);
   const [selectedType, setSelectedType]           = useState<"node" | "edge" | null>(null);
   const [analysisData, setAnalysisData]           = useState<AnalysisData | null>(null);
-  const [metadataOverrides, setMetadataOverrides] = useState<Record<string, Partial<AnalysisData>>>({});
-  const [fullServerState, setFullServerState]     = useState<any>(null);
+  const [fullServerState, setFullServerState]     = useState<ServerGraphState | null>(null);
 
-  // AI state
-  const [aiConfig, setAiConfig]                   = useState<AIConfig>(() => {
-    // Runs only on client after hydration
-    if (typeof window === "undefined") return loadAIConfig();
-    return loadAIConfig();
-  });
+  // AI state — initialise with a safe default; the useEffect below re-loads
+  // from localStorage once the component mounts on the client.
+  const [aiConfig, setAiConfig]                   = useState<AIConfig>(loadAIConfig);
   const [showAISettings, setShowAISettings]       = useState(false);
   const [showAIAnalysis, setShowAIAnalysis]       = useState(false);
   const [aiAnalysis, setAiAnalysis]               = useState<string | null>(null);
@@ -37,8 +34,10 @@ export default function Home() {
     name: string; summary: string; x: number; y: number; visible: boolean;
   }>({ name: "", summary: "", x: 0, y: 0, visible: false });
 
-  const canvasRef   = useRef<GraphCanvasRef>(null);
-  const importInput = useRef<HTMLInputElement>(null);
+  const canvasRef      = useRef<GraphCanvasRef>(null);
+  const importInput    = useRef<HTMLInputElement>(null);
+  // Cache the static /api/workflow response — it never changes at runtime.
+  const workflowCache  = useRef<Record<string, any> | null>(null);
 
   // Load AI config from localStorage on mount (handles SSR)
   useEffect(() => { setAiConfig(loadAIConfig()); }, []);
@@ -72,11 +71,9 @@ export default function Home() {
     setIsAppStarted(true);
   };
 
-  // ── AI workflow generation from StartScreen ─────────────────────────────
-  const handleAiParsed = (result: AIParsedResult) => importStateAndStart(result);
-
-  // ── Template selection from gallery ──────────────────────────────────────
-  const handleTemplateLoad = (result: AIParsedResult) => importStateAndStart(result);
+  // Both AI parse and template selection use the same import-and-start flow.
+  const handleAiParsed    = importStateAndStart;
+  const handleTemplateLoad = importStateAndStart;
 
   // ── AI optimization analysis ────────────────────────────────────────────
   const handleAiAnalyze = async () => {
@@ -130,42 +127,47 @@ export default function Home() {
     return () => window.removeEventListener("mousemove", handleMove);
   }, []);
 
+  // Fetch the static workflow metadata once and cache it.
+  useEffect(() => {
+    fetch("/api/workflow").then(r => r.json()).then(d => { workflowCache.current = d; }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (selectedId && selectedType) {
-      fetch("/api/workflow")
-        .then((r) => r.json())
-        .then((data) => {
-          const dict = selectedType === "node" ? data.nodes : data.edges;
-          const info = dict[selectedId] || {};
-          let techParams: Partial<AnalysisData> = {};
-          if (fullServerState) {
-            if (selectedType === "node") {
-              techParams.outputDelay = fullServerState.settings?.nodeDelayOverrides?.[selectedId] ?? 1;
-            } else {
-              techParams.sequence = fullServerState.settings?.edgeWeightOverrides?.[selectedId]?.sequence ?? info.sequence ?? 1;
-              techParams.weight   = fullServerState.settings?.edgeWeightOverrides?.[selectedId]?.weight ?? 1;
-              const customEdge = fullServerState.customEdges?.find((e: any) => e.id === selectedId);
-              if (customEdge) {
-                techParams.isImprovementOnly = customEdge.isImprovementOnly;
-                techParams.sequence = techParams.sequence ?? customEdge.sequence;
-                techParams.weight   = techParams.weight   ?? customEdge.weight;
-              }
-            }
+      const data = workflowCache.current ?? {};
+      const dict = selectedType === "node" ? data.nodes ?? {} : data.edges ?? {};
+      const info = dict[selectedId] || {};
+      let techParams: Partial<AnalysisData> = {};
+      if (fullServerState) {
+        if (selectedType === "node") {
+          techParams.outputDelay = fullServerState.settings?.nodeDelayOverrides?.[selectedId] ?? 1;
+        } else {
+          techParams.sequence = fullServerState.settings?.edgeWeightOverrides?.[selectedId]?.sequence ?? info.sequence ?? 1;
+          techParams.weight   = fullServerState.settings?.edgeWeightOverrides?.[selectedId]?.weight ?? 1;
+          const customEdge = fullServerState.customEdges?.find(e => e.id === selectedId);
+          if (customEdge) {
+            techParams.isImprovementOnly = customEdge.isImprovementOnly;
+            techParams.sequence = techParams.sequence ?? customEdge.sequence;
+            techParams.weight   = techParams.weight   ?? customEdge.weight;
           }
-          setAnalysisData({ ...info, ...techParams, id: selectedId, type: selectedType });
-        })
-        .catch(console.error);
+        }
+      }
+      setAnalysisData({ ...info, ...techParams, id: selectedId, type: selectedType });
     } else {
       setAnalysisData(null);
     }
   }, [selectedId, selectedType, fullServerState]);
 
+  const lastPollTs = useRef(0);
   useEffect(() => {
     const pull = () =>
-      fetch("/api/graph-state").then(r => r.json()).then(s => {
-        setFullServerState(s);
-        if (s?.settings?.metadataOverrides) setMetadataOverrides(s.settings.metadataOverrides);
-      }).catch(() => {});
+      fetch(`/api/graph-state?since=${lastPollTs.current}`)
+        .then(r => r.json())
+        .then((s: ServerGraphState & { unchanged?: boolean }) => {
+          if (s.unchanged) return; // nothing changed — skip re-render
+          lastPollTs.current = s.lastUpdated;
+          setFullServerState(s);
+        }).catch(() => {});
     pull();
     const t = setInterval(pull, 3000);
     return () => clearInterval(t);
@@ -379,7 +381,7 @@ export default function Home() {
         <AnalysisSidebar
           data={analysisData}
           isOpen={!!selectedId}
-          metadataOverrides={metadataOverrides}
+          metadataOverrides={fullServerState?.settings?.metadataOverrides}
           onClose={() => { setSelectedId(null); setSelectedType(null); }}
           onDelete={(id) => {
             fetch("/api/graph-state", {
