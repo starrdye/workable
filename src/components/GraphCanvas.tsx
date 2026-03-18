@@ -4,6 +4,7 @@ import {
   useMemo, useRef, useState,
 } from "react";
 import { CORE_NODE_IDS, ROLE_COLOR } from "@/lib/constants";
+import type { NodeTask } from "@/lib/serverState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface GraphCanvasRef {
@@ -59,6 +60,13 @@ interface WorkflowApiState {
     nodeDelayOverrides: Record<string, number>;
     /** Core node IDs to hide — set by templates that use their own node sets. */
     hiddenCoreNodes?: string[];
+    /** Per-node metadata overrides — includes tasks, name, status, etc. */
+    metadataOverrides?: Record<string, {
+      name?: string; role?: string; status?: string; statusColor?: string;
+      summary?: string; processes?: string[]; connections?: string[];
+      constraints?: string;
+      tasks?: import("@/lib/serverState").NodeTask[];
+    }>;
   };
   lastUpdated: number;
   _positionsHash?: string;
@@ -124,6 +132,18 @@ function getSatellites(cx: number, cy: number, id: string, count = 10): Array<{x
   }
   return out;
 }
+
+// Task dot status colours (shown as small circles around eco nodes in web-map view)
+const TASK_STATUS_COLOR: Record<NodeTask["status"], string> = {
+  "todo":        "#94A3B8",  // slate  — not started
+  "in-progress": "#3B82F6",  // blue   — active
+  "done":        "#10B981",  // emerald— complete
+  "blocked":     "#EF4444",  // red    — needs help
+  "review":      "#A855F7",  // purple — awaiting review
+};
+const TASK_PRIORITY_LABEL: Record<NodeTask["priority"], string> = {
+  low: "↓ Low", medium: "→ Med", high: "↑ High",
+};
 
 // Default border/text per node ID (baseline view)
 const BASE_STYLE: Record<string, { border: string; text: string }> = {
@@ -548,6 +568,49 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       [nodes]
     );
 
+    // ── Pan + Zoom ────────────────────────────────────────────────────────────
+    const [viewTransform, setViewTransform] = useState({ x: 0, y: 0, scale: 1 });
+    // Mutable ref so wheel/pan handlers always see fresh values without stale closure
+    const vtRef  = useRef({ x: 0, y: 0, scale: 1 });
+    const panRef = useRef<{ sx: number; sy: number; svx: number; svy: number } | null>(null);
+    // Separate flag so handlePaneClick can skip deselect when canvas was panned
+    const isPanningRef = useRef(false);
+
+    useEffect(() => { vtRef.current = viewTransform; }, [viewTransform]);
+
+    /** Convert a viewport client position to canvas-space (pre-transform). */
+    const clientToCanvas = useCallback((clientX: number, clientY: number) => {
+      const rect = canvasRef.current!.getBoundingClientRect();
+      const vt = vtRef.current;
+      return { x: (clientX - rect.left - vt.x) / vt.scale,
+               y: (clientY - rect.top  - vt.y) / vt.scale };
+    }, []);
+
+    // Wheel → zoom towards cursor
+    const handleWheel = useCallback((e: WheelEvent) => {
+      e.preventDefault();
+      const rect = canvasRef.current!.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const vt = vtRef.current;
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const ns = Math.max(0.15, Math.min(4, vt.scale * factor));
+      const next = { x: mx - (mx - vt.x) * (ns / vt.scale),
+                     y: my - (my - vt.y) * (ns / vt.scale),
+                     scale: ns };
+      vtRef.current = next;
+      setViewTransform(next);
+    }, []);
+    useEffect(() => {
+      const el = canvasRef.current;
+      if (!el) return;
+      el.addEventListener("wheel", handleWheel, { passive: false });
+      return () => el.removeEventListener("wheel", handleWheel);
+    }, [handleWheel]);
+
+    // ── Task dot popup ────────────────────────────────────────────────────────
+    const [taskPopup, setTaskPopup] = useState<{ task: NodeTask; px: number; py: number } | null>(null);
+
     // Rebuild nodes when server state or options change
     useEffect(() => {
       if (!serverState) return;
@@ -609,30 +672,40 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
       if (e.button !== 0) return;
       e.stopPropagation();
-      const rect = canvasRef.current!.getBoundingClientRect();
+      const { x, y } = clientToCanvas(e.clientX, e.clientY);
       const node = (isEcosystem ? ecosystemNodes : baselineNodes).find((n) => n.id === nodeId)!;
-      dragRef.current = { nodeId, offsetX: e.clientX - rect.left - node.x, offsetY: e.clientY - rect.top - node.y, hasMoved: false };
-    }, [isEcosystem, baselineNodes, ecosystemNodes]);
+      dragRef.current = { nodeId, offsetX: x - node.x, offsetY: y - node.y, hasMoved: false };
+    }, [isEcosystem, baselineNodes, ecosystemNodes, clientToCanvas]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
-      const rect = canvasRef.current!.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      
-      if (connectFrom) {
-        setMousePos({ x: mx, y: my });
+      // Pan gesture — active when panning canvas (no node drag)
+      if (panRef.current && !dragRef.current) {
+        const dx = e.clientX - panRef.current.sx;
+        const dy = e.clientY - panRef.current.sy;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isPanningRef.current = true;
+        if (isPanningRef.current) {
+          const next = { x: panRef.current.svx + dx, y: panRef.current.svy + dy, scale: vtRef.current.scale };
+          vtRef.current = next;
+          setViewTransform(next);
+        }
+        return;
       }
+
+      // Canvas-space position (accounts for pan/zoom)
+      const { x, y } = clientToCanvas(e.clientX, e.clientY);
+      if (connectFrom) setMousePos({ x, y });
 
       const d = dragRef.current;
       if (!d) return;
-      const newX = mx - d.offsetX;
-      const newY = my - d.offsetY;
+      const newX = x - d.offsetX;
+      const newY = y - d.offsetY;
       d.hasMoved = true;
       const updater = (ns: CanvasNode[]) => ns.map((n) => n.id === d.nodeId ? { ...n, x: newX, y: newY } : n);
       if (isEcosystem) setEcosystemNodes(updater); else setBaselineNodes(updater);
-    }, [isEcosystem, connectFrom]);
+    }, [isEcosystem, connectFrom, clientToCanvas]);
 
     const handleMouseUp = useCallback(() => {
+      panRef.current = null; // end any active pan gesture
       const d = dragRef.current;
       if (!d) return;
       if (d.hasMoved) {
@@ -652,9 +725,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("[data-nodeid]")) return;
       e.preventDefault();
-      const rect = canvasRef.current!.getBoundingClientRect();
-      setCtxMenu({ type: "canvas", x: e.clientX, y: e.clientY, cx: e.clientX - rect.left, cy: e.clientY - rect.top });
-    }, []);
+      const { x: cx, y: cy } = clientToCanvas(e.clientX, e.clientY);
+      setCtxMenu({ type: "canvas", x: e.clientX, y: e.clientY, cx, cy });
+    }, [clientToCanvas]);
 
     const handleNodeContextMenu = useCallback((e: React.MouseEvent, nodeId: string) => {
       e.preventDefault(); e.stopPropagation();
@@ -715,7 +788,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
     const handlePaneClick = useCallback(() => {
       if (dragRef.current?.hasMoved) return;
-      setCtxMenu(null); setConnectFrom(null); onDeselect();
+      // Suppress deselect if the mouse moved during this pane drag (pan gesture)
+      if (isPanningRef.current) { isPanningRef.current = false; return; }
+      setCtxMenu(null); setConnectFrom(null); setTaskPopup(null); onDeselect();
     }, [onDeselect]);
 
     // ── Delete key ────────────────────────────────────────────────────────────
@@ -845,6 +920,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       `);
     });
 
+    // ── Compute max degree once for edge-thickness scaling ────────────────────
+    const maxNodeDeg = useMemo(() => Math.max(...Object.values(nodeDeg), 1), [nodeDeg]);
+
     // ── Render ────────────────────────────────────────────────────────────────
     return (
       <div
@@ -852,7 +930,13 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         className="w-full h-full relative overflow-hidden select-none"
         style={{
           background: "#F8FAFC",
-          cursor: connectFrom ? "crosshair" : "default",
+          cursor: isPanningRef.current ? "grabbing" : connectFrom ? "crosshair" : "default",
+        }}
+        onMouseDown={(e) => {
+          // Start canvas pan on left-click on empty area (not a node)
+          if (e.button !== 0 || (e.target as HTMLElement).closest("[data-nodeid]")) return;
+          const vt = vtRef.current;
+          panRef.current = { sx: e.clientX, sy: e.clientY, svx: vt.x, svy: vt.y };
         }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -860,7 +944,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         onClick={handlePaneClick}
         onContextMenu={handleCanvasContextMenu}
       >
-        {/* Blueprint dot background */}
+        {/* Blueprint dot background — NOT part of the pan/zoom transform */}
         <div className="absolute inset-0 pointer-events-none opacity-40"
           style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
         <style dangerouslySetInnerHTML={{ __html: seqStyles.join("\n") + `
@@ -875,7 +959,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           }
         ` }} />
 
-        {/* ── SVG edge layer — bezier curves + satellite clusters ─────────────────── */}
+        {/* ── Pan / zoom transform container — SVG edges + node divs move together ── */}
+        <div style={{
+          position: "absolute", inset: 0,
+          transformOrigin: "0 0",
+          transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})`,
+          willChange: "transform",
+        }}>
+
+        {/* ── SVG edge layer — bezier curves + satellite clusters + task dots ────── */}
         <svg
           className="absolute inset-0 w-full h-full"
           style={{ zIndex: 10, overflow: "visible", pointerEvents: "none" }}
@@ -895,6 +987,52 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 opacity={s.opacity * baseOpacity * (node.isDeprecated ? 0.3 : 1)}
               />
             ));
+          })}
+
+          {/* ── Task dots — self-owned tasks orbiting each eco node ─────────────── */}
+          {/* Each dot represents a task assigned to this entity. Color = status.   */}
+          {/* Click → viewport-positioned popup with task details.                  */}
+          {isEcosystem && nodes.filter(n => n.isEco).map(node => {
+            const tasks: NodeTask[] = serverState?.settings?.metadataOverrides?.[node.id]?.tasks ?? [];
+            if (!tasks.length) return null;
+            const ncx = node.x + SPHERE_SZ / 2;
+            const ncy = node.y + SPHERE_SZ / 2;
+            const taskR = 30; // orbit radius from node centre
+            return tasks.slice(0, 8).map((task, i) => {
+              const angle = (i / Math.min(tasks.length, 8)) * Math.PI * 2 - Math.PI / 2;
+              const tx = ncx + taskR * Math.cos(angle);
+              const ty = ncy + taskR * Math.sin(angle);
+              const color = TASK_STATUS_COLOR[task.status];
+              return (
+                <g key={`${node.id}-task-${task.id}`}>
+                  {/* Connecting line from node to task dot */}
+                  <line x1={ncx} y1={ncy} x2={tx} y2={ty}
+                    stroke={color} strokeWidth="0.8" opacity="0.3" />
+                  {/* Task dot — interactive */}
+                  <circle
+                    cx={tx} cy={ty} r={5}
+                    fill={color} stroke="white" strokeWidth="1.5"
+                    style={{ cursor: "pointer", pointerEvents: "all", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.2))" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = canvasRef.current!.getBoundingClientRect();
+                      const vt = vtRef.current;
+                      setTaskPopup({
+                        task,
+                        px: rect.left + tx * vt.scale + vt.x,
+                        py: rect.top  + ty * vt.scale + vt.y,
+                      });
+                    }}
+                  />
+                  {/* Priority indicator ring for high-priority tasks */}
+                  {task.priority === "high" && (
+                    <circle cx={tx} cy={ty} r={7.5}
+                      fill="none" stroke={color} strokeWidth="1" opacity="0.4"
+                      strokeDasharray="3 2" />
+                  )}
+                </g>
+              );
+            });
           })}
 
           {edges.map((edge) => {
@@ -930,7 +1068,6 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
             const isSelected = selectedId === edge.id && selectedType === "edge";
             const edgeMeta = EDGE_META[edge.id];
-            const sw = isEcosystem ? 1.0 : 1.5;
 
             // ── Option D: adaptive arc count based on endpoint degree ────────────
             // degree ≤ 2  → straight line   (clean, uncluttered sparse graphs)
@@ -938,6 +1075,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             // degree ≥ 6  → 4-arc bundle    (MiroFish sweeping bundle, high density)
             const srcDeg  = nodeDeg[edge.source] || 0;
             const tgtDeg  = nodeDeg[edge.target] || 0;
+
+            // ── Edge thickness: scales with avg endpoint degree + edge weight ─────
+            // Busier nodes produce thicker lines; higher-weight edges are thicker.
+            const relWeight  = edge.weight ?? serverState?.settings?.edgeWeightOverrides?.[edge.id]?.weight ?? 1;
+            const avgDeg     = (srcDeg + tgtDeg) / 2;
+            const degScale   = 0.5 + (avgDeg / maxNodeDeg) * 1.0;
+            const sw = isEcosystem
+              ? Math.max(0.5, Math.min(3.5, 0.9 * degScale * relWeight))
+              : Math.max(0.8, Math.min(5.0, 1.5 * degScale * relWeight));
             const maxDeg  = Math.max(srcDeg, tgtDeg);
             const arcMode = isEcosystem
               ? (maxDeg >= 6 ? "bundle" : maxDeg >= 3 ? "bezier" : "straight")
@@ -1170,6 +1316,75 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             );
           });
         })()}
+
+        </div>{/* ── end pan/zoom transform container ─────────────── */}
+
+        {/* ── Task dot popup — fixed viewport-space, outside transform ─────── */}
+        {taskPopup && (
+          <div
+            className="fixed z-[500] pointer-events-auto"
+            style={{ left: taskPopup.px + 14, top: taskPopup.py - 10 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="bg-white rounded-xl shadow-2xl border border-slate-200 p-4 w-64"
+              style={{ backdropFilter: "blur(12px)" }}
+            >
+              {/* Title row */}
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5"
+                    style={{ background: TASK_STATUS_COLOR[taskPopup.task.status] }}
+                  />
+                  <span className="font-semibold text-slate-800 text-sm leading-tight truncate">
+                    {taskPopup.task.title}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setTaskPopup(null)}
+                  className="text-slate-400 hover:text-slate-600 text-base leading-none flex-shrink-0 mt-0.5"
+                >×</button>
+              </div>
+
+              {/* Status + Priority badges */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                <span
+                  className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                  style={{
+                    background: TASK_STATUS_COLOR[taskPopup.task.status] + "20",
+                    color: TASK_STATUS_COLOR[taskPopup.task.status],
+                  }}
+                >
+                  {taskPopup.task.status.replace("-", " ")}
+                </span>
+                <span className={[
+                  "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                  taskPopup.task.priority === "high"   ? "bg-red-100 text-red-600"
+                  : taskPopup.task.priority === "medium" ? "bg-amber-100 text-amber-600"
+                  : "bg-slate-100 text-slate-500",
+                ].join(" ")}>
+                  {TASK_PRIORITY_LABEL[taskPopup.task.priority]}
+                </span>
+              </div>
+
+              {/* Due date */}
+              {taskPopup.task.dueDate && (
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-2.5">
+                  <span>📅</span>
+                  <span>Due <strong>{taskPopup.task.dueDate}</strong></span>
+                </div>
+              )}
+
+              {/* Note / description */}
+              {taskPopup.task.note && (
+                <div className="text-[11px] text-slate-600 bg-slate-50 rounded-lg p-2.5 leading-relaxed border border-slate-100 whitespace-pre-wrap">
+                  {taskPopup.task.note}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Context menu ─────────────────────────────────── */}
         {ctxMenu && (

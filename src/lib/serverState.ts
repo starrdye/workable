@@ -34,6 +34,24 @@ export interface CustomEdgeConfig {
   zLayer?: number;
 }
 
+/**
+ * A self-owned task / to-do attached to a node (shown as interactive dots
+ * around the node in the ecosystem web-map view).
+ */
+export interface NodeTask {
+  id: string;
+  /** Short task title, shown on the dot popup. */
+  title: string;
+  /** Workflow status of this task. */
+  status: "todo" | "in-progress" | "done" | "blocked" | "review";
+  /** Subjective priority. */
+  priority: "low" | "medium" | "high";
+  /** ISO date string (YYYY-MM-DD), optional. */
+  dueDate?: string;
+  /** Free-form note / description. */
+  note?: string;
+}
+
 export interface GlobalSettings {
   nodePause: number;
   edgeWeightOverrides: Record<string, { sequence?: number; weight?: number }>;
@@ -44,6 +62,8 @@ export interface GlobalSettings {
     processes?: string[]; connections?: string[];
     /** Operational / compliance / technical constraints for this entity. */
     constraints?: string;
+    /** Self-assigned tasks shown as interactive dots in the web-map view. */
+    tasks?: NodeTask[];
   }>;
   /** Visual mode for the ecosystem web-map: controls edge density rendering. */
   ecoEdgeDensity?: "normal" | "dense" | "ultra";
