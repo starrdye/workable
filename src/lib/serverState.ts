@@ -6,6 +6,7 @@ import { NODE_DATA } from './constants';
 export interface NodePosition {
   x: number;
   y: number;
+  z?: number;  // Simulated depth: -1.0 (back) to +1.0 (front). Used only in ecosystem view.
 }
 
 export interface CustomNodeConfig {
@@ -58,6 +59,8 @@ export interface ServerGraphState {
   customEdges: CustomEdgeConfig[];
   settings: GlobalSettings;
   lastUpdated: number;
+  /** Hash of current positions — used by client to skip re-renders when nothing moved. */
+  _positionsHash?: string;
 }
 
 // ── Default positions matching the prototype exactly ──────────────────────────
@@ -71,11 +74,13 @@ const DEFAULT_BASELINE: Record<string, NodePosition> = {
   cy:     { x: 880, y: 250 },
 };
 
+// MiroFish two-cluster layout: left cluster (nav+xy) and right cluster (mary+ed)
+// Positioned to fit a ~700px canvas; satellites radiate outward from each center
 const DEFAULT_ECOSYSTEM: Record<string, NodePosition> = {
-  nav:  { x: 200, y: 250 },
-  xy:   { x: 450, y: 250 },
-  mary: { x: 700, y: 150 },
-  ed:   { x: 700, y: 350 },
+  nav:  { x: 140, y: 195, z: -0.3 },   // left cluster upper — magenta external
+  xy:   { x: 175, y: 295, z: 0.0  },   // left cluster lower — cyan hub
+  mary: { x: 530, y: 165, z: 0.4  },   // right cluster upper — violet collaborator
+  ed:   { x: 500, y: 290, z: -0.5 },   // right cluster lower — amber bottleneck
 };
 
 const DEFAULT_SETTINGS: GlobalSettings = {
@@ -124,7 +129,13 @@ if (!global.__graphState.originalBaselinePositions) {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function getGraphState(): ServerGraphState {
-  return global.__graphState!;
+  const state = global.__graphState!;
+  // Compute a lightweight positions hash for client-side change detection
+  const hashInput = JSON.stringify(state.ecosystemPositions) + JSON.stringify(state.baselinePositions);
+  let h = 0;
+  for (const c of hashInput) h = (Math.imul(31, h) + c.charCodeAt(0)) | 0;
+  state._positionsHash = h.toString(16);
+  return state;
 }
 
 export function updateNodePosition(
