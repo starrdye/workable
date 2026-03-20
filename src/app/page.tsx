@@ -5,7 +5,7 @@ import { StartScreen, type AIParsedResult } from "@/components/StartScreen";
 import { GraphCanvas, GraphCanvasRef } from "@/components/GraphCanvas";
 import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
 import { AISettingsModal, loadAIConfig, type AIConfig } from "@/components/AISettingsModal";
-import { AIAnalysisModal } from "@/components/AIAnalysisModal";
+import { AIAnalysisModal, type SuggestedConnection, type SuggestedRemoval } from "@/components/AIAnalysisModal";
 import { AI_CONFIG_KEY } from "@/components/AISettingsModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
@@ -49,6 +49,8 @@ export default function Home() {
   const [aiAnalysis, setAiAnalysis]               = useState<string | null>(null);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
   const [aiAnalysisError, setAiAnalysisError]     = useState<string | null>(null);
+  const [aiSuggestedConnections, setAiSuggestedConnections] = useState<SuggestedConnection[]>([]);
+  const [aiSuggestedRemovals, setAiSuggestedRemovals]       = useState<SuggestedRemoval[]>([]);
 
   const [tooltip, setTooltip] = useState<{ name: string; summary: string; x: number; y: number; visible: boolean }>
     ({ name: "", summary: "", x: 0, y: 0, visible: false });
@@ -79,6 +81,7 @@ export default function Home() {
         ecosystemPositions: result.ecosystemPositions,
         settings: {
           ...(result.metadataOverrides ? { metadataOverrides: result.metadataOverrides } : {}),
+          ...(result.workflowGroups   ? { workflowGroups:    result.workflowGroups   } : {}),
           ...(result.settings ?? {}),
         },
       }),
@@ -93,6 +96,8 @@ export default function Home() {
     if (!activeApiKey) { setShowAISettings(true); return; }
     setAiAnalysis(null);
     setAiAnalysisError(null);
+    setAiSuggestedConnections([]);
+    setAiSuggestedRemovals([]);
     setAiAnalysisLoading(true);
     setShowAIAnalysis(true);
     try {
@@ -107,8 +112,13 @@ export default function Home() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) setAiAnalysisError(data.error ?? "Analysis failed.");
-      else setAiAnalysis(data.analysis);
+      if (!res.ok) {
+        setAiAnalysisError(data.error ?? "Analysis failed.");
+      } else {
+        setAiAnalysis(data.analysis);
+        setAiSuggestedConnections(data.suggestedConnections ?? []);
+        setAiSuggestedRemovals(data.suggestedRemovals ?? []);
+      }
     } catch {
       setAiAnalysisError("Network error. Please try again.");
     } finally {
@@ -233,6 +243,33 @@ export default function Home() {
       settings: { ...prev.settings!, workflowGroups: (prev.settings?.workflowGroups ?? []).filter(g => g.id !== id) },
     } : prev);
     setGroupFilters(f => f.filter(gid => gid !== id));
+  };
+
+  const handleAddConnection = (conn: SuggestedConnection) => {
+    const edgeId = `${conn.sourceId}-${conn.targetId}-opt`;
+    const newEdge = {
+      id: edgeId, source: conn.sourceId, target: conn.targetId,
+      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+    };
+    fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "addEdge", edge: newEdge }) }).catch(console.error);
+    setFullServerState(prev => prev ? {
+      ...prev,
+      customEdges: [...(prev.customEdges ?? []).filter(e => e.id !== edgeId), newEdge],
+    } : prev);
+  };
+
+  const handleRemoveEntity = (removal: SuggestedRemoval) => {
+    if (removal.type === "node") {
+      fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "deleteNode", nodeId: removal.id }) }).catch(console.error);
+      setFullServerState(prev => prev ? {
+        ...prev,
+        customNodes: (prev.customNodes ?? []).filter(n => n.id !== removal.id),
+        customEdges: (prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
+      } : prev);
+      if (selectedId === removal.id) { setSelectedId(null); setSelectedType(null); }
+    }
   };
 
   const hasActiveFilters = roleFilters.length > 0 || groupFilters.length > 0 || searchQuery.trim().length > 0;
@@ -491,9 +528,17 @@ export default function Home() {
                   </p>
                 )}
 
+                {/* Sort: top-level first, then subgroups indented under their parent */}
                 {workflowGroups.map((group) => (
-                  <div key={group.id} className="group/row rounded-xl border border-slate-100 bg-slate-50/70 p-2.5">
+                  <div key={group.id}
+                    className={`group/row rounded-xl border bg-slate-50/70 p-2.5 ${group.parentGroupId ? "ml-4 border-dashed border-slate-200" : "border-slate-100"}`}
+                  >
                     <div className="flex items-center gap-2">
+                      {/* Subgroup indent indicator */}
+                      {group.parentGroupId && (
+                        <span className="text-[9px] text-slate-300 font-bold flex-shrink-0">↳</span>
+                      )}
+
                       {/* Color swatch + picker */}
                       <div className="relative flex-shrink-0">
                         <div className="w-4 h-4 rounded" style={{ background: group.color }} />
@@ -677,8 +722,17 @@ export default function Home() {
       {/* AI Modals */}
       <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
         onSave={handleSaveAiConfig} currentConfig={aiConfig} />
-      <AIAnalysisModal isOpen={showAIAnalysis} isLoading={aiAnalysisLoading} analysis={aiAnalysis}
-        error={aiAnalysisError} onClose={() => setShowAIAnalysis(false)} />
+      <AIAnalysisModal
+        isOpen={showAIAnalysis}
+        isLoading={aiAnalysisLoading}
+        analysis={aiAnalysis}
+        suggestedConnections={aiSuggestedConnections}
+        suggestedRemovals={aiSuggestedRemovals}
+        error={aiAnalysisError}
+        onClose={() => setShowAIAnalysis(false)}
+        onAddConnection={handleAddConnection}
+        onRemoveEntity={handleRemoveEntity}
+      />
     </div>
   );
 }
