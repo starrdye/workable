@@ -4,24 +4,54 @@ import { NODE_DATA, EDGE_DATA } from '@/lib/constants';
 
 const SYSTEM_PROMPT = `You are a workflow optimization expert specializing in business process improvement and operational efficiency.
 
-Analyze the provided workflow graph and deliver a structured, actionable report. Format your response using this exact structure:
+Analyze the provided workflow graph and return ONLY a valid JSON object with this exact structure:
 
-## Workflow Summary
-2–3 sentences describing the overall workflow, its purpose, and current state.
+{
+  "analysis": "## Workflow Summary\\n...\\n## Bottlenecks Identified\\n...\\n## Constraint Analysis\\n...\\n## Quick Wins\\n...",
+  "suggestedConnections": [
+    {
+      "sourceId": "existing_node_id",
+      "sourceName": "Source Node Name",
+      "targetId": "existing_node_id",
+      "targetName": "Target Node Name",
+      "connectionName": "Short label for this connection",
+      "connectionType": "optimised",
+      "reason": "One sentence explaining why this connection improves the workflow."
+    }
+  ],
+  "suggestedRemovals": [
+    {
+      "type": "node",
+      "id": "existing_node_id",
+      "name": "Entity Name",
+      "action": "remove|automate|merge",
+      "reason": "One sentence explaining why this entity should be removed, automated, or merged."
+    }
+  ]
+}
 
-## Bottlenecks Identified
-List each bottleneck as a bullet point. For each one, name the node/step and explain why it slows the process.
+Rules for the analysis field:
+- Use \\n for line breaks inside the JSON string
+- Include these sections: ## Workflow Summary, ## Bottlenecks Identified, ## Constraint Analysis, ## Quick Wins
+- Each section is 2-5 bullet points using "- " prefix
 
-## Constraint Analysis
-For each entity that has a "constraints" field set, evaluate whether the current relations respect those constraints. Flag any violations or risks. If no constraints are set, write "No constraints defined — consider adding them via the sidebar."
+Rules for suggestedConnections:
+- Propose 1-3 new directed connections that would optimise the workflow (e.g. bypass a bottleneck, add automation)
+- connectionType is always "optimised" (these are improvement-mode-only connections)
+- Only reference node IDs that actually exist in the workflow data provided
+- If no useful connections can be suggested, return an empty array []
 
-## Optimization Recommendations
-Provide 3–5 specific, actionable improvements. Each should reference actual nodes or edges from the workflow by name. Where relevant, suggest how entities and their relations could be restructured to better satisfy the listed constraints.
+Rules for suggestedRemovals:
+- Propose 0-3 entities (nodes) that are redundant, automatable, or could be merged
+- action: "remove" = delete entirely, "automate" = replace human with tool, "merge" = fold into another node
+- Only reference node IDs that actually exist in the workflow data provided
+- If no removals are warranted, return an empty array []
 
-## Quick Wins
-1–2 changes that can be implemented immediately with the highest impact-to-effort ratio.
+Output ONLY the JSON object — no markdown fences, no extra text`;
 
-Be concise, practical, and base all recommendations on the actual graph data provided.`;
+function stripFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,7 +69,7 @@ export async function POST(req: NextRequest) {
       const defaults: Record<AIProvider, string> = {
         anthropic: 'claude-sonnet-4-6',
         gemini:    'gemini-2.0-flash',
-        doubao:    '', // must be supplied by user (Ark endpoint ID)
+        doubao:    '',
       };
       return defaults[provider] ?? '';
     })();
@@ -53,7 +83,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Build a readable snapshot of the current workflow for the AI
     const metadataOverrides = (workflowData as { settings?: { metadataOverrides?: Record<string, { constraints?: string }> } })
       .settings?.metadataOverrides ?? {};
 
@@ -81,16 +110,35 @@ export async function POST(req: NextRequest) {
       null, 2
     );
 
-    const analysis = await generateText({
+    const rawText = await generateText({
       provider,
       model: resolvedModel,
       apiKey,
       systemPrompt: SYSTEM_PROMPT,
       userMessage:  `Analyze this workflow and provide optimization recommendations:\n\n${workflowSummary}`,
-      maxTokens:    1024,
+      maxTokens:    2000,
     });
 
-    return NextResponse.json({ analysis });
+    // Try to parse as structured JSON; fall back to plain analysis text
+    let analysis: string;
+    let suggestedConnections: unknown[] = [];
+    let suggestedRemovals: unknown[] = [];
+
+    try {
+      const parsed = JSON.parse(stripFences(rawText)) as {
+        analysis?: string;
+        suggestedConnections?: unknown[];
+        suggestedRemovals?: unknown[];
+      };
+      analysis             = parsed.analysis ?? rawText;
+      suggestedConnections = Array.isArray(parsed.suggestedConnections) ? parsed.suggestedConnections : [];
+      suggestedRemovals    = Array.isArray(parsed.suggestedRemovals)    ? parsed.suggestedRemovals    : [];
+    } catch {
+      // AI didn't return JSON — treat the whole text as the analysis
+      analysis = rawText;
+    }
+
+    return NextResponse.json({ analysis, suggestedConnections, suggestedRemovals });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     if (message.includes('401') || message.includes('invalid_api_key') || message.includes('API_KEY')) {
