@@ -67,7 +67,7 @@ interface WorkflowApiState {
       constraints?: string;
       tasks?: import("@/lib/serverState").NodeTask[];
     }>;
-    workflowGroups?: Array<{ id: string; name: string; color: string; nodeIds: string[] }>;
+    workflowGroups?: Array<{ id: string; name: string; color: string; nodeIds: string[]; parentGroupId?: string }>;
   };
   lastUpdated: number;
   _positionsHash?: string;
@@ -279,6 +279,16 @@ function buildCsvExport(
     if (v.weight !== undefined)   lines.push(csvRow(`edgeWeight.${id}`, v.weight));
     if (v.sequence !== undefined) lines.push(csvRow(`edgeSeq.${id}`, v.sequence));
   });
+  (settings.hiddenCoreNodes ?? []).forEach((id) => lines.push(csvRow(`hiddenCoreNode.${id}`, 1)));
+
+  if (settings.workflowGroups?.length) {
+    lines.push("");
+    lines.push("[WORKFLOW_GROUPS]");
+    lines.push("id,name,color,nodeIds,parentGroupId");
+    settings.workflowGroups.forEach((g) => {
+      lines.push(csvRow(g.id, g.name, g.color, g.nodeIds.join(","), g.parentGroupId ?? ""));
+    });
+  }
 
   return lines.join("\n");
 }
@@ -339,7 +349,10 @@ function parseCsvImport(text: string): {
       const val = parseFloat(row.value);
       if (row.key === "nodePause") settings.nodePause = val;
       else if (row.key.startsWith("nodeDelay.")) settings.nodeDelayOverrides![row.key.replace("nodeDelay.", "")] = val;
-      else if (row.key.startsWith("edgeWeight.")) {
+      else if (row.key.startsWith("hiddenCoreNode.")) {
+        if (!settings.hiddenCoreNodes) settings.hiddenCoreNodes = [];
+        settings.hiddenCoreNodes.push(row.key.replace("hiddenCoreNode.", ""));
+      } else if (row.key.startsWith("edgeWeight.")) {
         const id = row.key.replace("edgeWeight.", "");
         if (!settings.edgeWeightOverrides![id]) settings.edgeWeightOverrides![id] = {};
         settings.edgeWeightOverrides![id].weight = val;
@@ -348,6 +361,17 @@ function parseCsvImport(text: string): {
         if (!settings.edgeWeightOverrides![id]) settings.edgeWeightOverrides![id] = {};
         settings.edgeWeightOverrides![id].sequence = Math.round(val);
       }
+    }
+    else if (section === "WORKFLOW_GROUPS" && row.id) {
+      if (!settings.workflowGroups) settings.workflowGroups = [];
+      const parentId = row.parentGroupId?.trim();
+      settings.workflowGroups.push({
+        id:      row.id,
+        name:    row.name || row.id,
+        color:   row.color || "#6366F1",
+        nodeIds: row.nodeIds ? row.nodeIds.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        ...(parentId ? { parentGroupId: parentId } : {}),
+      });
     }
   }
   return { baselinePositions, ecosystemPositions, customNodes, customEdges, settings };
@@ -415,7 +439,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
     const nodes = useMemo(() => {
       const hidden = new Set(serverState?.settings?.hiddenCoreNodes ?? []);
-      return canvasNodes.filter((n) => !hidden.has(n.id));
+      // Only hide core nodes — never hide custom nodes even if they share an ID with a core node
+      return canvasNodes.filter((n) => n.isCustom || !hidden.has(n.id));
     }, [canvasNodes, serverState]);
 
     const edges = useMemo(
@@ -668,17 +693,25 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         if (e.key !== "Delete" && e.key !== "Backspace") return;
         if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
         if (!selectedId) return;
-        if (selectedType === "node" && !CORE_IDS.has(selectedId)) {
-          onDeleteNode(selectedId);
-          setServerState((prev) => prev ? {
-            ...prev,
-            customNodes: prev.customNodes.filter(n => n.id !== selectedId),
-            customEdges: prev.customEdges.filter(e2 => e2.source !== selectedId && e2.target !== selectedId),
-            lastUpdated: Date.now(),
-          } : prev);
-          fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "deleteNode", nodeId: selectedId }),
-          }).catch(console.error);
+        if (selectedType === "node") {
+          if (CORE_IDS.has(selectedId)) {
+            const newHidden = [...new Set([...(serverState?.settings?.hiddenCoreNodes ?? []), selectedId])];
+            setServerState((prev) => prev ? { ...prev, settings: { ...prev.settings, hiddenCoreNodes: newHidden }, lastUpdated: Date.now() } : prev);
+            fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "updateSettings", settings: { hiddenCoreNodes: newHidden } }),
+            }).catch(console.error);
+          } else {
+            onDeleteNode(selectedId);
+            setServerState((prev) => prev ? {
+              ...prev,
+              customNodes: prev.customNodes.filter(n => n.id !== selectedId),
+              customEdges: prev.customEdges.filter(e2 => e2.source !== selectedId && e2.target !== selectedId),
+              lastUpdated: Date.now(),
+            } : prev);
+            fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "deleteNode", nodeId: selectedId }),
+            }).catch(console.error);
+          }
         } else if (selectedType === "edge") {
           setServerState((prev) => prev ? { ...prev, customEdges: prev.customEdges.filter(e2 => e2.id !== selectedId), lastUpdated: Date.now() } : prev);
           fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
@@ -757,7 +790,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       }`;
     });
 
-    const showLabels = viewTransform.scale >= 0.42;
+    // ── Level-of-Detail thresholds ────────────────────────────────────────────
+    // LOD 2 (full)     scale ≥ 0.60 : nodes + edges + task dots + labels
+    // LOD 1 (mid)      scale ≥ 0.30 : task dots hidden
+    // LOD 0 (abstract) scale <  0.30 : only workflow group regions visible
+    const LOD_TASKS    = 0.60;
+    const LOD_ABSTRACT = 0.30;
+    const showTasks    = viewTransform.scale >= LOD_TASKS;
+    const showNodes    = viewTransform.scale >= LOD_ABSTRACT;
+    const showLabels   = viewTransform.scale >= 0.50;
 
     // ── Render ────────────────────────────────────────────────────────────────
     return (
@@ -792,42 +833,144 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* ── SVG layer ─────────────────────────────────────────────────────── */}
         <svg
           className="absolute inset-0 w-full h-full"
-          style={{ zIndex: 10, overflow: "visible", pointerEvents: "none",
-            opacity: viewTransform.scale < 0.28 ? 0 : 1, transition: "opacity 0.2s" }}
+          style={{ zIndex: 10, overflow: "visible", pointerEvents: "none" }}
         >
-          {/* Workflow group regions */}
-          {(serverState?.settings?.workflowGroups ?? []).map((group) => {
-            const memberNodes = group.nodeIds.map((id) => nodeMap[id]).filter(Boolean);
-            if (memberNodes.length === 0) return null;
-            const PAD = 32;
-            const xs  = memberNodes.map((n) => n.x + R);
-            const ys  = memberNodes.map((n) => n.y + R);
-            const minX = Math.min(...xs) - PAD - R;
-            const minY = Math.min(...ys) - PAD - R;
-            const maxX = Math.max(...xs) + PAD + R;
-            const maxY = Math.max(...ys) + PAD + R;
-            const isLOD = viewTransform.scale < 0.42;
-            return (
-              <g key={group.id} style={{ pointerEvents: "none" }}>
-                <rect
-                  x={minX} y={minY} width={maxX - minX} height={maxY - minY}
-                  rx={16} ry={16}
-                  fill={group.color + "18"} stroke={group.color + "80"}
-                  strokeWidth={isLOD ? 2 : 1.5} strokeDasharray={isLOD ? undefined : "6 3"}
-                />
-                <text
-                  x={minX + 12} y={minY + (isLOD ? 26 : 16)}
-                  fontSize={isLOD ? 16 : 11} fontWeight={700} fill={group.color}
-                  style={{ userSelect: "none" }}
-                >
-                  {group.name}{isLOD && viewTransform.scale < 0.32 ? ` · ${memberNodes.length}` : ""}
-                </text>
-              </g>
-            );
-          })}
+          {/* Workflow group regions — true bounding box of member nodes.
+               Non-overlap is guaranteed by groupAwareLayout at position-assignment
+               time (AI generation + Reset Layout), not by visual clipping. */}
+          {(() => {
+            const allGroups = serverState?.settings?.workflowGroups ?? [];
+            const PAD        = 34;
+            const isLOD      = viewTransform.scale < 0.50;
+            const isAbstract = !showNodes;
 
-          {/* Task dots — orbiting baseline nodes */}
-          {nodes.map(node => {
+            // Recursively collect all node IDs for a group including its subgroups.
+            const allNodeIds = (groupId: string): string[] => {
+              const grp = allGroups.find(g => g.id === groupId);
+              if (!grp) return [];
+              return [
+                ...grp.nodeIds,
+                ...allGroups
+                  .filter(g => g.parentGroupId === groupId)
+                  .flatMap(child => allNodeIds(child.id)),
+              ];
+            };
+
+            // Bounding box of a set of node IDs (returns null if no positioned members).
+            const bbox = (nodeIds: string[]) => {
+              const members = nodeIds.map(id => nodeMap[id]).filter(Boolean);
+              if (!members.length) return null;
+              const xs = members.map(n => n.x + R);
+              const ys = members.map(n => n.y + R);
+              return {
+                minX: Math.min(...xs) - PAD - R,
+                maxX: Math.max(...xs) + PAD + R,
+                minY: Math.min(...ys) - PAD - R,
+                maxY: Math.max(...ys) + PAD + R,
+                count: members.length,
+              };
+            };
+
+            // Render parent groups first (background), then subgroups (foreground).
+            const topLevel = allGroups.filter(g => !g.parentGroupId);
+            const subGroups = allGroups.filter(g => !!g.parentGroupId);
+
+            const renderGroup = (group: typeof allGroups[0], isSubgroup: boolean) => {
+              // Parents expand to encompass all descendant nodes.
+              const ids = isSubgroup ? group.nodeIds : allNodeIds(group.id);
+              const b   = bbox(ids);
+              if (!b) return null;
+              const { minX, maxX, minY, maxY, count } = b;
+
+              const fill    = isAbstract
+                ? group.color + (isSubgroup ? "38" : "1E")
+                : group.color + (isSubgroup ? "20" : "10");
+              const stroke  = group.color + (isAbstract
+                ? (isSubgroup ? "DD" : "99")
+                : (isSubgroup ? "88" : "55"));
+              const strokeW = isAbstract ? (isSubgroup ? 2.5 : 3) : isLOD ? 2 : 1.5;
+              const dash    = isSubgroup ? undefined : (isAbstract ? undefined : "8 4");
+              const rx      = isSubgroup ? 12 : 18;
+
+              // In abstract mode (nodes hidden) the label moves to the bbox
+              // center and scales up so the group is identifiable at a glance.
+              const cx = (minX + maxX) / 2;
+              const cy = (minY + maxY) / 2;
+
+              const labelX = isAbstract
+                ? cx
+                : minX + (isSubgroup ? 10 : 14);
+              const labelY = isAbstract
+                ? cy
+                : minY + (isLOD
+                    ? (isSubgroup ? 20 : 24)
+                    : (isSubgroup ? 14 : 16));
+              const labelAnchor  = isAbstract ? "middle" : "start";
+              const labelBaseline = isAbstract ? "middle" : "auto";
+              const labelSize    = isAbstract
+                ? (isSubgroup ? 18 : 30)
+                : isLOD ? (isSubgroup ? 11 : 14)
+                : (isSubgroup ? 9 : 11);
+
+              // Label container pill — sized by estimated text width.
+              const labelText   = `${group.name}${(isAbstract || isLOD) ? ` · ${count}` : ""}`;
+              const pillPadX    = isAbstract ? (isSubgroup ? 14 : 20) : (isSubgroup ? 8 : 10);
+              const pillPadY    = isAbstract ? (isSubgroup ? 7  : 10) : (isSubgroup ? 4 : 5);
+              const charW       = labelSize * 0.58;
+              const pillW       = labelText.length * charW + pillPadX * 2;
+              const pillH       = labelSize + pillPadY * 2;
+              const pillX       = isAbstract ? cx - pillW / 2 : labelX - pillPadX;
+              const pillY       = isAbstract ? cy - pillH / 2 : labelY - labelSize - pillPadY;
+              const pillRx      = pillH / 2;
+              const pillFill    = group.color + (isSubgroup ? "30" : "18");
+              const pillStroke  = group.color + (isSubgroup ? "BB" : "77");
+
+              return (
+                <g key={group.id} style={{ pointerEvents: "none" }}>
+                  {/* Group region rectangle */}
+                  <rect
+                    x={minX} y={minY} width={maxX - minX} height={maxY - minY}
+                    rx={rx} ry={rx}
+                    fill={fill} stroke={stroke}
+                    strokeWidth={strokeW} strokeDasharray={dash}
+                  />
+                  {/* Label container pill */}
+                  <rect
+                    x={pillX} y={pillY} width={pillW} height={pillH}
+                    rx={pillRx} ry={pillRx}
+                    fill={pillFill} stroke={pillStroke}
+                    strokeWidth={isAbstract ? (isSubgroup ? 1.5 : 2) : 1}
+                  />
+                  <text
+                    x={labelX}
+                    y={labelY}
+                    fontSize={labelSize}
+                    fontWeight={700}
+                    fill={group.color}
+                    stroke={group.color}
+                    strokeWidth={isAbstract ? (isSubgroup ? 0.6 : 0.8) : 0}
+                    paintOrder="stroke fill"
+                    textAnchor={labelAnchor}
+                    dominantBaseline={labelBaseline}
+                    style={{ userSelect: "none" }}
+                    opacity={isSubgroup ? 0.9 : 1}
+                  >
+                    {labelText}
+                  </text>
+                </g>
+              );
+            };
+
+            return (
+              <>
+                {topLevel.map(g => renderGroup(g, false))}
+                {subGroups.map(g => renderGroup(g, true))}
+              </>
+            );
+          })()}
+
+          {/* Task dots — orbiting baseline nodes (hidden at LOD_TASKS zoom level) */}
+          {showTasks && nodes.map(node => {
             const tasks: NodeTask[] = serverState?.settings?.metadataOverrides?.[node.id]?.tasks ?? [];
             if (!tasks.length) return null;
             const ncx = node.x + R, ncy = node.y + R;
@@ -858,7 +1001,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             });
           })}
 
-          {/* Edges */}
+          {/* Edges — hidden in abstract LOD */}
+          <g style={{ opacity: showNodes ? 1 : 0, transition: "opacity 0.25s" }}>
           {edges.map((edge) => {
             const src = nodeMap[edge.source], tgt = nodeMap[edge.target];
             if (!src || !tgt) return null;
@@ -878,14 +1022,17 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             const srcDeg = nodeDeg[edge.source] || 0, tgtDeg = nodeDeg[edge.target] || 0;
             const avgDeg = (srcDeg + tgtDeg) / 2;
             const relWeight = edge.weight ?? serverState?.settings?.edgeWeightOverrides?.[edge.id]?.weight ?? 1;
-            const degScale = 0.5 + (avgDeg / maxNodeDeg) * 1.0;
-            const sw = Math.max(0.8, Math.min(5.0, 1.5 * degScale * relWeight));
+            const degScale = 0.4 + (avgDeg / maxNodeDeg) * 0.6;
+            const sw = Math.max(0.6, Math.min(3.0, 1.0 * degScale * relWeight));
 
             const isHoveredEdge = hoveredEdgeId === edge.id;
             const isConnected   = connectedEdgeIds?.has(edge.id) ?? false;
             const anyHover      = hoveredNodeId !== null || hoveredEdgeId !== null;
-            const baseOpacity   = edge.isDeprecated ? 0.15 : 1;
-            const highlightOpacity = anyHover ? (isHoveredEdge || isConnected ? 1 : 0.08) : baseOpacity;
+            // Resting opacity is low (subtle lines); spikes to full on hover/selection
+            const baseOpacity   = edge.isDeprecated ? 0.10 : 0.30;
+            const highlightOpacity = anyHover
+              ? (isHoveredEdge || isConnected ? 0.90 : 0.05)
+              : (isSelected ? 1 : baseOpacity);
             const strokeColor = isSelected ? "#4F46E5"
               : edge.isUpgraded ? "#10B981"
               : edge.isDeprecated ? "#CBD5E1"
@@ -908,7 +1055,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     transition: "stroke 0.2s, stroke-width 0.15s",
                   }}
                 />
-                {!edge.isDeprecated && (
+                {!edge.isDeprecated && (isHoveredEdge || isConnected || isSelected) && (
                   <path d={d} pathLength="1" stroke={pulseColor} strokeWidth={sw + 1.0} fill="none"
                     strokeDasharray="0.06 1"
                     style={{ animation: `svgflow-${edge.sequence || 1} ${cycleDur}s linear infinite` }}
@@ -933,9 +1080,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               </g>
             );
           })}
+          </g>
 
           {/* Connect mode rubber band */}
-          {connectFrom && (() => {
+          {showNodes && connectFrom && (() => {
             const src = nodeMap[connectFrom];
             if (!src) return null;
             return (
@@ -975,7 +1123,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     ? "0 0 0 3px rgba(99,102,241,0.4), 0 4px 6px -1px rgba(0,0,0,0.1)"
                     : "0 4px 6px -1px rgba(0,0,0,0.1)",
                 zIndex: 20,
-                opacity: isDep ? Math.min(0.3, opacity) : opacity,
+                opacity: !showNodes ? 0 : (isDep ? Math.min(0.3, opacity) : opacity),
+                pointerEvents: !showNodes ? "none" : undefined,
                 cursor: dragRef.current?.nodeId === node.id ? "grabbing" : (connectFrom ? "pointer" : "grab"),
                 userSelect: "none",
                 transition: "border-color 0.5s, opacity 0.3s, box-shadow 0.3s",
@@ -1118,10 +1267,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     </div>
                   </div>
                 )}
-                {!CORE_IDS.has(ctxMenu.nodeId) && (
-                  <button className="w-full text-left px-4 py-2 hover:bg-red-50 hover:text-red-600 font-medium flex items-center gap-2 transition-colors border-t border-gray-100 mt-1"
-                    onClick={() => {
-                      const id = ctxMenu.nodeId;
+                <button className="w-full text-left px-4 py-2 hover:bg-red-50 hover:text-red-600 font-medium flex items-center gap-2 transition-colors border-t border-gray-100 mt-1"
+                  onClick={() => {
+                    const id = ctxMenu.nodeId;
+                    if (CORE_IDS.has(id)) {
+                      const newHidden = [...new Set([...(serverState?.settings?.hiddenCoreNodes ?? []), id])];
+                      setServerState((prev) => prev ? { ...prev, settings: { ...prev.settings, hiddenCoreNodes: newHidden }, lastUpdated: Date.now() } : prev);
+                      fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "updateSettings", settings: { hiddenCoreNodes: newHidden } }) }).catch(console.error);
+                    } else {
                       onDeleteNode(id);
                       setServerState((prev) => prev ? { ...prev,
                         customNodes: prev.customNodes.filter(n => n.id !== id),
@@ -1129,11 +1283,11 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                         lastUpdated: Date.now() } : prev);
                       fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ action: "deleteNode", nodeId: id }) }).catch(console.error);
-                      setCtxMenu(null);
-                    }}>
-                    <span className="text-red-400">×</span> Delete Node
-                  </button>
-                )}
+                    }
+                    setCtxMenu(null);
+                  }}>
+                  <span className="text-red-400">×</span> Delete Node
+                </button>
               </>
             )}
             <div className="border-t border-gray-100 mt-1 px-4 py-1.5 text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
