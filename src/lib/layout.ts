@@ -22,7 +22,264 @@ export interface LayoutEdge {
   target: string;
 }
 
+export interface LayoutGroup {
+  id: string;
+  nodeIds: string[];
+  /** Set on subgroups to indicate their parent group id. */
+  parentGroupId?: string;
+}
+
 export type PositionMap = Record<string, { x: number; y: number; z?: number }>;
+
+// ── Group-aware layout ─────────────────────────────────────────────────────────
+//
+// AABB physics solver (no velocity / no elasticity — pure position assignment).
+//
+// Ported from the Work-Group Layout Engine demo and adapted for server-side use:
+//
+//   • HUB GRAVITY    — every group is gently pulled toward the most-connected node
+//                      (highest total edge degree), which acts as the layout center.
+//   • SHARED TENSION — group pairs that share ≥1 node are pulled toward each other.
+//                      Shared-node groups ARE allowed to overlap.
+//   • AABB COLLISION — group pairs with no shared nodes are pushed apart along the
+//                      axis of least resistance (shortest overlap).  Non-sharing
+//                      groups must NEVER visually overlap.
+//
+// Each force is applied as a direct delta (no accumulated velocity).
+// Gravity + tension cool down over iterations via COOLING_RATE.
+// Collision is always applied at full strength — guarantees convergence.
+//
+// Bbox formula mirrors GraphCanvas exactly (PAD=34, SZ=56):
+//   rendered left   = min(node.x) − PAD
+//   rendered right  = max(node.x) + SZ + PAD
+//   rendered top    = min(node.y) − PAD
+//   rendered bottom = max(node.y) + SZ + PAD
+
+export function groupAwareLayout(
+  positions: PositionMap,
+  groups: LayoutGroup[],
+  canvasW: number,
+  /** Optional edge list — used to identify the hub (most-connected) node. */
+  edges?: LayoutEdge[],
+): PositionMap {
+  const GC_PAD  = 34;   // must match GraphCanvas PAD constant
+  const GC_SZ   = 56;   // must match GraphCanvas node element size
+  const SEP_GAP = 16;   // minimum pixel gap between non-sharing group boxes
+
+  // ── Recursively collect all nodeIds for a group (own + all descendants) ──
+  const effNodeIds = (groupId: string): string[] => {
+    const g = groups.find((g) => g.id === groupId);
+    if (!g) return [];
+    const children = groups.filter((c) => c.parentGroupId === groupId);
+    return [...g.nodeIds, ...children.flatMap((c) => effNodeIds(c.id))];
+  };
+
+  // Only top-level groups participate; effective nodeIds include descendants so
+  // parent groups with subgroups are not accidentally excluded.
+  const topLevel = groups
+    .filter((g) => !g.parentGroupId)
+    .map((g)    => ({ g, effIds: effNodeIds(g.id) }))
+    .filter(({ effIds }) => effIds.some((id) => positions[id]));
+
+  if (topLevel.length < 2) return positions;
+
+  const n = topLevel.length;
+
+  // ── Hub position — gravitational center of the layout ────────────────────
+  // The node with the highest total edge degree becomes the center anchor.
+  // Groups are gently pulled toward it so the layout clusters naturally.
+  // Falls back to the centroid of all positioned nodes when no edges supplied.
+  let hubX: number;
+  let hubY: number;
+  if (edges && edges.length > 0) {
+    const deg: Record<string, number> = {};
+    for (const e of edges) {
+      deg[e.source] = (deg[e.source] ?? 0) + 1;
+      deg[e.target] = (deg[e.target] ?? 0) + 1;
+    }
+    const hubId = Object.keys(positions).sort((a, b) => (deg[b] ?? 0) - (deg[a] ?? 0))[0];
+    hubX = positions[hubId]?.x ?? canvasW / 2;
+    hubY = positions[hubId]?.y ?? 400;
+  } else {
+    const allPos = Object.values(positions);
+    hubX = allPos.reduce((s, p) => s + p.x, 0) / (allPos.length || 1);
+    hubY = allPos.reduce((s, p) => s + p.y, 0) / (allPos.length || 1);
+  }
+
+  // Estimate canvas height so Y clamping keeps nodes on-screen.
+  const canvasH = Math.max(
+    720,
+    Math.max(...Object.values(positions).map((p) => p.y)) + 150,
+  );
+
+  // ── Working position copy ─────────────────────────────────────────────────
+  const result: PositionMap = { ...positions };
+
+  // ── AABB bbox from working copy — mirrors GraphCanvas group rendering ─────
+  const getBbox = (effIds: string[]) => {
+    const xs = effIds.map((id) => result[id]?.x).filter((x): x is number => x !== undefined);
+    const ys = effIds.map((id) => result[id]?.y).filter((y): y is number => y !== undefined);
+    if (!xs.length) return null;
+    const minX = Math.min(...xs) - GC_PAD;
+    const maxX = Math.max(...xs) + GC_SZ + GC_PAD;
+    const minY = Math.min(...ys) - GC_PAD;
+    const maxY = Math.max(...ys) + GC_SZ + GC_PAD;
+    return {
+      cx: (minX + maxX) / 2,
+      cy: (minY + maxY) / 2,
+      hw: (maxX - minX) / 2,  // half-width
+      hh: (maxY - minY) / 2,  // half-height
+    };
+  };
+
+  // Shift every node in effIds by (dx, dy), clamped to canvas bounds.
+  const moveGroup = (effIds: string[], mdx: number, mdy: number) => {
+    for (const id of effIds) {
+      if (!result[id]) continue;
+      result[id] = {
+        ...result[id],
+        x: Math.max(60,            Math.min(canvasW - 60, result[id].x + mdx)),
+        y: Math.max(40,            Math.min(canvasH - 40, result[id].y + mdy)),
+      };
+    }
+  };
+
+  // Pre-compute pairwise sharing once (sharing groups may overlap; non-sharing must not).
+  const sharesWith: boolean[][] = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) => {
+      if (i === j) return false;
+      const setJ = new Set(topLevel[j].effIds);
+      return topLevel[i].effIds.some((id) => setJ.has(id));
+    }),
+  );
+
+  // ── Solver constants ──────────────────────────────────────────────────────
+  const GRAVITY       = 0.04;   // pull toward hub (soft, temperature-scaled)
+  const TENSION       = 0.08;   // pull sharing groups toward each other (soft)
+  const COOLING_RATE  = 0.982;  // gravity + tension decay rate per iteration
+  const ITERATIONS    = 280;    // max iterations before forced stop
+
+  let temperature = 1.0;
+
+  for (let iter = 0; iter < ITERATIONS && temperature > 0.004; iter++) {
+    const dx = new Float64Array(n);
+    const dy = new Float64Array(n);
+
+    // 1. HUB GRAVITY — pull each group centroid toward the most-connected node.
+    for (let i = 0; i < n; i++) {
+      const box = getBbox(topLevel[i].effIds);
+      if (!box) continue;
+      dx[i] += (hubX - box.cx) * GRAVITY * temperature;
+      dy[i] += (hubY - box.cy) * GRAVITY * temperature;
+    }
+
+    // 2. SHARED-NODE TENSION — sharing pairs attract toward their shared midpoint.
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (!sharesWith[i][j]) continue;
+        const bI = getBbox(topLevel[i].effIds);
+        const bJ = getBbox(topLevel[j].effIds);
+        if (!bI || !bJ) continue;
+        const midX = (bI.cx + bJ.cx) / 2;
+        const midY = (bI.cy + bJ.cy) / 2;
+        const t = TENSION * temperature;
+        dx[i] += (midX - bI.cx) * t;   dy[i] += (midY - bI.cy) * t;
+        dx[j] += (midX - bJ.cx) * t;   dy[j] += (midY - bJ.cy) * t;
+      }
+    }
+
+    // 3. AABB COLLISION — non-sharing overlapping groups are pushed apart.
+    //    Full strength every iteration (no temperature scaling) → deterministic.
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (sharesWith[i][j]) continue;          // sharing groups may overlap
+        const bA = getBbox(topLevel[i].effIds);
+        const bB = getBbox(topLevel[j].effIds);
+        if (!bA || !bB) continue;
+
+        const overlapX = bA.hw + bB.hw + SEP_GAP - Math.abs(bA.cx - bB.cx);
+        const overlapY = bA.hh + bB.hh + SEP_GAP - Math.abs(bA.cy - bB.cy);
+
+        if (overlapX > 0 && overlapY > 0) {
+          // Resolve along the shortest-exit axis (mirrors the demo's AABB logic).
+          if (overlapX <= overlapY) {
+            const dir = bA.cx <= bB.cx ? -1 : 1;
+            dx[i] += dir * overlapX * 0.5;
+            dx[j] -= dir * overlapX * 0.5;
+          } else {
+            const dir = bA.cy <= bB.cy ? -1 : 1;
+            dy[i] += dir * overlapY * 0.5;
+            dy[j] -= dir * overlapY * 0.5;
+          }
+        }
+      }
+    }
+
+    // Apply all accumulated deltas for this iteration.
+    for (let i = 0; i < n; i++) {
+      if (dx[i] !== 0 || dy[i] !== 0) moveGroup(topLevel[i].effIds, dx[i], dy[i]);
+    }
+
+    temperature *= COOLING_RATE;
+  }
+
+  return result;
+}
+
+// ── Cycle breaker ─────────────────────────────────────────────────────────────
+//
+// Kahn's BFS (used by hierarchicalLayout) produces garbage positions when the
+// edge list contains cycles: all cycle-participants end up with in-degree > 0
+// and get dumped into sequential "overflow" layers instead of their proper
+// pipeline positions.
+//
+// This helper runs a DFS and tags every back-edge (an edge that points back to a
+// GRAY ancestor — i.e., creates a cycle) so the caller can exclude them before
+// running the layering algorithm.  The actual edges are still drawn on screen;
+// we only exclude back-edges from the POSITION calculation.
+
+function detectBackEdges(nodes: LayoutNode[], edges: LayoutEdge[]): Set<string> {
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color: Record<string, number> = {};
+  const adj:   Record<string, string[]> = {};
+
+  for (const n of nodes) { color[n.id] = WHITE; adj[n.id] = []; }
+  for (const e of edges) {
+    if (adj[e.source] !== undefined) adj[e.source].push(e.target);
+  }
+
+  const back = new Set<string>();
+
+  // Iterative DFS to avoid call-stack overflow on large graphs.
+  for (const start of nodes) {
+    if (color[start.id] !== WHITE) continue;
+    // Stack entry: [nodeId, index into adj[nodeId]]
+    const stack: [string, number][] = [[start.id, 0]];
+    color[start.id] = GRAY;
+
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      const [u, i] = top;
+      const neighbours = adj[u];
+
+      if (i >= neighbours.length) {
+        color[u] = BLACK;
+        stack.pop();
+      } else {
+        top[1]++;          // advance neighbour index
+        const v = neighbours[i];
+        if (color[v] === GRAY) {
+          back.add(`${u}→${v}`);   // back-edge
+        } else if (color[v] === WHITE) {
+          color[v] = GRAY;
+          stack.push([v, 0]);
+        }
+      }
+    }
+  }
+
+  return back;
+}
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -129,6 +386,17 @@ export function hierarchicalLayout(
 
   const ids = nodes.map((n) => n.id);
 
+  // ── Break cycles before layer assignment ────────────────────────────────
+  // Kahn's BFS produces degenerate positions when cycles exist: every node
+  // in the cycle keeps inDegree > 0 and ends up dumped into "overflow" layers
+  // at the far right of the canvas.  We detect back-edges via iterative DFS
+  // and exclude them from the layering / predecessor maps.  The actual edges
+  // are still rendered on screen — only the POSITION calculation ignores them.
+  const _backEdges  = detectBackEdges(nodes, edges);
+  const layoutEdges = _backEdges.size > 0
+    ? edges.filter((e) => !_backEdges.has(`${e.source}→${e.target}`))
+    : edges;
+
   // ── Spacing constants ────────────────────────────────────────────────────
   const padX = 80;
   const padY = 70;
@@ -136,6 +404,9 @@ export function hierarchicalLayout(
   const usableH = canvasH - padY * 2;
   /** Minimum horizontal gap between layer x-centres (columns). */
   const MIN_LAYER_SPACING_X = 150;
+  /** Maximum horizontal gap — prevents sparse graphs (2 real layers in a wide
+   *  canvas) from stretching nodes across the whole viewport. */
+  const MAX_LAYER_SPACING_X = 230;
   /** Minimum vertical gap between node centres in the same column. */
   const MIN_NODE_SPACING_Y  = 110;
   /** Split dense columns into two sub-columns when count exceeds this. */
@@ -150,7 +421,7 @@ export function hierarchicalLayout(
     successors[id]   = new Set();
     predecessors[id] = new Set();
   }
-  for (const e of edges) {
+  for (const e of layoutEdges) {
     if (successors[e.source] && predecessors[e.target]) {
       successors[e.source].add(e.target);
       predecessors[e.target].add(e.source);
@@ -199,7 +470,7 @@ export function hierarchicalLayout(
   // ── Horizontal column spacing ────────────────────────────────────────────
   const numLayers     = maxLayer + 1;
   const naturalSpacingX = numLayers > 1 ? usableW / (numLayers - 1) : 0;
-  const layerSpacingX   = Math.max(MIN_LAYER_SPACING_X, naturalSpacingX);
+  const layerSpacingX   = Math.min(MAX_LAYER_SPACING_X, Math.max(MIN_LAYER_SPACING_X, naturalSpacingX));
 
   // ── Y-position helper: average of already-placed neighbour positions ─────
   const positions: PositionMap = {};
@@ -262,12 +533,16 @@ export function hierarchicalLayout(
       placeCol(rightNodes,  COL_OFFSET_PX);
 
     } else if (count === 1) {
-      // ── Single node: inherit anchor Y from predecessors ──────────────────
+      // ── Single node: inherit anchor Y + lane stagger for visual depth ────
+      // Alternating layers shift ±STAGGER so single-node chains zigzag
+      // vertically rather than sitting on a perfectly flat horizontal line.
+      const STAGGER = numLayers > 3 ? 50 : 0;
+      const laneShift = (l % 2 === 0 ? 1 : -1) * STAGGER;
       const id = layerNodes[0];
       const jitter = idToJitter(id, 0.2);
       positions[id] = {
         x: Math.round(x),
-        y: Math.round(Math.max(padY, Math.min(canvasH - padY, anchorY))),
+        y: Math.round(Math.max(padY, Math.min(canvasH - padY, anchorY + laneShift))),
         z: Math.max(-1, Math.min(1, baseZ + jitter)),
       };
 
@@ -326,6 +601,51 @@ export function hierarchicalLayout(
         }
       }
     }
+  }
+
+  // ── Global pairwise overlap resolution ────────────────────────────────────
+  // Catches nodes that ended up too close across adjacent layers (different X
+  // buckets) — e.g. two nodes both pulled to canvas-centre Y by the bottom-up
+  // refinement pass that also happen to be in very close layers.
+  // We push overlapping pairs apart primarily in Y (preserving column X),
+  // iterating until no pair is closer than MIN_DIST or we exhaust passes.
+  const NODE_R   = 32; // px — node glyph radius + tight breathing room
+  const MIN_DIST = NODE_R * 2;
+  const allIds   = Object.keys(positions);
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (let i = 0; i < allIds.length; i++) {
+      for (let j = i + 1; j < allIds.length; j++) {
+        const a  = positions[allIds[i]];
+        const b  = positions[allIds[j]];
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < MIN_DIST && dist >= 0) {
+          const overlap = MIN_DIST - dist + 4;
+          // Resolve primarily in Y to preserve layer column identity.
+          // Fall back to both axes when nodes are directly on top of each other.
+          const nx = dist === 0 ? 0 : dx / dist;
+          const ny = dist === 0 ? 1 : dy / dist;
+          // Weight: 70 % Y, 30 % X so column order is mostly preserved
+          const fx = nx * overlap * 0.30;
+          const fy = (ny === 0 ? 1 : ny) * overlap * 0.70;
+          positions[allIds[i]] = {
+            ...a,
+            x: Math.round(Math.max(padX,           a.x - fx)),
+            y: Math.round(Math.max(padY,            a.y - fy)),
+          };
+          positions[allIds[j]] = {
+            ...b,
+            x: Math.round(Math.min(canvasW - padX, b.x + fx)),
+            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
+          };
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
   }
 
   return positions;
