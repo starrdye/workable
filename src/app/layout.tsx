@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Neural Workflow & Ecosystem Twin",
-  description: "Interactive visualizer for mapping, analyzing, and optimizing business operations.",
+  title: "Workable — Personal Workflow Mapper",
+  description: "Map your personal workflow, spot bottlenecks, and optimise how you work.",
 };
 
 export default function RootLayout({
