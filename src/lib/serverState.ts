@@ -2,6 +2,7 @@
  * serverState.ts
  */
 import { NODE_DATA } from './constants';
+import { hierarchicalLayout, groupAwareLayout } from './layout';
 
 export interface NodePosition {
   x: number;
@@ -48,6 +49,11 @@ export interface WorkflowGroup {
   color: string;
   /** IDs of nodes that belong to this group. */
   nodeIds: string[];
+  /**
+   * If set, this group is a sub-group nested visually inside the parent group.
+   * The parent group's region expands to encompass all its children's regions.
+   */
+  parentGroupId?: string;
 }
 
 /**
@@ -283,6 +289,7 @@ export function updateMetadata(id: string, patch: {
   name?: string; role?: string; status?: string;
   statusColor?: string; summary?: string; constraints?: string;
   processes?: string[]; connections?: string[];
+  tasks?: NodeTask[];
 }) {
   const state = global.__graphState!;
   if (!state.settings.metadataOverrides) state.settings.metadataOverrides = {};
@@ -418,7 +425,41 @@ export function deleteWorkflowGroup(groupId: string) {
 /** Restore positions to the snapshot taken at last importState call. */
 export function resetLayout() {
   const state = global.__graphState!;
-  state.baselinePositions  = { ...state.originalBaselinePositions };
-  state.ecosystemPositions = { ...state.originalEcosystemPositions };
+
+  // If we have custom nodes (AI-generated / template workflow), re-run the
+  // hierarchical layout from scratch so positions always use the latest algorithm
+  // (stagger, overlap resolution, group-aware layout) rather than restoring stale
+  // CSV-imported positions.
+  if (state.customNodes.length > 0) {
+    const nodeCount  = state.customNodes.length;
+    const estLayers  = Math.max(3, Math.ceil(nodeCount / 3));
+    // Scale canvas proportionally to node count — avoids tiny graphs spreading
+    // across a huge 1200px canvas where layer spacing becomes enormous.
+    const canvasW    = Math.max(900, nodeCount * 140);
+    const canvasH    = Math.max(720,  Math.min(nodeCount, 6) * 150);
+
+    const layoutNodes = state.customNodes.map(n => ({ id: n.id }));
+    const layoutEdges = state.customEdges.map(e => ({ source: e.source, target: e.target }));
+
+    let freshPositions = hierarchicalLayout(layoutNodes, layoutEdges, canvasW, canvasH);
+
+    // Re-apply group-aware zone layout so non-sharing groups don't overlap.
+    // Pass the full group list — groupAwareLayout handles top-level filtering
+    // and recurses into subgroups to collect effective nodeIds.
+    const groups = state.settings.workflowGroups ?? [];
+    if (groups.length > 0) {
+      // Pass layoutEdges so the hub (most-connected) node is used as the
+      // gravitational center of the AABB solver.
+      freshPositions = groupAwareLayout(freshPositions, groups, canvasW, layoutEdges);
+    }
+
+    // Merge: update custom node positions; leave core node positions untouched
+    state.baselinePositions = { ...state.baselinePositions, ...freshPositions };
+    state.originalBaselinePositions = { ...state.originalBaselinePositions, ...freshPositions };
+  } else {
+    state.baselinePositions  = { ...state.originalBaselinePositions };
+    state.ecosystemPositions = { ...state.originalEcosystemPositions };
+  }
+
   state.lastUpdated = Date.now();
 }
