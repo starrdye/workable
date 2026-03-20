@@ -22,7 +22,8 @@ export interface AIParsedResult {
   customEdges:        CustomEdgeConfig[];
   baselinePositions:  Record<string, { x: number; y: number }>;
   ecosystemPositions: Record<string, { x: number; y: number }>;
-  metadataOverrides?: Record<string, { summary?: string }>;
+  metadataOverrides?: Record<string, { summary?: string; constraints?: string }>;
+  workflowGroups?:    Array<{ id: string; name: string; color: string; nodeIds: string[] }>;
   settings?:          { hiddenCoreNodes?: string[] };
 }
 
@@ -514,7 +515,7 @@ export function StartScreen({
               ) : buttonMode === "ai" ? (
                 <><Sparkles className="w-5 h-5" />Generate with AI <ArrowRight className="w-5 h-5" /></>
               ) : (
-                <>Generate Ecosystem Model <ArrowRight className="w-5 h-5" /></>
+                <>Open Blank Canvas <ArrowRight className="w-5 h-5" /></>
               )}
             </button>
           </div>
