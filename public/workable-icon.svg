@@ -1,110 +1,69 @@
 <svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Main background gradient: indigo → violet -->
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%"   stop-color="#4338CA"/>
-      <stop offset="50%"  stop-color="#6366F1"/>
       <stop offset="100%" stop-color="#8B5CF6"/>
     </linearGradient>
-    <!-- Edge line gradient -->
-    <linearGradient id="edgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#C7D2FE" stop-opacity="0.9"/>
-      <stop offset="100%" stop-color="#E9D5FF" stop-opacity="0.6"/>
-    </linearGradient>
-    <!-- Node glow filter -->
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="3.5" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <!-- Soft shadow for bg rect -->
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#4338CA" flood-opacity="0.35"/>
-    </filter>
-    <!-- Pulse circle for hub node -->
-    <radialGradient id="hubPulse" cx="50%" cy="50%" r="50%">
-      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="1"/>
-      <stop offset="60%"  stop-color="#E0E7FF" stop-opacity="0.8"/>
-      <stop offset="100%" stop-color="#C7D2FE" stop-opacity="0"/>
-    </radialGradient>
+
+    <mask id="hollow-rings">
+      <rect width="256" height="256" fill="white" />
+      <circle cx="88" cy="168" r="9" fill="black" />
+      <circle cx="168" cy="168" r="9" fill="black" />
+    </mask>
   </defs>
 
-  <!-- Rounded square background -->
-  <rect width="256" height="256" rx="56" ry="56" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  
+  <g mask="url(#hollow-rings)">
+    <path id="w-track" d="M 52 72 L 88 168 L 128 108 L 168 168 L 204 72" 
+          fill="none" stroke="#C7D2FE" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+    
+    <g>
+      <circle r="5" fill="white" opacity="0.4"/>
+      <circle r="2.5" fill="white"/>
+      <animateMotion dur="4s" begin="0s" repeatCount="indefinite">
+        <mpath href="#w-track"/>
+      </animateMotion>
+    </g>
 
-  <!-- Subtle grid texture overlay -->
-  <rect width="256" height="256" rx="56" ry="56" fill="none"
-        stroke="white" stroke-width="0.5" opacity="0.06"/>
+    <g>
+      <circle r="5" fill="white" opacity="0.4"/>
+      <circle r="2.5" fill="white"/>
+      <animateMotion dur="4s" begin="2s" repeatCount="indefinite">
+        <mpath href="#w-track"/>
+      </animateMotion>
+    </g>
+  </g>
 
-  <!--
-    W-graph node positions:
-      A (top-left):    (52,  72)
-      B (bottom-left): (88, 168)
-      C (hub/center):  (128, 108)
-      D (bottom-right):(168, 168)
-      E (top-right):   (204,  72)
+  <line x1="128" y1="108" x2="52"  y2="72"  stroke="white" stroke-width="1.2" stroke-dasharray="4 6" opacity="0.2"/>
+  <line x1="128" y1="108" x2="204" y2="72"  stroke="white" stroke-width="1.2" stroke-dasharray="4 6" opacity="0.2"/>
 
-    Extra satellite nodes (texture):
-      F (upper-mid-left): (76, 108)
-      G (upper-mid-right):(180, 108)
-  -->
+  <g>
+    <circle cx="52" cy="72" r="9" fill="white">
+      <animate attributeName="r" values="9; 14; 9" dur="2.4s" begin="0s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.1; 0.6; 0.1" dur="2.4s" begin="0s" repeatCount="indefinite" />
+    </circle>
+    <circle cx="52" cy="72" r="9" fill="white" />
+  </g>
 
-  <!-- ── Edges ─────────────────────────────────────────────────── -->
-  <!-- Main W path -->
-  <line x1="52"  y1="72"  x2="88"  y2="168" stroke="url(#edgeGrad)" stroke-width="3"   stroke-linecap="round" opacity="0.85"/>
-  <line x1="88"  y1="168" x2="128" y2="108" stroke="url(#edgeGrad)" stroke-width="3"   stroke-linecap="round" opacity="0.85"/>
-  <line x1="128" y1="108" x2="168" y2="168" stroke="url(#edgeGrad)" stroke-width="3"   stroke-linecap="round" opacity="0.85"/>
-  <line x1="168" y1="168" x2="204" y2="72"  stroke="url(#edgeGrad)" stroke-width="3"   stroke-linecap="round" opacity="0.85"/>
-  <!-- Cross edges from hub -->
-  <line x1="128" y1="108" x2="52"  y2="72"  stroke="white"           stroke-width="1.5" stroke-linecap="round" stroke-dasharray="4 5" opacity="0.3"/>
-  <line x1="128" y1="108" x2="204" y2="72"  stroke="white"           stroke-width="1.5" stroke-linecap="round" stroke-dasharray="4 5" opacity="0.3"/>
-  <!-- Satellite edges -->
-  <line x1="52"  y1="72"  x2="76"  y2="108" stroke="white"           stroke-width="1.5" stroke-linecap="round" opacity="0.35"/>
-  <line x1="204" y1="72"  x2="180" y2="108" stroke="white"           stroke-width="1.5" stroke-linecap="round" opacity="0.35"/>
-  <line x1="76"  y1="108" x2="128" y2="108" stroke="white"           stroke-width="1.5" stroke-linecap="round" opacity="0.25"/>
-  <line x1="180" y1="108" x2="128" y2="108" stroke="white"           stroke-width="1.5" stroke-linecap="round" opacity="0.25"/>
+  <g>
+    <circle cx="128" cy="108" r="12" fill="white">
+      <animate attributeName="r" values="12; 18; 12" dur="2.4s" begin="0.8s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.1; 0.6; 0.1" dur="2.4s" begin="0.8s" repeatCount="indefinite" />
+    </circle>
+    <circle cx="128" cy="108" r="12" fill="white" />
+  </g>
 
-  <!-- ── Data pulse dots on main edges (decorative) ───────────── -->
-  <circle cx="70"  cy="120" r="3.5" fill="#A5B4FC" opacity="0.8"/>
-  <circle cx="108" cy="138" r="3"   fill="#C4B5FD" opacity="0.7"/>
-  <circle cx="148" cy="138" r="3"   fill="#C4B5FD" opacity="0.7"/>
-  <circle cx="186" cy="120" r="3.5" fill="#A5B4FC" opacity="0.8"/>
-
-  <!-- ── Hub node (centre) – largest, with pulse ring ─────────── -->
-  <circle cx="128" cy="108" r="22" fill="url(#hubPulse)" opacity="0.25"/>
-  <circle cx="128" cy="108" r="16" fill="white" opacity="0.15"/>
-  <circle cx="128" cy="108" r="13" fill="white" filter="url(#glow)"/>
-
-  <!-- ── Main W nodes ──────────────────────────────────────────── -->
-  <!-- A – top-left (person role: solid white) -->
-  <circle cx="52"  cy="72"  r="10" fill="white"    opacity="0.95" filter="url(#glow)"/>
-  <!-- B – bottom-left (tool role: ring style) -->
-  <circle cx="88"  cy="168" r="9"  fill="#6366F1"  opacity="1"/>
-  <circle cx="88"  cy="168" r="9"  fill="none"     stroke="white" stroke-width="2.5" opacity="0.9"/>
-  <!-- D – bottom-right (tool role: ring style) -->
-  <circle cx="168" cy="168" r="9"  fill="#6366F1"  opacity="1"/>
-  <circle cx="168" cy="168" r="9"  fill="none"     stroke="white" stroke-width="2.5" opacity="0.9"/>
-  <!-- E – top-right (person role: solid white) -->
-  <circle cx="204" cy="72"  r="10" fill="white"    opacity="0.95" filter="url(#glow)"/>
-
-  <!-- ── Satellite nodes ──────────────────────────────────────── -->
-  <circle cx="76"  cy="108" r="6"  fill="white" opacity="0.5"/>
-  <circle cx="180" cy="108" r="6"  fill="white" opacity="0.5"/>
-
-  <!-- ── Inner hub icon: a tiny "W" letterform ─────────────────── -->
-  <text x="128" y="114" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif"
-        font-weight="800" font-size="14" fill="#4338CA" letter-spacing="-0.5">W</text>
-
-  <!-- ── Bottom wordmark area (subtle) ─────────────────────────── -->
-  <text x="128" y="210" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif"
-        font-weight="700" font-size="18" fill="white" opacity="0.9" letter-spacing="2">
-    WORKABLE
-  </text>
-  <line x1="64" y1="220" x2="192" y2="220" stroke="white" stroke-width="0.75" opacity="0.2"/>
-  <text x="128" y="234" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif"
-        font-weight="400" font-size="10" fill="white" opacity="0.5" letter-spacing="3">
-    WORKFLOW MAPPER
-  </text>
+  <g>
+    <circle cx="204" cy="72" r="9" fill="white">
+      <animate attributeName="r" values="9; 14; 9" dur="2.4s" begin="1.6s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.1; 0.6; 0.1" dur="2.4s" begin="1.6s" repeatCount="indefinite" />
+    </circle>
+    <circle cx="204" cy="72" r="9" fill="white" />
+  </g>
+  
+  <circle cx="88"  cy="168" r="9"  fill="none" stroke="white" stroke-width="2.5" />
+  <circle cx="168" cy="168" r="9"  fill="none" stroke="white" stroke-width="2.5" />
+  
+  <text x="128" y="215" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="20" fill="white">WORKABLE</text>
 </svg>
