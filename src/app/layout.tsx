@@ -11,6 +11,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Workable — Personal Workflow Mapper",
   description: "Map your personal workflow, spot bottlenecks, and optimise how you work.",
+  icons: {
+    icon: "/workable-icon.svg",
+    shortcut: "/workable-icon.svg",
+    apple: "/workable-icon.svg",
+  },
 };
 
 export default function RootLayout({
