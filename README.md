@@ -1,214 +1,304 @@
-# Neural Workflow & Ecosystem Twin
+<div align="center">
+  <img src="./public/workable-icon.svg" width="96" height="96" alt="Workable icon" />
+  <h1>Workable</h1>
+  <p><strong>Map your workflow. Spot the cracks. Ship faster.</strong></p>
+  <p>
+    Paste your notes → watch your workflow appear as a live graph →<br/>
+    get AI-powered bottleneck analysis — in under 60 seconds.
+  </p>
 
-<p align="center">
-  <em>An interactive visualizer for mapping, analyzing, and optimizing business operations — built with Next.js, Claude AI, and TypeScript.</em>
-</p>
-
----
-
-## 📌 Project Overview
-
-The **Neural Workflow & Ecosystem Twin** is a full-stack web application that transforms raw workflow descriptions into a dynamic, interactive digital twin. Users can spot bottlenecks, model optimization scenarios, add custom nodes/edges in real time, generate entire workflows from natural language using AI, and export results — all from a clean, prototype-faithful UI.
-
----
-
-## 🗺️ Branch 0.21 — Smart Layout, Web Map & Entity Constraints (Plan)
-
-> **Status:** In development on branch `0.21`
-
-### Implemented
-
-| # | Feature | Detail |
-|---|---------|--------|
-| 1 | **Radial Web Layout** (`radialWebLayout`) | Miro-style concentric-ring layout for the Ecosystem / "Web Map" view. The most-connected node is placed at the canvas centre; all others radiate outward in BFS rings. Sorted within each ring by barycenter heuristic (parent-average angle) to minimise edge crossings. Small per-ring rotation adds organic asymmetry. |
-| 2 | **SVG Bezier Edges** | Replaced the old CSS-rotated `<div>` wire layer with an SVG overlay using quadratic bezier curves. Control point is the mid-point shifted perpendicular to the edge direction — producing the curved "web map" look. Animated travelling pulses use `stroke-dashoffset` on normalised paths (`pathLength="1"`). |
-| 3 | **Reset Layout Button** | "Reset Layout" button (bottom-left of canvas) restores all node positions to the snapshot taken when the last AI workflow was imported or CSV was loaded. Positions are preserved on the server under `originalBaselinePositions` / `originalEcosystemPositions`. |
-| 4 | **Entity `constraints` Attribute** | Every entity (node) now supports a free-text `constraints` field — editable in the right-hand Analysis sidebar with amber styling. Constraints are persisted in `metadataOverrides` and survive CSV export/import. |
-| 5 | **AI-Aware Constraints** | The parse-workflow prompt asks the model to infer constraints from the description (e.g. "Requires manual sign-off", "GDPR restricted", "Max 500 req/day"). The AI Analyze prompt gains a new **Constraint Analysis** section that flags violations and suggests how entities and relations should be restructured to satisfy them. |
-
-### Roadmap — Next Steps for Relations & Entities
-
-#### A. Constraint-Driven Relation Scoring
-Each edge between two nodes should carry a **compatibility score** derived from:
-- The _source_ node's constraints (e.g. "no automated handoff")
-- The _target_ node's constraints (e.g. "must receive data only via encrypted channel")
-
-The AI Analyze pass would flag pairs whose constraints are incompatible and propose an intermediary node (e.g. a compliance gateway).
-
-#### B. Constraint Propagation
-When a constrained node is added or edited, the app should automatically:
-1. Trace all upstream and downstream paths.
-2. Check each path node for constraint conflicts.
-3. Surface warnings in the sidebar ("upstream node X has no encryption — violates your constraint").
-
-#### C. Suggested Entity / Relation Improvements
-Add a dedicated **"Suggest Improvements"** AI call that receives the full constraint map and returns:
-- New entities that should be introduced (e.g. "Add a Rate Limiter before X").
-- Edges that should be rerouted to respect constraints.
-- Nodes whose role should change (e.g. promote a `tool` to `person` if a constraint mandates human review).
-
-#### D. Constraint Templates
-Pre-built constraint templates for common domains (Finance, Healthcare, GDPR, SOC 2) that users can attach to nodes with a single click rather than typing free text.
-
-#### E. Visual Constraint Indicators
-- Show a ⚠️ badge on nodes with active constraints in the canvas.
-- Color edges red / amber when a constraint violation is detected along the path.
+  <p>
+    <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs&logoColor=white" alt="Next.js"/>
+    <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React"/>
+    <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript"/>
+    <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
+    <img src="https://img.shields.io/badge/AI-Multi--provider-8B5CF6" alt="AI"/>
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"/>
+  </p>
+  <p>
+    <a href="#-quick-start">Quick Start</a> ·
+    <a href="#-features">Features</a> ·
+    <a href="#-ai-providers">AI Providers</a> ·
+    <a href="#-templates">Templates</a> ·
+    <a href="#-how-it-works">How It Works</a>
+  </p>
+</div>
 
 ---
 
-## 🏆 Version 0.2 — AI Integration
+## What is Workable?
 
-Version 0.2 builds directly on v0.1 by implementing the full Phase 4 AI roadmap using the **Anthropic Claude API**.
+Most workflow tools make you drag and drop from scratch. Workable flips that.
 
-- **AI Workflow Parser**: Describe any workflow in plain English on the Start Screen — Claude parses it into nodes, edges, and positions and loads it directly onto the canvas.
-- **AI Optimization Analyst**: Click "AI Analyze" in the header to have Claude analyze the current graph for bottlenecks and generate a structured optimization report (Summary → Bottlenecks → Recommendations → Quick Wins).
-- **API Key Management**: A settings modal (gear icon in the header) lets users enter and persist their own Anthropic API key in browser local storage — no server-side secrets required.
-- **Fixed Documentation**: Corrected inaccuracies across all docs from v0.1 (component table, file references, phase descriptions).
-- **Package Name**: Renamed from `temp-app` to `neural-workflow-twin`.
+You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. You get a living map of your workflow that you can refine, export, and share.
 
----
-
-## 🏆 Version 0.1 — Foundation
-
-Version 0.1 marks the successful transition from a static prototype to a production-grade interactive framework.
-
-- **Framework Migration**: Fully ported from vanilla HTML/JS to **Next.js 16 + React 19 + TypeScript**.
-- **Interactive Canvas**: Custom SVG canvas with squircle/circle nodes and animated data-pulse wires.
-- **Dynamic CRUD**: Full support for adding, editing, and deleting nodes and edges via right-click and interactive handles.
-- **Bidirectional Metadata Sync**: Automated synchronisation between the **Analysis Sidebar** and the visual graph, including name-to-ID resolution.
-- **Backend Persistence**: Server-side state management with real-time polling (3-second intervals).
-- **Advanced Optimisation**: "Improvements Mode" highlights optimised routes and fades legacy bottlenecks.
-- **Export Capabilities**: Native **PNG** rendering and **CSV** export/import.
-
----
-
-## ✅ Phase 1 — Prototype (UI/UX Baseline)
-
-The `prototype.html` file is the interactive frontend prototype. It demonstrates the following UI/UX paradigms:
-
-- **Miro-Style Start Screen** — frosted-glass landing page with natural language text input and a drag-and-drop file zone.
-- **Dual View Rendering** — seamless toggling between a linear *Baseline Process Map* and a human-centric *Ecosystem Hub*.
-- **Optimisation Toggles** — "Improvements" engine that visually fades deprecated bottlenecks (e.g., Edward's manual review) and highlights newly automated routes (e.g., Mary → Dashboard API).
-- **Custom Physics & Interactivity** — draggable nodes (squircle/circle designs) with real-time recalculating connection lines and continuous CSS-animated data pulses.
-- **Deep-Dive Analysis** — clickable nodes and wires that trigger a slide-out right sidebar with entity roles, system status, assigned processes, and connections.
-
----
-
-## ✅ Phase 2 — Core Development (Frontend Framework Migration)
-
-The vanilla HTML/JS prototype was ported to a production-ready **Next.js 16 + React 19 + TypeScript** app:
-
-| Area | Implementation |
-|---|---|
-| **Framework** | Next.js 16 (App Router) with React 19 |
-| **Graphing Engine** | Custom SVG canvas with Pythagorean wire math (no external graph library dependency) |
-| **Componentisation** | `<StartScreen />`, `<GraphCanvas />`, `<AnalysisSidebar />` — node/edge renderers are inlined in `GraphCanvas.tsx` |
-| **State Management** | React `useState` / `useEffect` with server-side API for persistence |
-| **Backend API** | Next.js Route Handlers (`/api/workflow`, `/api/graph-state`) |
-| **Font** | Inter (via `next/font/google`) matching prototype exactly |
-| **Animations** | CSS `pulse-amber` animation + SVG `animateMotion` data pulses |
-
----
-
-## ✅ Phase 3 — MVP Features
-
-All Phase 3 features from the development roadmap are now implemented:
-
-### 1. Dynamic Graph Generation
-The canvas renders dynamically based on a **JSON payload from the `/api/workflow` backend**, not hardcoded HTML elements. Node positions and graph structure are fetched on load and persisted server-side via the `/api/graph-state` endpoint.
-
-### 2. CRUD Capabilities for Nodes & Edges
-- **Add Node** — Right-click anywhere on the canvas background → "Add Node Here" → fill in name, initials, and role type.
-- **Create Connection** — Drag from any node's handle to another node to create a new connection wire, saved automatically.
-- **Delete Node/Edge** — Select any node or edge and press the `Delete` key. Custom nodes also show a **Delete Node** button in the Analysis Sidebar. Core workflow nodes are protected from deletion.
-
-### 3. Real-Time Collaboration (Polling-Based)
-Every **3 seconds**, each client polls `/api/graph-state` for remote updates. Node drag positions are saved immediately to the server. Other browser tabs receive the updated positions on their next poll. The server uses a **module-level singleton** (`src/lib/serverState.ts`) that persists across requests in the Next.js dev server.
-
-> **Note:** v0.1 uses polling rather than WebSockets for simplicity. WebSocket support remains on the long-term roadmap.
-
-### 4. Save & Export
-- **Export PNG** — Builds an SVG from current node/edge positions, renders to `<canvas>`, downloads as `.png` (no external library required).
-- **Export CSV** — Serialises full graph state to `.csv` via a Blob download.
-- **Import CSV** — Available on both the Start Screen and the header Import button.
-
----
-
-## ✅ Phase 4 — AI-Powered Workflow Analysis
-
-Phase 4 integrates **Claude** (Anthropic) to bridge the gap between abstract descriptions and structured visual models.
-
-### 1. AI Workflow Parser
-
-**How it works:**
-1. On the Start Screen, type a natural language description of any workflow in the *AI Workflow Generation* textarea (e.g., "Script A sends data to Xingye, which routes to Mary for approval, then to the Dashboard").
-2. Set your Anthropic API key via the **Set API key** link (stored only in your browser).
-3. Click **Generate with AI** — the description is sent to `POST /api/ai/parse-workflow`.
-4. The route calls **Claude** with a structured system prompt that enforces a JSON output schema (`nodes[]` + `edges[]`).
-5. The API calculates linear baseline positions and radial ecosystem positions for the new nodes.
-6. The resulting graph is loaded into the canvas via the existing `importState` endpoint.
-
-### 2. AI Optimization Analyst
-
-**How it works:**
-1. Click **AI Analyze** (✦ sparkle icon) in the application header.
-2. The current server graph state (core nodes, core edges, custom nodes, custom edges, metadata) is sent to `POST /api/ai/optimize`.
-3. **Claude** analyses the workflow and returns a structured report:
-   - **Workflow Summary** — 2–3 sentence overview
-   - **Bottlenecks Identified** — named nodes/edges causing delays
-   - **Optimisation Recommendations** — 3–5 specific, actionable improvements
-   - **Quick Wins** — highest impact-to-effort changes
-4. The analysis is displayed in a modal overlay.
-
-### 3. API Key Management
-
-**How it works:**
-- Click the **gear (⚙)** icon in the header to open the AI Settings modal.
-- Enter your `sk-ant-api03-...` Anthropic API key.
-- The key is saved to browser `localStorage` under `nwt_ai_api_key` — it is never stored on the server.
-- A green indicator dot on the gear icon shows when a key is active.
-- Keys can be cleared at any time from the settings modal.
-
----
-
-## 🚀 Getting Started
-
-```bash
-npm install
-npm run dev
+```
+"Jack logs into Bloomberg at 9 AM, downloads the CSV, runs it through
+ the Python reconciliation script, and Slacks exceptions to Sarah..."
+                            ↓  ~5 seconds
+ [Bloomberg] → [Jack] → [Python Script] → [PostgreSQL] → [Ternary Dashboard]
+                                 ↓ exception path
+                              [Slack] → [Sarah] ⟳ [Jack]
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+---
 
-To use AI features, obtain an API key from [console.anthropic.com](https://console.anthropic.com) and enter it via the gear icon in the app header.
+## ✨ Features
 
-### Project Structure
+### 🧠 AI-Powered Graph Generation
+Describe your workflow in plain English — names, tools, handoffs, blockers, all of it. The AI infers:
+- **Nodes** with roles (`person`, `tool`, `external source`, `output`)
+- **Directed edges** with descriptive connection names
+- **Workflow groups** (phases like "Data Ingestion" or "Review & Approval")
+- **Tasks** per node with priority and status
+- **Constraints** (GDPR limits, manual approvals, rate caps)
+
+### 🗺️ Dual-View Canvas
+| Baseline Process Map | Ecosystem Hub |
+|---|---|
+| Left-to-right hierarchical flow | Radial web-map centred on the most-connected node |
+| Clear sequence and handoffs | Visualise influence, coupling, and dependency rings |
+| Great for process documentation | Great for spotting architectural smells |
+
+Toggle instantly with no data loss.
+
+### 🔬 Analysis Sidebar
+Click any node or edge to open a deep-dive panel:
+- **Entity name**, role badge, and AI-generated vs user-added origin
+- **Summary** — concise description of the node's role in the workflow
+- **Assigned Workflows** — which phases/groups this node belongs to
+- **Direct Connections** — all neighbouring nodes (both directions)
+- **Constraints** — operational, compliance, or technical limits
+- **Tasks** — inline task list with status, priority, due date, and notes
+
+For edges:
+- **Data Flow Direction** — From → To pill with node names
+- **Connection Name** — the actual named handoff (e.g. "Send Exception File for review")
+- **Auto-generated summary** — what flows along this edge and why
+
+### 🧩 Workflow Groups & Nested Phases
+Colour-coded bounding regions that organise nodes into named phases. Supports:
+- **Top-level groups** (e.g. "Daily Price Reconciliation")
+- **Sub-groups** nested inside parent phases (e.g. "Automated Processing" inside the reconciliation group)
+- **Group-aware physics layout** — groups cluster intelligently without overlap, sharing nodes pull related groups together
+
+### ✅ Task Management
+Every node can own a task list with:
+- Status: `todo` / `in-progress` / `review` / `blocked` / `done`
+- Priority: `low` / `medium` / `high`
+- Due date + free-form notes
+- Visual progress counters (`3/5 open`)
+
+### 🔍 AI Bottleneck Analysis
+Run the optimiser on any graph to get a structured report:
+- **Workflow Summary** — two-sentence executive overview
+- **Bottlenecks Identified** — specific nodes and edges by name
+- **Constraint Analysis** — flags nodes with constraints that could propagate risk
+- **Quick Wins** — highest impact-to-effort improvements with suggested new connections
+
+### 📤 Export & Import
+| Format | What's included |
+|---|---|
+| **CSV** | All nodes, edges, positions, tasks, groups, settings |
+| **PNG** | Full canvas render at current zoom |
+| **CSV import** | Restore any previously exported workflow |
+
+### 🎨 Templates Gallery
+Four pre-built starters so you're never staring at a blank canvas:
+- **Morning Routine** — 7-node personal daily startup flow
+- **Project Workflow** — 14-node idea-to-publish pipeline
+- **Full Work Week** — 22-node complete weekly system
+- **Blank Canvas** — start from scratch
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Clone and install
+git clone https://github.com/your-username/workable.git
+cd workable
+npm install
+
+# 2. Start the dev server
+npm run dev
+# → http://localhost:3000
+```
+
+That's it. No `.env` file. No database. No signup.
+
+**To enable AI features:**
+1. Click **AI Settings** (gear icon) in the header
+2. Pick your provider (Anthropic, Gemini, or ByteDance Doubao)
+3. Paste your API key — it stays in your browser's `localStorage`, never hits a server
+4. Describe your workflow and hit **Generate**
+
+---
+
+## 🤖 AI Providers
+
+Workable is provider-agnostic. Swap between them any time in AI Settings.
+
+| Provider | Models | Notes |
+|---|---|---|
+| **Anthropic Claude** | `claude-sonnet-4-6` (default), `claude-opus-4-6`, `claude-haiku-4-5` | Best overall reasoning and JSON fidelity |
+| **Google Gemini** | `gemini-2.0-flash` (default), `gemini-1.5-pro`, `gemini-1.5-flash` | Fast, generous free tier |
+| **ByteDance Doubao** | Your endpoint ID (e.g. `ep-20260318…`) | OpenAI-compatible; supports Coding Plan base URL for cost control |
+
+**Base URL override** — Doubao (and any OpenAI-compatible endpoint) lets you set a custom base URL directly in settings. Switch between billing tiers without touching code.
+
+All API keys are stored client-side only. The server route forwards them per-request and never persists them.
+
+---
+
+## 📐 How It Works
+
+### Parse Pipeline
+
+```
+User prompt (plain text)
+        │
+        ▼
+POST /api/ai/parse-workflow
+        │  ┌─────────────────────────────┐
+        ├─▶│  generateText()             │  ← provider-agnostic, 8k token budget
+        │  │  (Anthropic / Gemini / Ark) │
+        │  └─────────────────────────────┘
+        │
+        ▼
+  extractJSON()      ← brace-depth scanner, handles preamble/postamble
+  jsonrepair()       ← fixes missing quotes, trailing commas, etc.
+        │
+        ▼
+  hierarchicalLayout()  ← Sugiyama-style left→right positioning
+  groupAwareLayout()    ← AABB physics: hub gravity + collision + centroid repulsion
+        │
+        ▼
+  metadataOverrides     ← per-node: name, role, summary, constraints, tasks,
+                           connections (derived from edges), workflows (from groups)
+        │
+        ▼
+  importState()         ← writes to in-memory server singleton
+  → client polls /api/graph-state every 3 s
+```
+
+### Layout Physics
+
+The group-aware layout runs a multi-force physics solver (no velocity, pure position):
+
+1. **Hub gravity** — all groups attract toward the most-connected node
+2. **Shared-node tension** — groups sharing a node are pulled together
+3. **Centroid repulsion** — sharing groups that collapse get pushed apart (prevents pile-up)
+4. **AABB collision** — non-sharing groups are pushed apart via node-level delta accumulation (no rigid-body oscillation)
+
+Followed by two post-processing passes:
+- **Strict separation** (60 iterations) — node-level adjustment, facing-half strategy to break symmetry for same-shaped groups
+- **Union-bbox eviction** (40 iterations) — non-member nodes trapped inside foreign groups exit via the shortest canvas-valid path
+
+### Data Model
+
+```
+GraphState
+├── customNodes[]      — id, label, initials, role, position, source
+├── customEdges[]      — id, source, target, name, sequence, weight
+├── ecosystemPositions — node → {x, y} for hub view
+├── workflowGroups[]   — id, name, color, nodeIds, parentGroupId?
+└── settings
+    ├── metadataOverrides  — per-entity: name, summary, tasks, constraints,
+    │                        connections, processes (workflow memberships)
+    ├── edgeWeightOverrides
+    ├── nodeDelayOverrides
+    └── hiddenCoreNodes
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 src/
 ├── app/
-│   ├── api/
-│   │   ├── ai/
-│   │   │   ├── parse-workflow/route.ts  # POST: natural language → graph nodes/edges (Claude)
-│   │   │   └── optimize/route.ts        # POST: graph state → optimisation report (Claude)
-│   │   ├── workflow/route.ts            # GET: node/edge metadata + layout positions
-│   │   └── graph-state/route.ts        # GET poll / PUT mutate (real-time state)
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx                        # Main app shell, header, AI orchestration
+│   ├── page.tsx                    # Root page — start screen + canvas router
+│   └── api/
+│       ├── ai/
+│       │   ├── parse-workflow/     # POST: text → graph JSON
+│       │   └── optimize/           # POST: graph → bottleneck report
+│       ├── graph-state/            # GET/PUT: server state CRUD
+│       └── workflow/               # GET: static workflow definitions
 ├── components/
-│   ├── AIAnalysisModal.tsx             # Modal: displays Claude optimisation report
-│   ├── AISettingsModal.tsx             # Modal: Anthropic API key management
-│   ├── AnalysisSidebar.tsx             # Slide-out panel for node/edge editing
-│   ├── Edges.tsx                       # Stub (wire rendering is inline in GraphCanvas)
-│   ├── GraphCanvas.tsx                 # SVG canvas: CRUD, export, drag, wires
-│   ├── Nodes.tsx                       # TypeScript types for custom node data
-│   └── StartScreen.tsx                 # Landing page with CSV import + AI generation
+│   ├── GraphCanvas.tsx             # SVG canvas, nodes, edges, pulses
+│   ├── AnalysisSidebar.tsx         # Right panel — node/edge deep-dive
+│   ├── StartScreen.tsx             # Landing, template gallery, AI input
+│   └── AISettingsModal.tsx         # Provider / key / base URL settings
 └── lib/
-    ├── constants.ts                    # Hardcoded core NODE_DATA and EDGE_DATA
-    └── serverState.ts                  # In-memory graph state singleton
+    ├── aiClient.ts                 # Provider-agnostic generateText()
+    ├── layout.ts                   # hierarchicalLayout + groupAwareLayout
+    ├── serverState.ts              # In-memory state singleton + mutations
+    ├── templates.ts                # Pre-built workflow templates
+    └── constants.ts                # Core node IDs, role colours, etc.
 ```
 
-### Environment
+---
 
-No `.env` file is required. The Anthropic API key is managed entirely client-side via browser `localStorage` and passed to the server only as a request body parameter on AI calls.
+## 🧩 Templates
+
+Templates ship with full metadata — tasks, summaries, constraints, and workflow groups — so you get a rich, ready-to-explore graph the moment you pick one.
+
+### Morning Routine (7 nodes)
+```
+[Email / Inbox] ──┐
+                  ├──▶ [You] ──▶ [Notes] ──▶ [Stand-up] ──▶ [Deep Work]
+[Calendar]     ──┘           └──▶ [Task List] ──────────────────────────▶ ▲
+```
+Groups: Morning Inputs · Planning Layer · Execution
+
+### Project Workflow (14 nodes)
+Idea → Research → Outline → Draft → (Reviewer A + Reviewer B) → Feedback → Publish → Analytics → Archive
+
+Groups: Discovery · Production · Review Loop · Distribution
+
+### Full Work Week (22 nodes)
+Five external input streams → capture + planning → you (hub) → deep work blocks + collaboration → deliverables + published content + weekly KPIs
+
+Groups: External Inputs · Capture & Plan · Deep Focus · Collaboration · Outputs & Review
+
+---
+
+## 🛠️ Development
+
+```bash
+npm run dev     # Dev server with Turbopack → localhost:3000
+npm run build   # Production build
+npm run lint    # ESLint check
+```
+
+**State note:** The server uses an in-memory singleton (`src/lib/serverState.ts`). It resets on server restart. For persistence across restarts, swap the singleton with a database (SQLite, Postgres, etc.) using the same `importState` / `getGraphState` interface.
+
+**Adding a new AI provider:**
+1. Add the provider to `AIProvider` union type in `src/lib/aiClient.ts`
+2. Implement the `generateText` branch for the new provider
+3. Add the provider config (name, models, colour) to `PROVIDERS` in `AISettingsModal.tsx`
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] **Persistent storage** — SQLite or Postgres backend
+- [ ] **Real-time collaboration** — WebSocket sync, presence indicators
+- [ ] **Constraint propagation** — risk badges that cascade through the graph
+- [ ] **Webhook ingestion** — live workflow updates from GitHub, Jira, Slack
+- [ ] **OCR / PDF import** — extract workflow from scanned process docs
+- [ ] **Diff view** — visualise what changed between two workflow versions
+- [ ] **Shareable links** — read-only public URLs for graphs
+
+---
+
+## 📄 License
+
+MIT © 2026 — do whatever you want, just don't blame us when your workflow still has bottlenecks.
+
+---
+
+<div align="center">
+  <sub>Built with Next.js · React 19 · Tailwind CSS · Anthropic Claude · Google Gemini · ByteDance Doubao</sub>
+</div>
