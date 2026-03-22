@@ -1,0 +1,34 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <mask id="hollow-rings">
+      <rect width="256" height="256" fill="white"/>
+      <circle cx="92" cy="188" r="14" fill="black"/>
+      <circle cx="164" cy="188" r="14" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- Dashed cross-connections from hub to top nodes -->
+  <line x1="44" y1="68" x2="128" y2="104" stroke="url(#brandGrad)" stroke-width="6" stroke-dasharray="8 12" stroke-linecap="round" opacity="0.35"/>
+  <line x1="212" y1="68" x2="128" y2="104" stroke="url(#brandGrad)" stroke-width="6" stroke-dasharray="8 12" stroke-linecap="round" opacity="0.35"/>
+
+  <!-- W path (masked so hollow ring nodes show through) -->
+  <g mask="url(#hollow-rings)">
+    <path d="M 44 68 L 92 188 L 128 104 L 164 188 L 212 68"
+          stroke="url(#brandGrad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Solid top-left node -->
+  <circle cx="44" cy="68" r="18" fill="url(#brandGrad)"/>
+  <!-- Solid top-right node -->
+  <circle cx="212" cy="68" r="18" fill="url(#brandGrad)"/>
+  <!-- Hub / centre node (largest) -->
+  <circle cx="128" cy="104" r="22" fill="url(#brandGrad)"/>
+  <!-- Hollow bottom-left node -->
+  <circle cx="92" cy="188" r="18" fill="none" stroke="url(#brandGrad)" stroke-width="10"/>
+  <!-- Hollow bottom-right node -->
+  <circle cx="164" cy="188" r="18" fill="none" stroke="url(#brandGrad)" stroke-width="10"/>
+</svg>

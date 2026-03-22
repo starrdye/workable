@@ -408,7 +408,7 @@ export function StartScreen({
           <div className="px-10 pt-9 pb-6 flex items-start justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
-                <img src="/workable-icon.svg" alt="Workable" className="w-9 h-9 rounded-xl shadow-sm" />
+                <img src="/workable-logo.svg" alt="Workable" className="w-9 h-9" />
                 Workable
               </h1>
               <p className="text-gray-500 mt-1.5 text-sm">
