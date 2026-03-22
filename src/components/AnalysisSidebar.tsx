@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import {
   X, Zap, Link as LinkIcon, Trash2, Settings, Check,
-  Clock, FastForward, Activity, ShieldAlert, Plus, ChevronDown, ChevronUp,
+  Clock, FastForward, Activity, ShieldAlert, Plus, ChevronDown, ChevronUp, ArrowRight,
 } from "lucide-react";
 import { CORE_NODE_IDS as CORE_NODE_IDS_ARRAY } from "@/lib/constants";
 import type { NodeTask } from "@/lib/serverState";
@@ -24,6 +24,11 @@ export interface AnalysisData {
   weight?: number;
   outputDelay?: number;
   isImprovementOnly?: boolean;
+  // Edge direction info (populated for edge type)
+  edgeSourceId?: string;
+  edgeTargetId?: string;
+  edgeSourceLabel?: string;
+  edgeTargetLabel?: string;
 }
 
 interface AnalysisSidebarProps {
@@ -32,6 +37,8 @@ interface AnalysisSidebarProps {
   onClose: () => void;
   onDelete?: (id: string) => void;
   metadataOverrides?: Record<string, Partial<AnalysisData> & { tasks?: NodeTask[] }>;
+  /** Source map from customNodes — used to render the origin badge per node. */
+  nodeSources?: Record<string, "ai-generated" | "user-added">;
 }
 
 const CORE_NODE_IDS = new Set<string>(CORE_NODE_IDS_ARRAY);
@@ -421,7 +428,7 @@ function EditableList({
 
 // ─── Main sidebar ────────────────────────────────────────────────────────────
 
-export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverrides }: AnalysisSidebarProps) {
+export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverrides, nodeSources }: AnalysisSidebarProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<AnalysisData | null>(null);
   const [saving, setSaving] = useState(false);
@@ -545,9 +552,46 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
           <div className="text-sm text-slate-400 italic mt-2">Select a node or connection to view details.</div>
         ) : (
           <>
+            {/* Origin badge — shown for nodes only, never for edges */}
+            {current.type === "node" && (() => {
+              const src = nodeSources?.[current.id];
+              if (!src) return null;
+              const isAI = src === "ai-generated";
+              return (
+                <div className="mb-3 flex">
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                    isAI
+                      ? "bg-violet-50 border-violet-200 text-violet-600"
+                      : "bg-sky-50 border-sky-200 text-sky-600"
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isAI ? "bg-violet-500" : "bg-sky-500"}`} />
+                    {isAI ? "AI Generated" : "User Added"}
+                  </span>
+                </div>
+              );
+            })()}
+
             {editing && (
               <div className="mb-4 text-xs text-indigo-500 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 font-medium">
                 ✏️ Editing — changes are saved to the server session. Export CSV to persist permanently.
+              </div>
+            )}
+
+            {/* Direction row — edges only, always visible */}
+            {current.type === "edge" && (current.edgeSourceLabel || current.edgeTargetLabel) && (
+              <div className="mb-4">
+                <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest mb-2">Data Flow Direction</div>
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">From</div>
+                    <div className="text-xs font-semibold text-slate-700 truncate">{current.edgeSourceLabel || current.edgeSourceId || "—"}</div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <div className="flex-1 min-w-0 text-right">
+                    <div className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">To</div>
+                    <div className="text-xs font-semibold text-slate-700 truncate">{current.edgeTargetLabel || current.edgeTargetId || "—"}</div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -556,7 +600,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
               editing={editing} onChange={set("name")} />
 
             <EditableField label={current.type === "node" ? "Role / Type" : "Transfer Method"}
-              value={current.role || "User Added"}
+              value={current.role || ""}
               editing={editing} onChange={set("role")} />
 
             <EditableField label="System Status"
@@ -644,7 +688,12 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
             </div>
 
             <EditableField label="Summary"
-              value={current.summary || (current.type === "node" ? "No summary provided." : "Direct communication between nodes.")}
+              value={current.summary || (current.type === "node"
+                ? "No summary provided."
+                : current.name
+                  ? `${current.name} — flow from ${current.edgeSourceLabel || "source"} to ${current.edgeTargetLabel || "target"}.`
+                  : `Direct flow from ${current.edgeSourceLabel || "source"} to ${current.edgeTargetLabel || "target"}.`
+              )}
               editing={editing} multiline onChange={set("summary")} />
 
             {/* Constraints — only shown for nodes */}
@@ -673,14 +722,37 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
             )}
 
             <EditableList
-              label={current.type === "node" ? "Assigned Processes" : "Active Protocols"}
-              items={current.processes || []} editing={editing}
+              label={current.type === "node" ? "Assigned Workflows" : "Active Protocols"}
+              items={(current.processes || []).filter(Boolean)} editing={editing}
               onChange={val => setDraft(d => d ? { ...d, processes: val } : d)} />
 
-            <EditableList
-              label={current.type === "node" ? "Direct Connections" : "Connected Nodes"}
-              items={current.connections || []} editing={editing}
-              onChange={val => setDraft(d => d ? { ...d, connections: val } : d)} />
+            {current.type === "node" ? (
+              <EditableList
+                label="Direct Connections"
+                items={(current.connections || []).filter(Boolean)} editing={editing}
+                onChange={val => setDraft(d => d ? { ...d, connections: val } : d)} />
+            ) : (
+              /* For edges: show connected node names as read-only pills */
+              !editing && (current.edgeSourceLabel || current.edgeTargetLabel) && (
+                <div className="mb-4">
+                  <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest mb-2 border-b border-slate-100 pb-1">Connected Nodes</div>
+                  <div className="flex flex-col gap-1.5">
+                    {current.edgeSourceLabel && (
+                      <div className="flex items-center gap-2 text-xs text-slate-700">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                        <span className="font-medium">From:</span> {current.edgeSourceLabel}
+                      </div>
+                    )}
+                    {current.edgeTargetLabel && (
+                      <div className="flex items-center gap-2 text-xs text-slate-700">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                        <span className="font-medium">To:</span> {current.edgeTargetLabel}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            )}
 
             {editing && current.type === "node" && (
               <p className="mt-1 text-[10px] text-slate-400 italic">

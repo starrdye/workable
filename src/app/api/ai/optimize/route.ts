@@ -55,11 +55,12 @@ function stripFences(text: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const { workflowData, apiKey, provider = 'anthropic', model } = await req.json() as {
+    const { workflowData, apiKey, provider = 'anthropic', model, baseUrl } = await req.json() as {
       workflowData: Record<string, unknown>;
       apiKey: string;
       provider?: AIProvider;
       model?: string;
+      baseUrl?: string;
     };
 
     if (!apiKey?.trim())    return NextResponse.json({ error: 'API key is required.'      }, { status: 400 });
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest) {
       systemPrompt: SYSTEM_PROMPT,
       userMessage:  `Analyze this workflow and provide optimization recommendations:\n\n${workflowSummary}`,
       maxTokens:    2000,
+      baseUrl:      baseUrl || undefined,
     });
 
     // Try to parse as structured JSON; fall back to plain analysis text

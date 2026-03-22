@@ -54,7 +54,7 @@ interface AddForm { cx: number; cy: number; label: string; initials: string; rol
 interface WorkflowApiState {
   baselinePositions:  Record<string, { x: number; y: number }>;
   ecosystemPositions: Record<string, { x: number; y: number }>;
-  customNodes: Array<{ id: string; labelInitials: string; label: string; nodeType: "neural"|"eco"; role?: string; textColor?: string; position: { x: number; y: number }; outputDelay?: number }>;
+  customNodes: Array<{ id: string; labelInitials: string; label: string; nodeType: "neural"|"eco"; role?: string; source?: "ai-generated"|"user-added"; textColor?: string; position: { x: number; y: number }; outputDelay?: number }>;
   customEdges: Array<{ id: string; source: string; target: string; sequence?: number; weight?: number; isCustom?: boolean; isImprovementOnly?: boolean }>;
   settings: {
     nodePause: number;
@@ -248,12 +248,20 @@ function buildCsvExport(
   lines.push("id,initials,label,x,y");
   lines.push("");
 
+  // When all core nodes are hidden (AI-generated workflow), exclude them and
+  // their builtin edges from the export — they are template infrastructure
+  // irrelevant to the user's custom workflow.
+  const hiddenSet = new Set(settings.hiddenCoreNodes ?? []);
+  const allCoreHidden = hiddenSet.size > 0;
+
   lines.push("[CUSTOM_NODES]");
-  lines.push("id,initials,label,nodeType,role,textColor,outputDelay,baseline_x,baseline_y,ecosystem_x,ecosystem_y");
+  lines.push("id,initials,label,nodeType,role,source,textColor,outputDelay,baseline_x,baseline_y,ecosystem_x,ecosystem_y");
   customNodes.forEach((cn) => {
     const bPos = nodes.find((n) => n.id === cn.id);
     lines.push(csvRow(
-      cn.id, cn.labelInitials, cn.label, cn.nodeType, cn.role || "", cn.textColor || "",
+      cn.id, cn.labelInitials, cn.label, cn.nodeType, cn.role || "",
+      cn.source || "",
+      cn.textColor || "",
       cn.outputDelay ?? 1,
       bPos ? Math.round(bPos.x) : Math.round(cn.position.x),
       bPos ? Math.round(bPos.y) : Math.round(cn.position.y),
@@ -267,6 +275,9 @@ function buildCsvExport(
   lines.push("id,source,target,sequence,weight,source_type");
   edgesWithParams.forEach((e) => {
     const isCustomEdge = customEdges.some(ce => ce.id === e.id);
+    // Skip builtin edges whose endpoints are hidden core nodes — they belong to
+    // the template and are not part of the user's custom workflow.
+    if (!isCustomEdge && allCoreHidden && hiddenSet.has(e.source) && hiddenSet.has(e.target)) return;
     lines.push(csvRow(e.id, e.source, e.target, e.sequence ?? 1, e.weight ?? 1, isCustomEdge ? "custom" : "builtin"));
   });
   lines.push("");
@@ -329,6 +340,7 @@ function parseCsvImport(text: string): {
         id: row.id, labelInitials: row.initials, label: row.label,
         nodeType: (row.nodeType as "neural"|"eco") || "neural",
         role: (row.role as WorkflowApiState["customNodes"][0]["role"]) || undefined,
+        source: (row.source as "ai-generated"|"user-added") || undefined,
         textColor: row.textColor || undefined,
         outputDelay: parseFloat(row.outputDelay) || undefined,
         position: { x: parseFloat(row.baseline_x) || 0, y: parseFloat(row.baseline_y) || 0 },
@@ -642,6 +654,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       const newCn: WorkflowApiState["customNodes"][0] = {
         id, labelInitials: addForm.initials.toUpperCase().slice(0,3), label: addForm.label,
         nodeType: "neural", role: addForm.role as WorkflowApiState["customNodes"][0]["role"],
+        source: "user-added",
         textColor: clr, position: { x: addForm.cx - R, y: addForm.cy - R },
       };
       setServerState((prev) => prev ? { ...prev, customNodes: [...prev.customNodes, newCn], lastUpdated: Date.now() } : prev);

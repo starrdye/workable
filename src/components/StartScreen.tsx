@@ -11,6 +11,8 @@ import { PROVIDERS, type AIProvider } from "@/lib/aiClient";
 import { TEMPLATES, buildTemplateState, type Template } from "@/lib/templates";
 
 // Dot colour per provider
+const MAX_PROMPT_CHARS = 8000;
+
 const DOT: Record<AIProvider, string> = {
   anthropic: "bg-indigo-500",
   gemini:    "bg-blue-500",
@@ -27,11 +29,18 @@ export interface AIParsedResult {
   settings?:          { hiddenCoreNodes?: string[] };
 }
 
+export interface AIDebugLog {
+  prompt: string;
+  rawAIResponse: string;
+  error?: string;
+}
+
 interface StartScreenProps {
   onStart:           () => void;
   onImportAndStart?: (csvText: string) => void;
   onAiParsed?:       (result: AIParsedResult) => void;
   onTemplateLoad?:   (result: AIParsedResult) => void;
+  onDebugLog?:       (log: AIDebugLog) => void;
   aiConfig?:         AIConfig;
   onSaveConfig?:     (config: AIConfig) => void;
   onOpenSettings?:   () => void;
@@ -279,7 +288,7 @@ function TemplateGallery({
 // ── Main StartScreen component ────────────────────────────────────────────────
 
 export function StartScreen({
-  onStart, onImportAndStart, onAiParsed, onTemplateLoad,
+  onStart, onImportAndStart, onAiParsed, onTemplateLoad, onDebugLog,
   aiConfig, onSaveConfig: _onSaveConfig, onOpenSettings,
 }: StartScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -344,18 +353,26 @@ export function StartScreen({
     if (instructions.trim() && activeKey && cfg && onAiParsed) {
       setIsParsingAI(true);
       try {
+        const sentPrompt = instructions.trim();
         const res = await fetch("/api/ai/parse-workflow", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt:   instructions.trim(),
+            prompt:   sentPrompt,
             apiKey:   activeKey,
             provider: cfg.provider,
             model:    cfg.models[cfg.provider],
+            baseUrl:  cfg.baseUrls?.[cfg.provider] || undefined,
           }),
         });
         const data = await res.json();
-        if (!res.ok) { setAiError(data.error ?? "AI parsing failed."); setIsParsingAI(false); return; }
+        if (!res.ok) {
+          onDebugLog?.({ prompt: sentPrompt, rawAIResponse: data.rawAIResponse ?? '', error: data.error });
+          setAiError(data.error ?? "AI parsing failed.");
+          setIsParsingAI(false);
+          return;
+        }
+        onDebugLog?.({ prompt: sentPrompt, rawAIResponse: data.rawAIResponse ?? '' });
         onAiParsed(data as AIParsedResult);
       } catch {
         setAiError("Network error. Please try again.");
@@ -475,7 +492,12 @@ export function StartScreen({
               <textarea
                 rows={3}
                 value={instructions}
-                onChange={(e) => { setInstructions(e.target.value); setAiError(null); }}
+                onChange={(e) => {
+                  if (e.target.value.length <= MAX_PROMPT_CHARS) {
+                    setInstructions(e.target.value);
+                    setAiError(null);
+                  }
+                }}
                 disabled={isParsingAI}
                 className={`w-full bg-white border rounded-xl p-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 resize-none shadow-sm transition-colors disabled:opacity-60 ${
                   canUseAI
@@ -484,6 +506,12 @@ export function StartScreen({
                 }`}
                 placeholder="e.g., Every morning I check emails, then update my task list in Notion, before a stand-up with the team, then deep work until lunch…"
               />
+              {/* Token counter */}
+              <div className={`text-xs text-right tabular-nums ${
+                instructions.length >= MAX_PROMPT_CHARS ? "text-red-500 font-medium" : "text-slate-400"
+              }`}>
+                {instructions.length.toLocaleString()}&thinsp;/&thinsp;{MAX_PROMPT_CHARS.toLocaleString()}
+              </div>
               {hasInstructions && !activeKey && (
                 <p className="text-xs text-amber-600 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />

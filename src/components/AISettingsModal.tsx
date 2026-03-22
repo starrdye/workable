@@ -10,6 +10,7 @@ export interface AIConfig {
   provider: AIProvider;
   models: Record<AIProvider, string>;
   keys: Record<AIProvider, string>;
+  baseUrls?: Partial<Record<AIProvider, string>>;
 }
 
 export const AI_CONFIG_KEY = "nwt_ai_config";
@@ -34,8 +35,9 @@ export function loadAIConfig(): AIConfig {
       return {
         ...defaults,
         ...parsed,
-        keys:   { ...defaults.keys, ...(parsed.keys ?? {}) },
+        keys:     { ...defaults.keys, ...(parsed.keys ?? {}) },
         models,
+        baseUrls: { ...(parsed.baseUrls ?? {}) },
       };
     }
   } catch {}
@@ -124,6 +126,9 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
 
   const setModel = (p: AIProvider, model: string) =>
     setConfig((c) => ({ ...c, models: { ...c.models, [p]: model } }));
+
+  const setBaseUrl = (p: AIProvider, url: string) =>
+    setConfig((c) => ({ ...c, baseUrls: { ...c.baseUrls, [p]: url } }));
 
   const toggleShowKey = (p: AIProvider) =>
     setShowKey((s) => ({ ...s, [p]: !s[p] }));
@@ -250,6 +255,30 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
               </div>
             )}
           </section>
+
+          {/* ── Section 2b: Base URL (providers that expose it) ───────────── */}
+          {activeMeta.defaultBaseUrl && (
+            <section>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Base URL — <span className={activeColor.text}>{activeMeta.name}</span>
+              </p>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={config.baseUrls?.[activeProvider] ?? ""}
+                  onChange={(e) => setBaseUrl(activeProvider, e.target.value.trim())}
+                  placeholder={activeMeta.baseUrlPlaceholder ?? activeMeta.defaultBaseUrl}
+                  className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:border-violet-400 focus:ring-violet-400 transition-colors"
+                />
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  {activeMeta.baseUrlHint}
+                  {!config.baseUrls?.[activeProvider] && (
+                    <span className="text-slate-300"> · Leave blank to use the default.</span>
+                  )}
+                </p>
+              </div>
+            </section>
+          )}
 
           {/* ── Section 3: API keys for all providers ─────────────────────── */}
           <section>

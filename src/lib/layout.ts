@@ -154,7 +154,10 @@ export function groupAwareLayout(
   );
 
   // ── Solver constants ──────────────────────────────────────────────────────
-  const GRAVITY       = 0.04;   // pull toward hub (soft, temperature-scaled)
+  // Gravity is kept very light so it cannot overpower the AABB collision push.
+  // (Original 0.04 allowed gravity to pull a group back faster than a small
+  // collision correction could push it out, causing persistent overlap.)
+  const GRAVITY       = 0.012;  // gentle hub pull — must not defeat collision
   const TENSION       = 0.08;   // pull sharing groups toward each other (soft)
   const COOLING_RATE  = 0.982;  // gravity + tension decay rate per iteration
   const ITERATIONS    = 280;    // max iterations before forced stop
@@ -188,7 +191,32 @@ export function groupAwareLayout(
       }
     }
 
-    // 3. AABB COLLISION — non-sharing overlapping groups are pushed apart.
+    // 3. SHARING-GROUP CENTROID REPULSION — prevents sharing groups from
+    //    completely collapsing when multiple groups share the same node.
+    //    Unlike AABB collision (for non-sharing pairs), this runs at full
+    //    strength so low-temperature tension can't override it.
+    const SHARING_SEP = GC_SZ * 2 + SEP_GAP; // ~128 px min centroid-to-centroid distance
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (!sharesWith[i][j]) continue;
+        const bI = getBbox(topLevel[i].effIds);
+        const bJ = getBbox(topLevel[j].effIds);
+        if (!bI || !bJ) continue;
+        const dcx  = bI.cx - bJ.cx;
+        const dcy  = bI.cy - bJ.cy;
+        const dist = Math.sqrt(dcx * dcx + dcy * dcy);
+        if (dist < SHARING_SEP) {
+          // Push along the centroid vector; break ties along X.
+          const nx   = dist > 0 ? dcx / dist : 1;
+          const ny   = dist > 0 ? dcy / dist : 0;
+          const push = (SHARING_SEP - dist) * 0.3;
+          dx[i] += nx * push;   dy[i] += ny * push;
+          dx[j] -= nx * push;   dy[j] -= ny * push;
+        }
+      }
+    }
+
+    // 4. AABB COLLISION — non-sharing overlapping groups are pushed apart.
     //    Full strength every iteration (no temperature scaling) → deterministic.
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
@@ -221,6 +249,160 @@ export function groupAwareLayout(
     }
 
     temperature *= COOLING_RATE;
+  }
+
+  // ── Strict final separation: node-level adjustment ────────────────────────
+  // Group-level AABB can stall when groups are the same size: equal forces from
+  // multiple neighbours cancel out (A pushed left by B, right by C → net 0).
+  // This pass breaks the rigid-body constraint: only the nodes on the FACING
+  // side of each overlap are moved, so the group's bounding box shrinks toward
+  // the violating boundary rather than the whole group translating.
+  //
+  // • Deltas are accumulated across all pairs before any node is moved.
+  // • sortFn returns nodes ordered closest-to-opponent first (facing side).
+  // • Only ceil(count/2) facing nodes are pushed, keeping internal layout intact.
+  const sortFn = (ids: string[], useX: boolean, descending: boolean) =>
+    ids
+      .filter(id => result[id])
+      .sort((a, b) => {
+        const key = useX ? 'x' : 'y';
+        return descending
+          ? result[b]![key] - result[a]![key]
+          : result[a]![key] - result[b]![key];
+      });
+
+  for (let pass = 0; pass < 60; pass++) {
+    const nodeDx: Record<string, number> = {};
+    const nodeDy: Record<string, number> = {};
+    let anyMoved = false;
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (sharesWith[i][j]) continue;
+        const bA = getBbox(topLevel[i].effIds);
+        const bB = getBbox(topLevel[j].effIds);
+        if (!bA || !bB) continue;
+
+        const overlapX = bA.hw + bB.hw + SEP_GAP - Math.abs(bA.cx - bB.cx);
+        const overlapY = bA.hh + bB.hh + SEP_GAP - Math.abs(bA.cy - bB.cy);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+
+        anyMoved = true;
+        const useX  = overlapX <= overlapY;
+        const push  = (useX ? overlapX : overlapY) * 0.5;
+        // aFirst: true when A's centroid is ≤ B's on the resolution axis
+        const aFirst = useX ? bA.cx <= bB.cx : bA.cy <= bB.cy;
+
+        // Facing nodes of A: highest values when A is left/above (aFirst=true),
+        // lowest values when A is right/below (aFirst=false).
+        const aFacing = sortFn(topLevel[i].effIds, useX, aFirst);
+        const aCount  = Math.ceil(aFacing.length / 2);
+        aFacing.slice(0, aCount).forEach(id => {
+          if (useX) nodeDx[id] = (nodeDx[id] ?? 0) + (aFirst ? -push : push);
+          else      nodeDy[id] = (nodeDy[id] ?? 0) + (aFirst ? -push : push);
+        });
+
+        // Facing nodes of B: lowest values when B is right/below (aFirst=true).
+        const bFacing = sortFn(topLevel[j].effIds, useX, !aFirst);
+        const bCount  = Math.ceil(bFacing.length / 2);
+        bFacing.slice(0, bCount).forEach(id => {
+          if (useX) nodeDx[id] = (nodeDx[id] ?? 0) + (aFirst ? push : -push);
+          else      nodeDy[id] = (nodeDy[id] ?? 0) + (aFirst ? push : -push);
+        });
+      }
+    }
+
+    if (!anyMoved) break;
+
+    // Apply all accumulated node deltas at once.
+    const allIds = new Set([...Object.keys(nodeDx), ...Object.keys(nodeDy)]);
+    for (const id of allIds) {
+      const pos = result[id];
+      if (!pos) continue;
+      result[id] = {
+        ...pos,
+        x: Math.max(60, Math.min(canvasW - 60, pos.x + (nodeDx[id] ?? 0))),
+        y: Math.max(40, Math.min(canvasH - 40, pos.y + (nodeDy[id] ?? 0))),
+      };
+    }
+  }
+
+  // ── Node eviction: push non-member nodes outside group bounding boxes ───────
+  // A non-member node (e.g. "mary" from HR Evaluation) can sit inside another
+  // group's bbox (e.g. Data Ingestion) because the two groups share a node
+  // ("jack") that anchors both bboxes nearby.
+  //
+  // Evicting per-group independently causes oscillation when two non-member
+  // groups' bboxes overlap around the node: group A pushes the node down,
+  // group B pushes it up, net = 0, stuck.
+  //
+  // Solution: compute the UNION of all non-member group bboxes that contain
+  // the node, then find the shortest exit from that union that fits within
+  // canvas bounds. One direction wins, no oscillation.
+  const allNodeIds = new Set(topLevel.flatMap((g) => g.effIds));
+
+  for (let evPass = 0; evPass < 40; evPass++) {
+    const evDx: Record<string, number> = {};
+    const evDy: Record<string, number> = {};
+    let evMoved = false;
+
+    for (const nodeId of allNodeIds) {
+      const pos = result[nodeId];
+      if (!pos) continue;
+
+      // Build union bbox of all non-member groups that contain this node.
+      let uLeft = Infinity, uRight = -Infinity;
+      let uTop  = Infinity, uBottom = -Infinity;
+
+      for (let i = 0; i < n; i++) {
+        if (topLevel[i].effIds.includes(nodeId)) continue; // member — skip
+        const bbox = getBbox(topLevel[i].effIds);
+        if (!bbox) continue;
+        const bL = bbox.cx - bbox.hw, bR = bbox.cx + bbox.hw;
+        const bT = bbox.cy - bbox.hh, bB = bbox.cy + bbox.hh;
+        if (pos.x <= bL || pos.x >= bR || pos.y <= bT || pos.y >= bB) continue;
+        // Node is inside this group's bbox — expand union.
+        uLeft   = Math.min(uLeft,   bL);
+        uRight  = Math.max(uRight,  bR);
+        uTop    = Math.min(uTop,    bT);
+        uBottom = Math.max(uBottom, bB);
+      }
+
+      if (uLeft === Infinity) continue; // not inside any non-member group
+
+      evMoved = true;
+
+      // Exit distances to each side of the union bbox (with SEP_GAP clearance).
+      const dL = pos.x - uLeft  + SEP_GAP;   // push LEFT  → new x = uLeft  - SEP_GAP
+      const dR = uRight  - pos.x + SEP_GAP;  // push RIGHT → new x = uRight + SEP_GAP
+      const dT = pos.y - uTop   + SEP_GAP;   // push UP    → new y = uTop   - SEP_GAP
+      const dB = uBottom - pos.y + SEP_GAP;  // push DOWN  → new y = uBottom+ SEP_GAP
+
+      // Only consider exits that land within canvas bounds.
+      type Exit = { axis: 'x' | 'y'; delta: number; dist: number };
+      const exits: Exit[] = [];
+      if (pos.x - dL >= 60)          exits.push({ axis: 'x', delta: -dL, dist: dL });
+      if (pos.x + dR <= canvasW - 60) exits.push({ axis: 'x', delta:  dR, dist: dR });
+      if (pos.y - dT >= 40)          exits.push({ axis: 'y', delta: -dT, dist: dT });
+      if (pos.y + dB <= canvasH - 40) exits.push({ axis: 'y', delta:  dB, dist: dB });
+
+      if (exits.length === 0) continue; // surrounded — cannot escape, leave it
+
+      const best = exits.reduce((a, b) => a.dist <= b.dist ? a : b);
+      if (best.axis === 'x') evDx[nodeId] = (evDx[nodeId] ?? 0) + best.delta;
+      else                   evDy[nodeId] = (evDy[nodeId] ?? 0) + best.delta;
+    }
+
+    if (!evMoved) break;
+    for (const id of new Set([...Object.keys(evDx), ...Object.keys(evDy)])) {
+      const pos = result[id];
+      if (!pos) continue;
+      result[id] = {
+        ...pos,
+        x: Math.max(60, Math.min(canvasW - 60, pos.x + (evDx[id] ?? 0))),
+        y: Math.max(40, Math.min(canvasH - 40, pos.y + (evDy[id] ?? 0))),
+      };
+    }
   }
 
   return result;

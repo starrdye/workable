@@ -3,6 +3,7 @@ import { generateText, type AIProvider } from '@/lib/aiClient';
 import type { CustomNodeConfig, CustomEdgeConfig, WorkflowGroup } from '@/lib/serverState';
 import { hierarchicalLayout, groupAwareLayout } from '@/lib/layout';
 import { CORE_NODE_IDS } from '@/lib/constants';
+import { jsonrepair } from 'jsonrepair';
 
 const SYSTEM_PROMPT = `You are a workflow graph parser. Convert natural language workflow descriptions into structured JSON graphs.
 
@@ -148,11 +149,30 @@ function calcPositions(nodes: AINode[], edges: AIEdge[], groups: AIGroup[]) {
   return { baselinePositions, ecosystemPositions: {} as Record<string, { x: number; y: number }> };
 }
 
-function stripFences(text: string): string {
-  return text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim();
+/**
+ * Robustly extract a JSON object from an AI response.
+ * Handles: markdown fences, preamble text, postamble text, and
+ * responses where the model wraps the JSON in extra explanation.
+ */
+function extractJSON(text: string): string {
+  // 1. Strip markdown code fences (```json ... ``` or ``` ... ```)
+  let s = text.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim();
+
+  // 2. Find the outermost JSON object by scanning for first '{' and matching '}'
+  const start = s.indexOf('{');
+  if (start === -1) return s; // no object found — let JSON.parse fail with a clear error
+
+  let depth = 0;
+  let end   = -1;
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+
+  return end !== -1 ? s.slice(start, end + 1) : s.slice(start);
 }
 
 const ALLOWED_COLORS = new Set(["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"]);
@@ -201,11 +221,12 @@ function sanitizeGroups(groups: AIGroup[], nodeIds: Set<string>): WorkflowGroup[
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, apiKey, provider = 'anthropic', model } = await req.json() as {
+    const { prompt, apiKey, provider = 'anthropic', model, baseUrl } = await req.json() as {
       prompt: string;
       apiKey: string;
       provider?: AIProvider;
       model?: string;
+      baseUrl?: string;
     };
 
     if (!apiKey?.trim())  return NextResponse.json({ error: 'API key is required.'              }, { status: 400 });
@@ -235,15 +256,20 @@ export async function POST(req: NextRequest) {
       apiKey,
       systemPrompt: SYSTEM_PROMPT,
       userMessage:  prompt,
-      maxTokens:    3000,
+      maxTokens:    8000,
+      baseUrl:      baseUrl || undefined,
     });
 
     let parsed: { nodes: AINode[]; edges: AIEdge[]; groups?: AIGroup[] };
     try {
-      parsed = JSON.parse(stripFences(rawText));
+      parsed = JSON.parse(jsonrepair(extractJSON(rawText)));
     } catch {
       return NextResponse.json(
-        { error: 'AI returned invalid JSON. Try rephrasing your workflow description.' },
+        {
+          error: 'AI returned invalid JSON. Try rephrasing your workflow description.',
+          rawAIResponse: rawText,
+          promptUsed: prompt,
+        },
         { status: 422 }
       );
     }
@@ -260,6 +286,7 @@ export async function POST(req: NextRequest) {
       label:         n.name,
       nodeType:      'neural' as const,
       role:          mapRole(n.role),
+      source:        'ai-generated' as const,
       position:      baselinePositions[n.id],
     }));
 
@@ -270,27 +297,73 @@ export async function POST(req: NextRequest) {
       sequence: 1,
       weight:   1,
       isCustom: true,
+      ...(e.name ? { name: e.name } : {}),
     }));
 
-    const metadataOverrides: Record<string, { summary?: string; constraints?: string; tasks?: AITaskItem[] }> = {};
+    // metadataOverrides carries display-layer fields for every AI node.
+    // name + role are always written so the sidebar never falls back to
+    // "Custom Node" / "User Added" for AI-generated nodes.
+    const metadataOverrides: Record<string, {
+      name?: string; role?: string; summary?: string; constraints?: string; tasks?: AITaskItem[];
+    }> = {};
     for (const n of parsed.nodes) {
-      if (n.summary || n.constraints || n.tasks?.length) {
-        metadataOverrides[n.id] = {
-          ...(n.summary     ? { summary:     n.summary     } : {}),
-          ...(n.constraints ? { constraints: n.constraints } : {}),
-          ...(n.tasks?.length ? { tasks: n.tasks.map(t => ({
-            id:       t.id || `t_${Math.random().toString(36).slice(2, 8)}`,
-            title:    t.title,
-            status:   (["todo","in-progress","done","blocked","review"].includes(t.status) ? t.status : "todo") as AITaskItem["status"],
-            priority: (["low","medium","high"].includes(t.priority) ? t.priority : "medium") as AITaskItem["priority"],
-            ...(t.note ? { note: t.note } : {}),
-          })) } : {}),
+      metadataOverrides[n.id] = {
+        name: n.name,
+        role: mapRole(n.role),
+        ...(n.summary     ? { summary:     n.summary     } : {}),
+        ...(n.constraints ? { constraints: n.constraints } : {}),
+        ...(n.tasks?.length ? { tasks: n.tasks.map(t => ({
+          id:       t.id || `t_${Math.random().toString(36).slice(2, 8)}`,
+          title:    t.title,
+          status:   (["todo","in-progress","done","blocked","review"].includes(t.status) ? t.status : "todo") as AITaskItem["status"],
+          priority: (["low","medium","high"].includes(t.priority) ? t.priority : "medium") as AITaskItem["priority"],
+          ...(t.note ? { note: t.note } : {}),
+        })) } : {}),
+      };
+    }
+
+    // Store edge names in metadataOverrides so the sidebar can display them.
+    for (const e of parsed.edges) {
+      const edgeId = e.id || `e_${e.source}_${e.target}`;
+      if (e.name) {
+        metadataOverrides[edgeId] = {
+          name:    e.name,
+          summary: e.name,
         };
       }
     }
 
     const nodeIdSet = new Set(customNodes.map(n => n.id));
     const workflowGroups = sanitizeGroups(parsed.groups ?? [], nodeIdSet);
+
+    // Build a name lookup so we can label connections by display name, not raw id.
+    const nodeNameMap = new Map<string, string>(parsed.nodes.map(n => [n.id, n.name]));
+
+    // Derive connections (all directly connected nodes, either direction) and
+    // processes (workflow group memberships) for each node and store them so
+    // the sidebar can display them without falling back to static dummy data.
+    for (const n of parsed.nodes) {
+      const neighbourNames = new Set<string>();
+      for (const e of parsed.edges) {
+        if (e.source === n.id && nodeNameMap.has(e.target)) {
+          neighbourNames.add(nodeNameMap.get(e.target)!);
+        }
+        if (e.target === n.id && nodeNameMap.has(e.source)) {
+          neighbourNames.add(nodeNameMap.get(e.source)!);
+        }
+      }
+
+      // Workflow groups this node belongs to (use sanitized groups for accuracy).
+      const groupNames = workflowGroups
+        .filter(g => g.nodeIds.includes(n.id))
+        .map(g => g.name);
+
+      metadataOverrides[n.id] = {
+        ...metadataOverrides[n.id],
+        connections: [...neighbourNames],
+        processes:   groupNames,
+      };
+    }
 
     return NextResponse.json({
       customNodes,
@@ -302,6 +375,8 @@ export async function POST(req: NextRequest) {
       settings: { hiddenCoreNodes: [...CORE_NODE_IDS] },
       nodeCount: customNodes.length,
       edgeCount: customEdges.length,
+      rawAIResponse: rawText,
+      promptUsed: prompt,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';

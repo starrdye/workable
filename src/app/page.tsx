@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { StartScreen, type AIParsedResult } from "@/components/StartScreen";
+import { StartScreen, type AIParsedResult, type AIDebugLog } from "@/components/StartScreen";
 import { GraphCanvas, GraphCanvasRef } from "@/components/GraphCanvas";
 import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
 import { AISettingsModal, loadAIConfig, type AIConfig } from "@/components/AISettingsModal";
@@ -11,7 +11,7 @@ import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil,
 } from "lucide-react";
-import { PROVIDERS } from "@/lib/aiClient";
+import { PROVIDERS, type AIProvider } from "@/lib/aiClient";
 import type { ServerGraphState } from "@/lib/serverState";
 
 const ROLE_CHIPS = [
@@ -42,8 +42,13 @@ export default function Home() {
   const [editingGroupId, setEditingGroupId]       = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName]   = useState("");
 
-  const aiConfig0 = loadAIConfig;
-  const [aiConfig, setAiConfig]                   = useState<AIConfig>(aiConfig0);
+  // Initialize with a static default so server and client render the same HTML
+  // (no localStorage read during SSR). useEffect loads the real config client-side.
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => ({
+    provider: "anthropic" as AIProvider,
+    models: Object.fromEntries(PROVIDERS.map(p => [p.id, p.defaultModel])) as Record<AIProvider, string>,
+    keys:   Object.fromEntries(PROVIDERS.map(p => [p.id, ""])) as Record<AIProvider, string>,
+  }));
   const [showAISettings, setShowAISettings]       = useState(false);
   const [showAIAnalysis, setShowAIAnalysis]       = useState(false);
   const [aiAnalysis, setAiAnalysis]               = useState<string | null>(null);
@@ -51,6 +56,10 @@ export default function Home() {
   const [aiAnalysisError, setAiAnalysisError]     = useState<string | null>(null);
   const [aiSuggestedConnections, setAiSuggestedConnections] = useState<SuggestedConnection[]>([]);
   const [aiSuggestedRemovals, setAiSuggestedRemovals]       = useState<SuggestedRemoval[]>([]);
+
+  // AI debug log — stores last parse attempt prompt + raw AI response
+  const [aiDebugLog, setAiDebugLog]               = useState<AIDebugLog | null>(null);
+  const [showDebugLog, setShowDebugLog]           = useState(false);
 
   const [tooltip, setTooltip] = useState<{ name: string; summary: string; x: number; y: number; visible: boolean }>
     ({ name: "", summary: "", x: 0, y: 0, visible: false });
@@ -109,6 +118,7 @@ export default function Home() {
           apiKey:       activeApiKey,
           provider:     aiConfig.provider,
           model:        aiConfig.models[aiConfig.provider],
+          baseUrl:      aiConfig.baseUrls?.[aiConfig.provider] || undefined,
         }),
       });
       const data = await res.json();
@@ -168,6 +178,14 @@ export default function Home() {
             techParams.isImprovementOnly = customEdge.isImprovementOnly;
             techParams.sequence = techParams.sequence ?? customEdge.sequence;
             techParams.weight   = techParams.weight   ?? customEdge.weight;
+            // Resolve direction labels for the sidebar
+            techParams.edgeSourceId = customEdge.source;
+            techParams.edgeTargetId = customEdge.target;
+            const overrides = fullServerState.settings?.metadataOverrides ?? {};
+            const srcNode   = fullServerState.customNodes?.find(n => n.id === customEdge.source);
+            const tgtNode   = fullServerState.customNodes?.find(n => n.id === customEdge.target);
+            techParams.edgeSourceLabel = overrides[customEdge.source]?.name || srcNode?.label || customEdge.source;
+            techParams.edgeTargetLabel = overrides[customEdge.target]?.name || tgtNode?.label || customEdge.target;
           }
         }
       }
@@ -274,6 +292,91 @@ export default function Home() {
 
   const hasActiveFilters = roleFilters.length > 0 || groupFilters.length > 0 || searchQuery.trim().length > 0;
 
+  // ── Shared debug modal (renders on both start screen and canvas) ────────────
+  const debugModal = (
+    <>
+      {/* Always-visible debug button */}
+      <button
+        onClick={() => setShowDebugLog(true)}
+        className={`fixed bottom-5 left-5 z-[200] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg transition-colors ${
+          aiDebugLog?.error
+            ? "bg-red-700 text-white hover:bg-red-600"
+            : aiDebugLog
+            ? "bg-slate-800 text-slate-100 hover:bg-slate-700"
+            : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+        }`}
+      >
+        <FileText className="w-3.5 h-3.5" />
+        AI Debug Log{aiDebugLog?.error ? " ⚠" : ""}
+      </button>
+
+      {/* Modal */}
+      {showDebugLog && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-500" />
+                <span className="font-semibold text-slate-800">AI Debug Log</span>
+                {aiDebugLog?.error && (
+                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Error</span>
+                )}
+              </div>
+              <button onClick={() => setShowDebugLog(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-6 space-y-5 text-sm">
+              {!aiDebugLog ? (
+                <p className="text-slate-400 text-center py-8">No parse attempt yet. Submit a workflow description to see debug output here.</p>
+              ) : (
+                <>
+                  {aiDebugLog.error && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700">
+                      <span className="font-medium">Error: </span>{aiDebugLog.error}
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Prompt sent ({aiDebugLog.prompt.length.toLocaleString()} chars)</div>
+                    <pre className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs text-slate-700 whitespace-pre-wrap font-mono overflow-x-auto max-h-48 overflow-y-auto">
+                      {aiDebugLog.prompt || "(empty)"}
+                    </pre>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+                      Raw AI response {aiDebugLog.rawAIResponse ? `(${aiDebugLog.rawAIResponse.length.toLocaleString()} chars)` : "(empty)"}
+                    </div>
+                    <pre className="bg-slate-950 text-green-400 rounded-lg p-4 text-xs whitespace-pre-wrap font-mono overflow-x-auto max-h-96 overflow-y-auto">
+                      {aiDebugLog.rawAIResponse || "(no response received)"}
+                    </pre>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+              {aiDebugLog?.rawAIResponse && (
+                <button
+                  onClick={() => navigator.clipboard.writeText(aiDebugLog!.rawAIResponse)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium"
+                >
+                  Copy response
+                </button>
+              )}
+              <button
+                onClick={() => setShowDebugLog(false)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-700 font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   if (!isAppStarted) {
     return (
       <>
@@ -282,12 +385,14 @@ export default function Home() {
           onImportAndStart={handleImportAndStart}
           onAiParsed={handleAiParsed}
           onTemplateLoad={handleTemplateLoad}
+          onDebugLog={setAiDebugLog}
           aiConfig={aiConfig}
           onSaveConfig={handleSaveAiConfig}
           onOpenSettings={() => setShowAISettings(true)}
         />
         <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
           onSave={handleSaveAiConfig} currentConfig={aiConfig} />
+        {debugModal}
       </>
     );
   }
@@ -697,6 +802,11 @@ export default function Home() {
           data={analysisData}
           isOpen={!!selectedId}
           metadataOverrides={fullServerState?.settings?.metadataOverrides}
+          nodeSources={Object.fromEntries(
+            (fullServerState?.customNodes ?? [])
+              .filter(n => n.source)
+              .map(n => [n.id, n.source!])
+          )}
           onClose={() => { setSelectedId(null); setSelectedType(null); }}
           onDelete={(id) => {
             fetch("/api/graph-state", {
@@ -733,6 +843,8 @@ export default function Home() {
         onAddConnection={handleAddConnection}
         onRemoveEntity={handleRemoveEntity}
       />
+
+      {debugModal}
     </div>
   );
 }

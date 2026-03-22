@@ -724,6 +724,7 @@ export interface TemplateState {
   settings?: {
     hiddenCoreNodes?: string[];
     metadataOverrides?: Record<string, {
+      name?: string; role?: string;
       status?: string; statusColor?: string; summary?: string;
       processes?: string[]; connections?: string[];
       tasks?: NodeTask[];
@@ -799,18 +800,47 @@ export function buildTemplateState(template: Template): TemplateState {
   const customNodes = makeCustomNodes(template.nodes, baselinePositions);
   const customEdges = makeCustomEdges(template.edges);
 
-  // Build metadataOverrides from nodeMeta
+  // Name lookup for connection labels (label = display name)
+  const nodeNameMap = new Map<string, string>(template.nodes.map(n => [n.id, n.label]));
+
+  // Build metadataOverrides — one entry per node, derived consistently:
+  //   name        ← node.label  (fixes "Custom Node" fallback in sidebar)
+  //   role        ← node.role
+  //   connections ← all neighbouring node labels (both in & out edges)
+  //   processes   ← workflow group names this node belongs to ("Assigned Workflows")
+  //   + any rich meta from nodeMeta (status, statusColor, summary, tasks)
   const metadataOverrides: NonNullable<TemplateState["settings"]>["metadataOverrides"] = {};
-  if (template.nodeMeta) {
-    for (const [id, meta] of Object.entries(template.nodeMeta)) {
-      metadataOverrides[id] = {
-        status:      meta.status,
-        statusColor: meta.statusColor,
-        summary:     meta.summary,
-        processes:   meta.processes,
-        tasks:       meta.tasks,
-      };
+  for (const node of template.nodes) {
+    const meta = template.nodeMeta?.[node.id] ?? {};
+
+    // Direct connections — all neighbours regardless of direction
+    const neighbourNames = new Set<string>();
+    for (const e of template.edges) {
+      if (e.source === node.id) {
+        const name = nodeNameMap.get(e.target);
+        if (name) neighbourNames.add(name);
+      }
+      if (e.target === node.id) {
+        const name = nodeNameMap.get(e.source);
+        if (name) neighbourNames.add(name);
+      }
     }
+
+    // Assigned Workflows — group names the node is a member of
+    const groupNames = (template.workflowGroups ?? [])
+      .filter(g => g.nodeIds.includes(node.id))
+      .map(g => g.name);
+
+    metadataOverrides[node.id] = {
+      name:        node.label,
+      role:        node.role,
+      status:      meta.status,
+      statusColor: meta.statusColor,
+      summary:     meta.summary,
+      processes:   groupNames,
+      connections: [...neighbourNames],
+      tasks:       meta.tasks,
+    };
   }
 
   return {

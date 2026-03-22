@@ -16,6 +16,13 @@ export interface CustomNodeConfig {
   label: string;
   nodeType: 'neural' | 'eco';
   role: 'person' | 'tool' | 'external' | 'output';
+  /**
+   * Origin of this node:
+   * - "ai-generated" — created by the AI parse-workflow flow
+   * - "user-added"   — manually added by the user via the Add Node panel
+   * Omitted for legacy imported nodes.
+   */
+  source?: 'ai-generated' | 'user-added';
   textColor?: string;
   position: NodePosition;
   outputDelay?: number; // extra weight applied to outgoing edges from this node
@@ -29,6 +36,8 @@ export interface CustomEdgeConfig {
   weight?: number;
   isCustom?: boolean;
   isImprovementOnly?: boolean; // only show this edge when improvements mode is ON
+  /** Human-readable label for this connection (e.g. from AI parse or user). */
+  name?: string;
   /** Curve tension for MiroFish arc rendering (0.1–1.0, default 0.6). UI-only hint. */
   curveTension?: number;
   /** Z-layer for edge rendering order (higher = rendered on top). UI-only hint. */

@@ -12,6 +12,7 @@ export interface AIProviderConfig {
   provider: AIProvider;
   model: string;
   apiKey: string;
+  baseUrl?: string;
 }
 
 // ── Provider / model catalogue ─────────────────────────────────────────────
@@ -35,6 +36,10 @@ export interface ProviderMeta {
   usesEndpointId?: boolean;
   endpointPlaceholder?: string;
   endpointHint?: string;
+  /** Default base URL for API calls; user can override in AI Settings */
+  defaultBaseUrl?: string;
+  baseUrlPlaceholder?: string;
+  baseUrlHint?: string;
 }
 
 export const PROVIDERS: ProviderMeta[] = [
@@ -81,6 +86,10 @@ export const PROVIDERS: ProviderMeta[] = [
     endpointHint: 'Create an endpoint at console.volcengine.com/ark → Online Inference, then copy its ID here.',
     defaultModel: '',  // empty until the user enters their endpoint ID
     models: [],        // not used — endpoint ID is free-text
+    // Default uses the standard v3 URL. Switch to /api/coding/v3 for Coding Plan billing.
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    baseUrlPlaceholder: 'https://ark.cn-beijing.volces.com/api/v3',
+    baseUrlHint: 'Use /api/coding/v3 for Coding Plan billing · /api/v3 for standard billing',
   },
 ];
 
@@ -97,8 +106,9 @@ export async function generateText(options: {
   systemPrompt: string;
   userMessage: string;
   maxTokens?: number;
+  baseUrl?: string;
 }): Promise<string> {
-  const { provider, model, apiKey, systemPrompt, userMessage, maxTokens = 2048 } = options;
+  const { provider, model, apiKey, systemPrompt, userMessage, maxTokens = 2048, baseUrl } = options;
 
   // ── Anthropic ─────────────────────────────────────────────────────────────
   if (provider === 'anthropic') {
@@ -127,7 +137,8 @@ export async function generateText(options: {
 
   // ── Doubao (ByteDance Ark — OpenAI-compatible) ────────────────────────────
   if (provider === 'doubao') {
-    const res = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', {
+    const doubaoBase = (baseUrl ?? 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, '');
+    const res = await fetch(`${doubaoBase}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
