@@ -304,7 +304,7 @@ export async function POST(req: NextRequest) {
     // name + role are always written so the sidebar never falls back to
     // "Custom Node" / "User Added" for AI-generated nodes.
     const metadataOverrides: Record<string, {
-      name?: string; role?: string; summary?: string; constraints?: string; tasks?: AITaskItem[];
+      name?: string; role?: string; summary?: string; constraints?: string; tasks?: AITaskItem[]; connections?: string[]; processes?: string[];
     }> = {};
     for (const n of parsed.nodes) {
       metadataOverrides[n.id] = {

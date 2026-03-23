@@ -95,6 +95,13 @@ export default function Home() {
         },
       }),
     }).catch(console.error);
+    // Re-run layout using the stored sanitized groups so first-generation
+    // positions are identical to what Reset Layout would produce.
+    await fetch("/api/graph-state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resetLayout" }),
+    }).catch(console.error);
     setIsAppStarted(true);
   };
 

@@ -76,8 +76,12 @@ export function groupAwareLayout(
 
   // Only top-level groups participate; effective nodeIds include descendants so
   // parent groups with subgroups are not accidentally excluded.
+  // A group is also treated as top-level when its parentGroupId references a
+  // group that doesn't exist in the list (orphaned subgroup — parent was never
+  // defined, e.g. a placeholder "grp_daily_reconciliation" in CSV exports).
+  const groupIdSet = new Set(groups.map((g) => g.id));
   const topLevel = groups
-    .filter((g) => !g.parentGroupId)
+    .filter((g) => !g.parentGroupId || !groupIdSet.has(g.parentGroupId))
     .map((g)    => ({ g, effIds: effNodeIds(g.id) }))
     .filter(({ effIds }) => effIds.some((id) => positions[id]));
 

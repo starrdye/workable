@@ -4,6 +4,8 @@
   <em>Personal Workflow Mapper · Next.js 16 · React 19 · TypeScript 5 · Multi-provider AI</em>
 </p>
 
+> **Current branch:** `0.38-personal`
+
 > This guide covers the current production architecture. The original prototype (`prototype.html`) is kept for historical reference only — all active development happens in `src/`.
 
 ---
@@ -48,6 +50,7 @@ Browser
        │
        └─ AISettingsModal.tsx ── localStorage: nwt_ai_config
                                   (provider, model, API key, baseUrl)
+                                  endpoint ID preserved across sessions (no purge)
 ```
 
 No database — server state is a module-level singleton (`src/lib/serverState.ts`). It resets on server restart. Swap the singleton with a real DB via the `importState` / `getGraphState` interface to add persistence.
@@ -171,10 +174,18 @@ The client polls `GET /api/graph-state?since=<ts>` every 3 seconds; the server r
 
 **Token budget:** `maxTokens: 8000` (raised from 3000 to handle 30-node workflows).
 
+**Post-import layout pass (added 0.38):**
+
+After `importState()` is called, `importStateAndStart` in `page.tsx` immediately fires a second
+`PUT /api/graph-state { action: "resetLayout" }` before setting `isAppStarted = true`.
+This ensures the very first generation of a workflow uses identical layout rules to the
+Reset Layout button — group zone assignment, AABB collision resolution, and canvas clamping
+all apply on first render, not only after the user manually resets.
+
 **Provider notes:**
 - **Anthropic:** Native SDK, best JSON fidelity
 - **Gemini:** Native SDK, fast, free-tier friendly
-- **Doubao:** OpenAI-compatible; `baseUrl` is overridable in settings to switch between standard billing (`/api/v3`) and Coding Plan (`/api/coding/v3`) without code changes
+- **Doubao:** OpenAI-compatible; `baseUrl` is overridable in settings to switch between standard billing (`/api/v3`) and Coding Plan (`/api/coding/v3`) without code changes. The endpoint ID (e.g. `doubao-seed-2.0-lite`) is **always preserved** in `localStorage` — the stale-value purge that previously cleared any non-`ep-` prefixed value has been removed (0.38)
 
 **Adding a new provider:**
 1. Add ID to `AIProvider` union in `aiClient.ts`
@@ -192,6 +203,13 @@ Sugiyama-style topological sort → assign columns → centre within column. Pro
 
 #### `groupAwareLayout(nodes, edges, groups, canvasW, canvasH)`
 Multi-force physics solver — no velocity, pure position assignment. Runs in a temperature-cooled loop:
+
+**Top-level group detection (updated 0.38):**
+A group is treated as top-level when either:
+- `parentGroupId` is `null` / `undefined`, **or**
+- `parentGroupId` references a group ID that does not exist in the groups list (orphaned subgroup — e.g. a CSV export that referenced a parent that was never defined such as `grp_daily_reconciliation`).
+
+Previously such orphaned subgroups were silently excluded from the physics solver, causing their nodes to be stranded outside all group zones after a Reset Layout.
 
 **Forces (per iteration):**
 
@@ -229,6 +247,9 @@ page.tsx useEffect (on selectedId change)
     metadataOverrides: Record<string, Partial<AnalysisData> & { tasks? }>
     nodeSources: Record<string, "ai-generated" | "user-added">
 ```
+
+**`metadataOverrides` type (updated 0.38):**
+The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explicitly declares `connections` and `processes` fields, matching the runtime shape that was already being spread in. This prevents TypeScript from widening the type to `unknown` when these fields are accessed in the same function scope.
 
 **Edge-specific fields** (added in 0.36):
 - `edgeSourceLabel` / `edgeTargetLabel` — resolved node display names
@@ -275,6 +296,10 @@ page.tsx useEffect (on selectedId change)
 | `processes` derived from workflow groups | ✅ Complete | 0.37 |
 | Template metadata (real names, derived fields) | ✅ Complete | 0.37 |
 | Workable brand icon (SVG, favicon, header logo) | ✅ Complete | 0.37 |
+| Doubao endpoint ID preserved across sessions | ✅ Complete | 0.38 |
+| First-generation layout enforces Reset Layout rules | ✅ Complete | 0.38 |
+| Orphaned subgroup treated as top-level in layout | ✅ Complete | 0.38 |
+| `metadataOverrides` type includes `connections` + `processes` | ✅ Complete | 0.38 |
 | Persistent database backend | ⬜ Roadmap | — |
 | Real-time WebSocket sync | ⬜ Roadmap | — |
 | Constraint propagation (risk cascading) | ⬜ Roadmap | — |
@@ -297,6 +322,7 @@ page.tsx useEffect (on selectedId change)
 | `0.35-personal` | Configurable `baseUrl` per provider (Coding Plan support) |
 | `0.36-personal` | Edge name/summary in sidebar, Data Flow Direction row, `edgeSourceLabel`/`edgeTargetLabel` |
 | `0.37-personal` | Derived connections + workflow group memberships in metadata, template metadata overhaul, Workable brand icon + README |
+| `0.38-personal` | Endpoint ID caching (Doubao no longer wiped on load), post-import `resetLayout` pass so first-generation layout matches Reset Layout, orphaned subgroup fix in `groupAwareLayout`, explicit `connections`/`processes` in `metadataOverrides` type |
 
 ---
 
@@ -337,6 +363,21 @@ export function buildMyTemplate(): Partial<GraphState> {
    - Model adds preamble / postamble text → handled by brace-depth scan
    - Model generates invalid JSON (missing quote, trailing comma) → handled by `jsonrepair`
    - Model generates semantically wrong structure (wrong field names) → prompt engineering
+
+### Doubao endpoint ID persistence
+
+The `loadAIConfig()` function in `AISettingsModal.tsx` merges the saved `localStorage` value with defaults on every page load. Prior to 0.38, a guard clause erased any `models.doubao` value that did not start with `"ep-"`, which wiped user-configured model names (e.g. `doubao-seed-2.0-lite`) every session.
+
+That guard has been removed. The saved endpoint / model value is now always respected. If a user needs to reset it, they open AI Settings and clear the Endpoint ID field manually.
+
+### First-generation layout consistency
+
+`importStateAndStart` in `page.tsx` (called after both AI parse and template load) now issues two sequential server calls before revealing the canvas:
+
+1. `PUT /api/graph-state { action: "importState", … }` — stores nodes, edges, groups, metadata
+2. `PUT /api/graph-state { action: "resetLayout" }` — re-runs `hierarchicalLayout` + `groupAwareLayout` using the just-stored groups
+
+This guarantees that the positions the user sees on first load are identical to what Reset Layout would produce, instead of using the raw positions that the parse-workflow route calculated before group sanitization was complete.
 
 ### Hydration / SSR rules
 

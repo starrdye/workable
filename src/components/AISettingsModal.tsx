@@ -24,14 +24,6 @@ export function loadAIConfig(): AIConfig {
       const defaults = makeDefaultConfig();
       const models = { ...defaults.models, ...(parsed.models ?? {}) };
 
-      // Doubao switched from model names to user-specific endpoint IDs (ep-…).
-      // Any stale model name (not starting with "ep-") must be cleared so the
-      // user is prompted to enter their real endpoint ID instead of hitting a
-      // "model not found" error from the Ark API.
-      if (models.doubao && !models.doubao.startsWith("ep-")) {
-        models.doubao = "";
-      }
-
       return {
         ...defaults,
         ...parsed,
