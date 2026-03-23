@@ -1,11 +1,7 @@
 <div align="center">
-  <img src="./public/workable-icon.svg" width="96" height="96" alt="Workable icon" />
-  <h1>Workable</h1>
-  <p><strong>Map your workflow. Spot the cracks. Ship faster.</strong></p>
-  <p>
-    Paste your notes → watch your workflow appear as a live graph →<br/>
-    get AI-powered bottleneck analysis — in under 60 seconds.
-  </p>
+  <img src="./banner.svg" alt="Workable — Personal Workflow Mapper" width="100%"/>
+
+  <br/><br/>
 
   <p>
     <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs&logoColor=white" alt="Next.js"/>
@@ -95,6 +91,14 @@ Run the optimiser on any graph to get a structured report:
 - **Bottlenecks Identified** — specific nodes and edges by name
 - **Constraint Analysis** — flags nodes with constraints that could propagate risk
 - **Quick Wins** — highest impact-to-effort improvements with suggested new connections
+
+### 🔀 AI Update
+Describe any change in plain English and apply it as a precise patch — no rebuild from scratch:
+- **Add** new people, tools, systems, or entire sub-workflows
+- **Update** roles, summaries, constraints, and group memberships
+- **Remove** departed team members or replaced tools (edges cascade automatically)
+- Preview a colour-coded diff (**green** add / **amber** update / **red** remove) before committing
+- Layout reflows automatically after every patch
 
 ### 📤 Export & Import
 | Format | What's included |
@@ -222,13 +226,16 @@ src/
 │   └── api/
 │       ├── ai/
 │       │   ├── parse-workflow/     # POST: text → graph JSON
-│       │   └── optimize/           # POST: graph → bottleneck report
+│       │   ├── optimize/           # POST: graph → bottleneck report
+│       │   └── update/             # POST: prompt + snapshot → patch
 │       ├── graph-state/            # GET/PUT: server state CRUD
 │       └── workflow/               # GET: static workflow definitions
 ├── components/
 │   ├── GraphCanvas.tsx             # SVG canvas, nodes, edges, pulses
 │   ├── AnalysisSidebar.tsx         # Right panel — node/edge deep-dive
 │   ├── StartScreen.tsx             # Landing, template gallery, AI input
+│   ├── AIAnalysisModal.tsx         # Bottleneck report + suggested changes
+│   ├── AIUpdateModal.tsx           # Prompt input → diff preview → apply
 │   └── AISettingsModal.tsx         # Provider / key / base URL settings
 └── lib/
     ├── aiClient.ts                 # Provider-agnostic generateText()

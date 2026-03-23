@@ -57,8 +57,9 @@ export async function PUT(request: NextRequest) {
     isImprovementOnly?: boolean;
     metadata?: {
       name?: string; role?: string; status?: string;
-      statusColor?: string; summary?: string;
+      statusColor?: string; summary?: string; constraints?: string;
       processes?: string[]; connections?: string[];
+      tasks?: import('@/lib/serverState').NodeTask[];
     };
     group?: WorkflowGroup;
     groupId?: string;
