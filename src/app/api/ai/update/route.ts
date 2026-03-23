@@ -53,6 +53,23 @@ export interface AIUpdateGroupExtension {
   removeNodeIds: string[];
 }
 
+export interface AIUpdateGroupPatch {
+  groupId: string;
+  name?: string;
+  color?: string;
+}
+
+export interface AIUpdateNodeTasks {
+  nodeId: string;
+  tasks: AITaskItem[];
+}
+
+export interface AIUpdateEdgePatch {
+  id: string;
+  name?: string;
+  summary?: string;
+}
+
 export interface AIUpdateResult {
   summary: string;
   add: {
@@ -63,10 +80,14 @@ export interface AIUpdateResult {
   update: {
     nodes: AIUpdateNode[];
     groupExtensions: AIUpdateGroupExtension[];
+    groups: AIUpdateGroupPatch[];
+    nodeTasks: AIUpdateNodeTasks[];
+    edges: AIUpdateEdgePatch[];
   };
   remove: {
     nodeIds: string[];
     edgeIds: string[];
+    groupIds: string[];
   };
 }
 
@@ -110,11 +131,26 @@ PATCH FORMAT:
     ],
     "groupExtensions": [
       { "groupId": "existing_group_id", "addNodeIds": ["new_or_existing_id"], "removeNodeIds": ["existing_id"] }
+    ],
+    "groups": [
+      { "groupId": "existing_group_id", "name": "New Group Name", "color": "#10B981" }
+    ],
+    "nodeTasks": [
+      {
+        "nodeId": "existing_node_id",
+        "tasks": [
+          { "id": "t_<6chars>", "title": "Task title", "status": "todo", "priority": "medium", "note": "optional" }
+        ]
+      }
+    ],
+    "edges": [
+      { "id": "existing_edge_id", "name": "New connection label" }
     ]
   },
   "remove": {
     "nodeIds": ["existing_node_id"],
-    "edgeIds": ["existing_edge_id"]
+    "edgeIds": ["existing_edge_id"],
+    "groupIds": ["existing_group_id"]
   }
 }
 
@@ -123,8 +159,12 @@ STRICT RULES:
 - New edge IDs:  "upd_e_" prefix (e.g. "upd_e_mary_bryan")
 - New group IDs: "upd_grp_" prefix (e.g. "upd_grp_mentorship")
 - update.nodes: ONLY reference IDs that appear in the snapshot NODES section — only include fields that are changing
-- update.groupExtensions: ONLY reference group IDs from the snapshot GROUPS section
+- update.groupExtensions: ONLY reference group IDs from the snapshot GROUPS section — use to add/remove nodes from an existing group without renaming it
+- update.groups: ONLY reference group IDs from the snapshot GROUPS section — use to rename or recolor a group; only include "name" or "color" that is actually changing; valid colors only
+- update.nodeTasks: provides the COMPLETE replacement task list for that node — omit a node entirely to leave its tasks unchanged; ONLY reference node IDs from the snapshot
+- update.edges: ONLY reference edge IDs from the snapshot EDGES section — use to rename an existing connection; only include fields that are changing
 - remove.nodeIds / remove.edgeIds: ONLY reference IDs from the snapshot
+- remove.groupIds: ONLY reference group IDs from the snapshot — removing a group does NOT remove its member nodes
 - Edge source/target: must exist in the snapshot OR in add.nodes of this same patch
 - Group colors: ONLY from #6366F1, #0EA5E9, #10B981, #F59E0B, #EF4444, #8B5CF6, #EC4899
 - When removing a node, also list ALL its connected edges in remove.edgeIds
@@ -265,8 +305,8 @@ function validatePatch(
   const knownGroups = new Set<string>((state.settings?.workflowGroups ?? []).map(g => g.id));
 
   const add      = raw.add      ?? { nodes: [], edges: [], groups: [] };
-  const update   = raw.update   ?? { nodes: [], groupExtensions: [] };
-  const remove   = raw.remove   ?? { nodeIds: [], edgeIds: [] };
+  const update   = raw.update   ?? { nodes: [], groupExtensions: [], groups: [], nodeTasks: [], edges: [] };
+  const remove   = raw.remove   ?? { nodeIds: [], edgeIds: [], groupIds: [] };
 
   // --- validate add.nodes ---
   const newNodeIds = new Set<string>();
@@ -318,6 +358,37 @@ function validatePatch(
     removeNodeIds: (ext.removeNodeIds ?? []).filter(id => knownNodes.has(id)),
   }));
 
+  // --- validate update.groups (rename/recolor) ---
+  const validUpdateGroups: AIUpdateGroupPatch[] = (update.groups ?? []).filter(g =>
+    g.groupId && knownGroups.has(g.groupId)
+  ).map(g => ({
+    groupId: g.groupId,
+    ...(g.name  ? { name:  g.name  } : {}),
+    ...(g.color && ALLOWED_COLORS.has(g.color) ? { color: g.color } : {}),
+  })).filter(g => g.name !== undefined || g.color !== undefined);
+
+  // --- validate update.nodeTasks ---
+  const validNodeTasks: AIUpdateNodeTasks[] = (update.nodeTasks ?? []).filter(nt =>
+    nt.nodeId && knownNodes.has(nt.nodeId) && Array.isArray(nt.tasks)
+  ).map(nt => ({
+    nodeId: nt.nodeId,
+    tasks: nt.tasks.map(t => ({
+      id:       t.id || `t_${Math.random().toString(36).slice(2, 8)}`,
+      title:    t.title,
+      status:   (['todo','in-progress','done','blocked','review'].includes(t.status) ? t.status : 'todo') as AITaskItem['status'],
+      priority: (['low','medium','high'].includes(t.priority) ? t.priority : 'medium') as AITaskItem['priority'],
+      ...(t.note ? { note: t.note } : {}),
+    })),
+  }));
+
+  // --- validate update.edges ---
+  const validUpdateEdges: AIUpdateEdgePatch[] = (update.edges ?? []).filter(e =>
+    e.id && knownEdges.has(e.id) && (e.name || e.summary)
+  );
+
+  // --- validate remove.groupIds ---
+  const validRemoveGroupIds = (remove.groupIds ?? []).filter(id => knownGroups.has(id));
+
   // --- validate remove ---
   // Never remove core/protected nodes
   const validRemoveNodeIds = (remove.nodeIds ?? []).filter(id =>
@@ -335,8 +406,8 @@ function validatePatch(
   return {
     summary: typeof raw.summary === 'string' ? raw.summary : 'Workflow updated.',
     add:    { nodes: validAddNodes, edges: validAddEdges, groups: validAddGroups },
-    update: { nodes: validUpdateNodes, groupExtensions: validGroupExts },
-    remove: { nodeIds: validRemoveNodeIds, edgeIds: [...allRemoveEdgeIds] },
+    update: { nodes: validUpdateNodes, groupExtensions: validGroupExts, groups: validUpdateGroups, nodeTasks: validNodeTasks, edges: validUpdateEdges },
+    remove: { nodeIds: validRemoveNodeIds, edgeIds: [...allRemoveEdgeIds], groupIds: validRemoveGroupIds },
   };
 }
 

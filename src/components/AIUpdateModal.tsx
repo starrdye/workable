@@ -52,6 +52,23 @@ export interface AIUpdateGroupExtension {
   removeNodeIds: string[];
 }
 
+export interface AIUpdateGroupPatch {
+  groupId: string;
+  name?: string;
+  color?: string;
+}
+
+export interface AIUpdateNodeTasks {
+  nodeId: string;
+  tasks: AITaskItem[];
+}
+
+export interface AIUpdateEdgePatch {
+  id: string;
+  name?: string;
+  summary?: string;
+}
+
 export interface AIUpdateResult {
   summary: string;
   add: {
@@ -62,10 +79,14 @@ export interface AIUpdateResult {
   update: {
     nodes: AIUpdateNode[];
     groupExtensions: AIUpdateGroupExtension[];
+    groups: AIUpdateGroupPatch[];
+    nodeTasks: AIUpdateNodeTasks[];
+    edges: AIUpdateEdgePatch[];
   };
   remove: {
     nodeIds: string[];
     edgeIds: string[];
+    groupIds: string[];
   };
 }
 
@@ -107,20 +128,25 @@ const EXAMPLES = [
 
 function diffSummaryPill(result: AIUpdateResult) {
   const parts: string[] = [];
-  const addNodes  = result.add.nodes.length;
-  const addEdges  = result.add.edges.length;
-  const addGroups = result.add.groups.length;
-  const upNodes   = result.update.nodes.length;
-  const upGroups  = result.update.groupExtensions.length;
-  const rmNodes   = result.remove.nodeIds.length;
-  const rmEdges   = result.remove.edgeIds.length;
+  const addNodes   = result.add.nodes.length;
+  const addEdges   = result.add.edges.length;
+  const addGroups  = result.add.groups.length;
+  const totalUpd   = result.update.nodes.length
+    + result.update.groupExtensions.length
+    + (result.update.groups?.length ?? 0)
+    + (result.update.nodeTasks?.length ?? 0)
+    + (result.update.edges?.length ?? 0);
+  const rmNodes    = result.remove.nodeIds.length;
+  const rmEdges    = result.remove.edgeIds.length;
+  const rmGroups   = result.remove.groupIds?.length ?? 0;
 
   if (addNodes)  parts.push(`+${addNodes} node${addNodes > 1 ? "s" : ""}`);
   if (addEdges)  parts.push(`+${addEdges} edge${addEdges > 1 ? "s" : ""}`);
   if (addGroups) parts.push(`+${addGroups} group${addGroups > 1 ? "s" : ""}`);
-  if (upNodes + upGroups > 0) parts.push(`✎ ${upNodes + upGroups} update${(upNodes + upGroups) > 1 ? "s" : ""}`);
+  if (totalUpd)  parts.push(`✎ ${totalUpd} update${totalUpd > 1 ? "s" : ""}`);
   if (rmNodes)   parts.push(`−${rmNodes} node${rmNodes > 1 ? "s" : ""}`);
   if (rmEdges)   parts.push(`−${rmEdges} edge${rmEdges > 1 ? "s" : ""}`);
+  if (rmGroups)  parts.push(`−${rmGroups} group${rmGroups > 1 ? "s" : ""}`);
 
   return parts.length > 0 ? parts.join("  ·  ") : "No changes";
 }
@@ -173,8 +199,18 @@ export function AIUpdateModal({
   const handleBack = () => setView("prompt");
 
   const hasAdd    = result && (result.add.nodes.length + result.add.edges.length + result.add.groups.length) > 0;
-  const hasUpdate = result && (result.update.nodes.length + result.update.groupExtensions.length) > 0;
-  const hasRemove = result && (result.remove.nodeIds.length + result.remove.edgeIds.length) > 0;
+  const hasUpdate = result && (
+    result.update.nodes.length +
+    result.update.groupExtensions.length +
+    (result.update.groups?.length ?? 0) +
+    (result.update.nodeTasks?.length ?? 0) +
+    (result.update.edges?.length ?? 0)
+  ) > 0;
+  const hasRemove = result && (
+    result.remove.nodeIds.length +
+    result.remove.edgeIds.length +
+    (result.remove.groupIds?.length ?? 0)
+  ) > 0;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -365,6 +401,39 @@ export function AIUpdateModal({
                         </div>
                       );
                     })}
+                    {(result.update.groups ?? []).map((g, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-amber-100 bg-amber-50/50">
+                        <Pencil className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-slate-700">Group: {g.groupId}</span>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {[g.name && `rename → "${g.name}"`, g.color && `recolor → ${g.color}`].filter(Boolean).join("  ·  ")}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {(result.update.nodeTasks ?? []).map((nt, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-amber-100 bg-amber-50/50">
+                        <Pencil className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-slate-700">{nt.nodeId}</span>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Replace tasks · {nt.tasks.length} task{nt.tasks.length !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {(result.update.edges ?? []).map((e, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-amber-100 bg-amber-50/50">
+                        <Pencil className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-slate-700">{e.id}</span>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {e.name ? `rename → "${e.name}"` : "update edge metadata"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -391,6 +460,13 @@ export function AIUpdateModal({
                         <Trash2 className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
                         <span className="text-sm text-slate-600">{id}</span>
                         <span className="text-xs text-slate-400">edge</span>
+                      </div>
+                    ))}
+                    {(result.remove.groupIds ?? []).map((id, i) => (
+                      <div key={i} className="flex items-center gap-2 p-3 rounded-xl border border-red-100 bg-red-50/50">
+                        <Trash2 className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                        <span className="text-sm font-semibold text-slate-700">{id}</span>
+                        <span className="text-xs text-slate-400">group</span>
                       </div>
                     ))}
                   </div>

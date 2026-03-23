@@ -406,12 +406,40 @@ export default function Home() {
         await put({ action: "upsertWorkflowGroup", group: { ...existing, nodeIds: updatedNodeIds } });
       }
     }
-    // 8. Deselect any removed node
+    // 8. Rename / recolor existing groups
+    for (const g of result.update.groups ?? []) {
+      const existing = fullServerState?.settings?.workflowGroups?.find(grp => grp.id === g.groupId);
+      if (existing) {
+        await put({ action: "upsertWorkflowGroup", group: {
+          ...existing,
+          ...(g.name  ? { name:  g.name  } : {}),
+          ...(g.color ? { color: g.color } : {}),
+        }});
+      }
+    }
+    // 9. Replace node task lists
+    for (const nt of result.update.nodeTasks ?? []) {
+      await put({ action: "updateMetadata", id: nt.nodeId, metadata: { tasks: nt.tasks } });
+    }
+    // 10. Patch edge metadata (rename)
+    for (const e of result.update.edges ?? []) {
+      const meta: Record<string, unknown> = {};
+      if (e.name)    meta.name    = e.name;
+      if (e.summary) meta.summary = e.summary;
+      if (Object.keys(meta).length) {
+        await put({ action: "updateMetadata", id: e.id, metadata: meta });
+      }
+    }
+    // 11. Delete groups
+    for (const groupId of result.remove.groupIds ?? []) {
+      await put({ action: "deleteWorkflowGroup", groupId });
+    }
+    // 12. Deselect any removed node
     if (result.remove.nodeIds.includes(selectedId ?? "")) {
       setSelectedId(null);
       setSelectedType(null);
     }
-    // 9. Re-run layout to reflow new nodes into the graph cleanly
+    // 13. Re-run layout to reflow new nodes into the graph cleanly
     await put({ action: "resetLayout" });
     setShowAIUpdate(false);
     setAiUpdateResult(null);
