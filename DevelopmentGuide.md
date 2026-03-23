@@ -4,7 +4,7 @@
   <em>Personal Workflow Mapper · Next.js 16 · React 19 · TypeScript 5 · Multi-provider AI</em>
 </p>
 
-> **Current branch:** `0.38-personal`
+> **Current branch:** `0.39-personal`
 
 > This guide covers the current production architecture. The original prototype (`prototype.html`) is kept for historical reference only — all active development happens in `src/`.
 
@@ -18,6 +18,7 @@
 4. [Core Systems](#core-systems)
    - [State Management](#state-management)
    - [AI Pipeline](#ai-pipeline)
+   - [AI Update Pipeline](#ai-update-pipeline)
    - [Layout Engine](#layout-engine)
    - [Analysis Sidebar](#analysis-sidebar)
 5. [Feature Status](#feature-status)
@@ -47,6 +48,16 @@ Browser
        │
        ├─ AnalysisSidebar.tsx ─ reads AnalysisData built in page.tsx
        │                         PUT /api/graph-state (updateMetadata / updateEdgeParams)
+       │
+       ├─ AIAnalysisModal.tsx ─ POST /api/ai/optimize
+       │                          reads fullServerState → bottleneck report
+       │                          suggested connections / removals (apply individually)
+       │
+       ├─ AIUpdateModal.tsx ─── POST /api/ai/update
+       │                          buildSnapshot(fullServerState) → semantic text context
+       │                          prompt + snapshot → AI → validated patch JSON
+       │                          onApply → sequential PUT /api/graph-state calls
+       │                          → resetLayout
        │
        └─ AISettingsModal.tsx ── localStorage: nwt_ai_config
                                   (provider, model, API key, baseUrl)
@@ -85,13 +96,15 @@ src/
 ├── app/
 │   ├── layout.tsx                  # Root layout — metadata, fonts, favicon
 │   ├── page.tsx                    # App entry: start screen ↔ canvas routing,
-│   │                               #   AnalysisData assembly, AI debug log
+│   │                               #   AnalysisData assembly, AI handlers
 │   ├── globals.css
 │   └── api/
 │       ├── ai/
 │       │   ├── parse-workflow/     # POST: plain text → full graph JSON
 │       │   │   └── route.ts
-│       │   └── optimize/           # POST: current graph → bottleneck report
+│       │   ├── optimize/           # POST: current graph → bottleneck report
+│       │   │   └── route.ts
+│       │   └── update/             # POST: prompt + snapshot → validated patch
 │       │       └── route.ts
 │       ├── graph-state/            # GET / PUT: server state CRUD
 │       │   └── route.ts
@@ -104,6 +117,8 @@ src/
 │   ├── AnalysisSidebar.tsx         # Right slide-out panel — node & edge detail
 │   ├── StartScreen.tsx             # Landing page — template gallery,
 │   │                               #   AI textarea (8k char cap), CSV import
+│   ├── AIAnalysisModal.tsx         # Bottleneck report + suggested changes modal
+│   ├── AIUpdateModal.tsx           # Two-panel: prompt input → diff preview + apply
 │   └── AISettingsModal.tsx         # Provider / model / API key / baseUrl
 │
 └── lib/
@@ -181,6 +196,52 @@ After `importState()` is called, `importStateAndStart` in `page.tsx` immediately
 This ensures the very first generation of a workflow uses identical layout rules to the
 Reset Layout button — group zone assignment, AABB collision resolution, and canvas clamping
 all apply on first render, not only after the user manually resets.
+
+---
+
+### AI Update Pipeline
+
+**Entry point:** `POST /api/ai/update`
+
+```
+1. Receive { prompt, currentState, provider, model, apiKey, baseUrl? }
+2. buildSnapshot(currentState) — serialize graph as semantic text:
+     - Nodes: [id]  Name  (role)  summary  Connections: …  Groups: …
+     - Edges: [id]  Source → Target  "edge name"
+     - Groups: [id]  Group Name  →  member1, member2
+     No coordinates — only semantic fields the AI needs to reason about
+3. generateText() with snapshot injected into the user message
+4. extractJSON() + jsonrepair() (same pipeline as parse-workflow)
+5. validatePatch():
+     - add.nodes:   enforce upd_ prefix, discard ID collisions
+     - add.edges:   check both endpoints exist in snapshot OR add.nodes
+     - add.groups:  enforce upd_grp_ prefix, validate colors against palette
+     - update.nodes: discard IDs not in snapshot
+     - update.groupExtensions: discard unknown group IDs
+     - remove.nodeIds: discard unknown IDs and protected CORE_NODE_IDS
+     - remove.edgeIds: cascade — auto-add edges of removed nodes even if not listed
+6. Return validated AIUpdateResult patch
+```
+
+**Apply flow (client-side, `handleApplyUpdate` in page.tsx):**
+
+Sequential `PUT /api/graph-state` calls in this order:
+1. `deleteEdge` for each `remove.edgeIds` (before nodes to avoid dangling refs)
+2. `deleteNode` for each `remove.nodeIds`
+3. `addNode` + `updateMetadata` for each `add.nodes` (position is `{0,0}` — layout fixes it)
+4. `addEdge` for each `add.edges`
+5. `upsertWorkflowGroup` for each `add.groups`
+6. `updateMetadata` for each `update.nodes` (only patches changed fields)
+7. `upsertWorkflowGroup` for each `update.groupExtensions` (merge nodeIds client-side)
+8. `resetLayout` — reflows all nodes including new additions
+
+**Semantic snapshot vs. raw CSV:**
+The snapshot strips all coordinate and visual data. The AI only sees IDs, display names, roles, summaries, connections, and group memberships — the minimal set needed to reason about workflow structure. This reduces token usage and improves accuracy compared to feeding the full CSV or raw `ServerGraphState` JSON.
+
+**AIUpdateModal — two-panel flow:**
+- **Panel A** (prompt input): textarea + example prompts; submits via `onSubmit(prompt)`
+- **Panel B** (diff preview): green "Adding" / amber "Updating" / red "Removing" sections; `← Back` returns to A with prompt preserved; "Apply to Graph" fires `onApply(result)`
+- Panel switch is driven by `result` prop changing from `null` to non-null (via `useEffect`)
 
 **Provider notes:**
 - **Anthropic:** Native SDK, best JSON fidelity
@@ -300,6 +361,12 @@ The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explici
 | First-generation layout enforces Reset Layout rules | ✅ Complete | 0.38 |
 | Orphaned subgroup treated as top-level in layout | ✅ Complete | 0.38 |
 | `metadataOverrides` type includes `connections` + `processes` | ✅ Complete | 0.38 |
+| AI Update — plain-English patch any aspect of the workflow | ✅ Complete | 0.39 |
+| AI Update — semantic snapshot context (no coordinate noise) | ✅ Complete | 0.39 |
+| AI Update — server-side patch validation (ID guards, color palette, CORE_NODE protection) | ✅ Complete | 0.39 |
+| AI Update — two-panel modal (prompt input → diff preview → apply) | ✅ Complete | 0.39 |
+| AI Update — cascade edge removal when nodes are deleted | ✅ Complete | 0.39 |
+| AI Update — group membership extensions (`addNodeIds` / `removeNodeIds`) | ✅ Complete | 0.39 |
 | Persistent database backend | ⬜ Roadmap | — |
 | Real-time WebSocket sync | ⬜ Roadmap | — |
 | Constraint propagation (risk cascading) | ⬜ Roadmap | — |
@@ -323,6 +390,7 @@ The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explici
 | `0.36-personal` | Edge name/summary in sidebar, Data Flow Direction row, `edgeSourceLabel`/`edgeTargetLabel` |
 | `0.37-personal` | Derived connections + workflow group memberships in metadata, template metadata overhaul, Workable brand icon + README |
 | `0.38-personal` | Endpoint ID caching (Doubao no longer wiped on load), post-import `resetLayout` pass so first-generation layout matches Reset Layout, orphaned subgroup fix in `groupAwareLayout`, explicit `connections`/`processes` in `metadataOverrides` type |
+| `0.39-personal` | AI Update feature: plain-English prompt applies any change to the live graph (add/update/remove nodes, edges, groups). Semantic snapshot context builder strips coordinates. Server-side patch validation guards protected nodes, validates IDs, auto-cascades edge removal. Two-panel modal: prompt input → colour-coded diff preview → sequential apply with `resetLayout` reflow. |
 
 ---
 

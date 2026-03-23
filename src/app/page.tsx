@@ -6,10 +6,11 @@ import { GraphCanvas, GraphCanvasRef } from "@/components/GraphCanvas";
 import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
 import { AISettingsModal, loadAIConfig, type AIConfig } from "@/components/AISettingsModal";
 import { AIAnalysisModal, type SuggestedConnection, type SuggestedRemoval } from "@/components/AIAnalysisModal";
+import { AIUpdateModal, type AIUpdateResult } from "@/components/AIUpdateModal";
 import { AI_CONFIG_KEY } from "@/components/AISettingsModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
-  LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil,
+  LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
 } from "lucide-react";
 import { PROVIDERS, type AIProvider } from "@/lib/aiClient";
 import type { ServerGraphState } from "@/lib/serverState";
@@ -56,6 +57,12 @@ export default function Home() {
   const [aiAnalysisError, setAiAnalysisError]     = useState<string | null>(null);
   const [aiSuggestedConnections, setAiSuggestedConnections] = useState<SuggestedConnection[]>([]);
   const [aiSuggestedRemovals, setAiSuggestedRemovals]       = useState<SuggestedRemoval[]>([]);
+
+  // AI Update state
+  const [showAIUpdate,    setShowAIUpdate]    = useState(false);
+  const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
+  const [aiUpdateResult,  setAiUpdateResult]  = useState<AIUpdateResult | null>(null);
+  const [aiUpdateError,   setAiUpdateError]   = useState<string | null>(null);
 
   // AI debug log — stores last parse attempt prompt + raw AI response
   const [aiDebugLog, setAiDebugLog]               = useState<AIDebugLog | null>(null);
@@ -297,6 +304,119 @@ export default function Home() {
     }
   };
 
+  // ── AI Update handlers ─────────────────────────────────────────────────────
+
+  const handleAiUpdate = async (prompt: string) => {
+    if (!activeApiKey) { setShowAISettings(true); return; }
+    setAiUpdateResult(null);
+    setAiUpdateError(null);
+    setAiUpdateLoading(true);
+    try {
+      const res = await fetch("/api/ai/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          currentState: fullServerState,
+          apiKey:   activeApiKey,
+          provider: aiConfig.provider,
+          model:    aiConfig.models[aiConfig.provider],
+          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider] || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiUpdateError(data.error ?? "Update failed.");
+      } else {
+        setAiUpdateResult(data as AIUpdateResult);
+      }
+    } catch {
+      setAiUpdateError("Network error. Please try again.");
+    } finally {
+      setAiUpdateLoading(false);
+    }
+  };
+
+  const handleApplyUpdate = async (result: AIUpdateResult) => {
+    const put = (body: Record<string, unknown>) =>
+      fetch("/api/graph-state", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).catch(console.error);
+
+    // 1. Remove edges first (avoid dangling references)
+    for (const edgeId of result.remove.edgeIds) {
+      await put({ action: "deleteEdge", edgeId });
+    }
+    // 2. Remove nodes
+    for (const nodeId of result.remove.nodeIds) {
+      await put({ action: "deleteNode", nodeId });
+    }
+    // 3. Add new nodes + their rich metadata
+    for (const n of result.add.nodes) {
+      await put({ action: "addNode", node: {
+        id: n.id,
+        labelInitials: n.initials || n.name.slice(0, 2).toUpperCase(),
+        label: n.name,
+        nodeType: "neural",
+        role: n.role,
+        source: "ai-generated",
+        position: { x: 0, y: 0 },
+      }});
+      // Always write full metadata so sidebar shows real data
+      await put({ action: "updateMetadata", id: n.id, metadata: {
+        name: n.name, role: n.role,
+        ...(n.summary     ? { summary:     n.summary     } : {}),
+        ...(n.constraints ? { constraints: n.constraints } : {}),
+        ...(n.tasks       ? { tasks:       n.tasks       } : {}),
+      }});
+    }
+    // 4. Add new edges
+    for (const e of result.add.edges) {
+      await put({ action: "addEdge", edge: {
+        id: e.id, source: e.source, target: e.target,
+        sequence: 1, weight: 1, isCustom: true,
+        ...(e.name ? { name: e.name } : {}),
+      }});
+    }
+    // 5. Add new groups
+    for (const g of result.add.groups) {
+      await put({ action: "upsertWorkflowGroup", group: g });
+    }
+    // 6. Patch existing node metadata
+    for (const n of result.update.nodes) {
+      const meta: Record<string, unknown> = {};
+      if (n.name)        meta.name        = n.name;
+      if (n.role)        meta.role        = n.role;
+      if (n.summary)     meta.summary     = n.summary;
+      if (n.constraints) meta.constraints = n.constraints;
+      if (Object.keys(meta).length) {
+        await put({ action: "updateMetadata", id: n.id, metadata: meta });
+      }
+    }
+    // 7. Extend/shrink existing groups
+    for (const ext of result.update.groupExtensions) {
+      const existing = fullServerState?.settings?.workflowGroups?.find(g => g.id === ext.groupId);
+      if (existing) {
+        const updatedNodeIds = [
+          ...existing.nodeIds.filter(id => !ext.removeNodeIds.includes(id)),
+          ...ext.addNodeIds.filter(id => !existing.nodeIds.includes(id)),
+        ];
+        await put({ action: "upsertWorkflowGroup", group: { ...existing, nodeIds: updatedNodeIds } });
+      }
+    }
+    // 8. Deselect any removed node
+    if (result.remove.nodeIds.includes(selectedId ?? "")) {
+      setSelectedId(null);
+      setSelectedType(null);
+    }
+    // 9. Re-run layout to reflow new nodes into the graph cleanly
+    await put({ action: "resetLayout" });
+    setShowAIUpdate(false);
+    setAiUpdateResult(null);
+  };
+
   const hasActiveFilters = roleFilters.length > 0 || groupFilters.length > 0 || searchQuery.trim().length > 0;
 
   // ── Shared debug modal (renders on both start screen and canvas) ────────────
@@ -431,6 +551,18 @@ export default function Home() {
             }`}>
             <Sparkles className="w-4 h-4" />
             AI Analyze
+          </button>
+
+          {/* AI Update */}
+          <button onClick={() => { if (!activeApiKey) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
+            title={activeApiKey ? `Update workflow with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Update"}
+            className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
+              activeApiKey
+                ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
+                : "border-gray-300 text-gray-400 hover:bg-gray-50"
+            }`}>
+            <GitMerge className="w-4 h-4" />
+            AI Update
           </button>
 
           {/* AI Settings */}
@@ -849,6 +981,16 @@ export default function Home() {
         onClose={() => setShowAIAnalysis(false)}
         onAddConnection={handleAddConnection}
         onRemoveEntity={handleRemoveEntity}
+      />
+
+      <AIUpdateModal
+        isOpen={showAIUpdate}
+        isLoading={aiUpdateLoading}
+        result={aiUpdateResult}
+        error={aiUpdateError}
+        onClose={() => { setShowAIUpdate(false); setAiUpdateResult(null); setAiUpdateError(null); }}
+        onSubmit={handleAiUpdate}
+        onApply={handleApplyUpdate}
       />
 
       {debugModal}
