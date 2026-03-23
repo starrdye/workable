@@ -7,18 +7,33 @@ import {
   removeNode,
   removeEdge,
   importState,
+  resetLayout,
   updateEdgeParams,
   updateNodeDelay,
   updateSettings,
   updateMetadata,
+  upsertWorkflowGroup,
+  deleteWorkflowGroup,
   type CustomNodeConfig,
   type CustomEdgeConfig,
   type NodePosition,
   type GlobalSettings,
+  type WorkflowGroup,
 } from '@/lib/serverState';
 
-export async function GET() {
-  return NextResponse.json(getGraphState());
+// Performance: client can pass ?since=<lastUpdated> to get a lightweight
+// unchanged response instead of the full payload, reducing parse/render overhead.
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const since = Number(searchParams.get("since") ?? "0");
+  const state = getGraphState();
+
+  // If nothing changed since the client's last known timestamp, return minimal response
+  if (since > 0 && state.lastUpdated <= since) {
+    return NextResponse.json({ lastUpdated: state.lastUpdated, unchanged: true });
+  }
+
+  return NextResponse.json(state);
 }
 
 export async function PUT(request: NextRequest) {
@@ -45,6 +60,8 @@ export async function PUT(request: NextRequest) {
       statusColor?: string; summary?: string;
       processes?: string[]; connections?: string[];
     };
+    group?: WorkflowGroup;
+    groupId?: string;
   };
 
   switch (body.action) {
@@ -85,6 +102,15 @@ export async function PUT(request: NextRequest) {
         customEdges:        body.customEdges        || [],
         settings:           body.settings,
       });
+      break;
+    case 'resetLayout':
+      resetLayout();
+      break;
+    case 'upsertWorkflowGroup':
+      if (body.group) upsertWorkflowGroup(body.group);
+      break;
+    case 'deleteWorkflowGroup':
+      if (body.groupId) deleteWorkflowGroup(body.groupId);
       break;
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });

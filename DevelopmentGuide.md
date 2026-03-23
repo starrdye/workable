@@ -1,68 +1,406 @@
-# Overflow: Neural Workflow & Ecosystem Twin
+# Workable — Developer Guide
 
 <p align="center">
-  <em>An interactive visualizer for mapping, analyzing, and optimizing business operations.</em>
+  <em>Personal Workflow Mapper · Next.js 16 · React 19 · TypeScript 5 · Multi-provider AI</em>
 </p>
 
-## 📌 Project Overview
-The **Neural Workflow & Ecosystem Twin** (currently prototyped in `index.html`) is an interactive visualizer for mapping, analyzing, and optimizing business operations. It transitions a user from raw workflow inputs (text/files) into a dynamic, interactive digital twin of their processes, allowing them to spot bottlenecks and model "What-If" optimizations.
+> **Current branch:** `0.38-personal`
+
+> This guide covers the current production architecture. The original prototype (`prototype.html`) is kept for historical reference only — all active development happens in `src/`.
 
 ---
 
-## 🚀 Phase 1: Current Prototype Features (UI/UX Baseline)
-The `index.html` file serves as the interactive frontend prototype. It successfully demonstrates the following UI/UX paradigms:
+## Table of Contents
 
-- **Mirofish-Style Start Screen**: A frosted-glass landing page with natural language text input and a drag-and-drop file zone.
-- **Dual View Rendering**: Seamless toggling between a linear *Baseline Process Map* and a human-centric *Ecosystem Hub*.
-- **Optimization Toggles**: An "Improvements" engine that visually fades deprecated bottlenecks (e.g., Edward's manual review) and highlights newly automated routes (e.g., Mary to Dashboard API).
-- **Custom Physics & Interactivity**: Draggable nodes (squircle/circle designs) with real-time recalculating connection lines (wires) and continuous CSS-animated data pulses. The pulse speed realistically reflects actual processing time, and the pulse color dynamically depends on the source entity producing the data.
-- **Deep-Dive Analysis**: Clickable nodes and connection wires that trigger a slide-out right sidebar displaying entity roles, system status, assigned processes, and connections.
-
----
-
-## 🛠 Phase 2: Core Development Steps (Transitioning to Full-Stack)
-To move from a static frontend prototype to a functional web application, the following architecture and development steps are required:
-
-### 1. Frontend Framework Migration
-- **Action**: Port the vanilla HTML/JS into React or Vue.js (Next.js/Nuxt recommended).
-- **Why**: To handle complex state management. The hardcoded `nodeData` and `edgeData` dictionaries need to be replaced with a dynamic global state (e.g., using Redux, Zustand, or Pinia).
-- **Componentization**: Break down the UI into modular components: `<StartScreen />`, `<GraphCanvas />`, `<Node />`, `<Wire />`, `<AnalysisSidebar />`.
-
-### 2. Graphing Engine Implementation
-- **Action**: Replace the custom Pythagorean math calculating the wire angles with a robust graphing library (e.g., React Flow, Cytoscape.js, or D3.js).
-- **Why**: While the custom math works for 5-7 nodes, a dedicated library will provide collision detection, auto-layout algorithms (so nodes don't overlap on initial generation), and zooming/panning canvases out-of-the-box.
-
-### 3. Backend & API Setup
-- **Action**: Build a backend (Node.js/Express or Python/FastAPI) to handle the Start Screen inputs.
-- **Database**: Implement a graph database (like Neo4j) or a document database (like MongoDB) to store saved ecosystem models, node properties, and historical workflow versions.
+1. [Architecture Overview](#architecture-overview)
+2. [Getting Started](#getting-started)
+3. [Project Structure](#project-structure)
+4. [Core Systems](#core-systems)
+   - [State Management](#state-management)
+   - [AI Pipeline](#ai-pipeline)
+   - [Layout Engine](#layout-engine)
+   - [Analysis Sidebar](#analysis-sidebar)
+5. [Feature Status](#feature-status)
+6. [Branch & Version History](#branch--version-history)
+7. [Development Patterns](#development-patterns)
+8. [Roadmap](#roadmap)
 
 ---
 
-## ⚙️ Phase 3: Features to Develop (MVP Scope)
-Based on the prototype, these features need functional backend logic to be fully realized:
+## Architecture Overview
 
-- **Dynamic Graph Generation**: The canvas must render dynamically based on a JSON payload from the backend, rather than hardcoded HTML `<div>` elements.
-- **CRUD Capabilities for Nodes/Edges**: Users should be able to right-click the canvas to "Add Node" or drag between nodes to "Create Connection" directly within the visualizer.
-- **Real-Time Collaboration (WebSockets)**: If user A drags a node or updates a status to "Bottleneck," user B should see the node move and change colors in real-time.
-- **Save & Export**: Ability to export the graph as a PNG/PDF, or export the node data as a CSV.
+```
+Browser
+  └─ page.tsx ─────────────────────── Start Screen OR Canvas
+       │                                       │
+       ├─ StartScreen.tsx ─── POST /api/ai/parse-workflow
+       │                               │
+       │                        generateText()  (Anthropic / Gemini / Doubao)
+       │                        extractJSON()   (brace-depth scanner)
+       │                        jsonrepair()    (malformed model output)
+       │                        hierarchicalLayout()
+       │                        groupAwareLayout()
+       │                        importState()   ──▶ in-memory singleton
+       │
+       ├─ GraphCanvas.tsx ──── GET  /api/graph-state  (polls every 3 s)
+       │                       PUT  /api/graph-state  (node drag, CRUD)
+       │
+       ├─ AnalysisSidebar.tsx ─ reads AnalysisData built in page.tsx
+       │                         PUT /api/graph-state (updateMetadata / updateEdgeParams)
+       │
+       └─ AISettingsModal.tsx ── localStorage: nwt_ai_config
+                                  (provider, model, API key, baseUrl)
+                                  endpoint ID preserved across sessions (no purge)
+```
+
+No database — server state is a module-level singleton (`src/lib/serverState.ts`). It resets on server restart. Swap the singleton with a real DB via the `importState` / `getGraphState` interface to add persistence.
 
 ---
 
-## 🤖 Phase 4: Future Enhancements (AI Integration)
-The ultimate goal of the Ecosystem Data Engine is to use AI to bridge the gap between messy real-world data and structured visual models.
+## Getting Started
 
-### 1. AI-Powered Workflow Generation (LLM Integration)
-- **Feature**: Connect the Start Screen's text input to an LLM API (OpenAI/Gemini).
-- **How it works**: When a user types "Xingye gets input from NAV back office, uses script to parse data, then Mary reviews it...", the AI parses the natural language, identifies the entities, determines the direction of the data flow, and outputs the exact JSON array needed to render the graph automatically.
+```bash
+git clone https://github.com/your-username/workable.git
+cd workable
+npm install
+npm run dev        # → http://localhost:3000
+```
 
-### 2. Intelligent Document Processing (OCR + RAG)
-- **Feature**: Process the files dropped in the Start Screen.
-- **How it works**: If a user drops a standard operating procedure (SOP) PDF or a Jira CSV export, the AI reads the document, extracts the key personnel and software tools, and maps their relationships without the user typing a single word.
+No `.env` file required. AI API keys are entered at runtime in the UI and stored in browser `localStorage` only.
 
-### 3. AI "Auto-Improvement" Suggestions
-- **Feature**: Smart optimization toggles.
-- **How it works**: Instead of hardcoding the "Improvements" toggle, an AI agent analyzes the current graph logic. If it notices "Edward" has a "Queue: 2.3 Days" (bottleneck), the AI autonomously generates the suggested bypass route, highlighting it in green and generating a text summary of the time saved.
+**Useful scripts:**
 
-### 4. Live Data Ingestion & Pulse Synchronization
-- **Feature**: Make the "Electric Pulses" represent real-world events.
-- **How it works**: Connect the app via Webhooks to real-world tools (Slack, Jira, Outlook). When Xingye actually emails Mary in real life, a pulse shoots across the screen in the digital twin. If the data flow stops, the wire turns red, indicating a live process failure.
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Dev server (Turbopack) |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint check |
+
+---
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── layout.tsx                  # Root layout — metadata, fonts, favicon
+│   ├── page.tsx                    # App entry: start screen ↔ canvas routing,
+│   │                               #   AnalysisData assembly, AI debug log
+│   ├── globals.css
+│   └── api/
+│       ├── ai/
+│       │   ├── parse-workflow/     # POST: plain text → full graph JSON
+│       │   │   └── route.ts
+│       │   └── optimize/           # POST: current graph → bottleneck report
+│       │       └── route.ts
+│       ├── graph-state/            # GET / PUT: server state CRUD
+│       │   └── route.ts
+│       └── workflow/               # GET: static workflow data (legacy)
+│           └── route.ts
+│
+├── components/
+│   ├── GraphCanvas.tsx             # SVG canvas — nodes, edges, pulses,
+│   │                               #   drag, right-click CRUD, group regions
+│   ├── AnalysisSidebar.tsx         # Right slide-out panel — node & edge detail
+│   ├── StartScreen.tsx             # Landing page — template gallery,
+│   │                               #   AI textarea (8k char cap), CSV import
+│   └── AISettingsModal.tsx         # Provider / model / API key / baseUrl
+│
+└── lib/
+    ├── aiClient.ts                 # Provider-agnostic generateText()
+    │                               #   Anthropic · Google Gemini · ByteDance Doubao
+    ├── layout.ts                   # hierarchicalLayout + groupAwareLayout
+    ├── serverState.ts              # In-memory singleton + all mutation helpers
+    ├── templates.ts                # Pre-built workflow templates with full metadata
+    └── constants.ts                # Core node IDs, role colours, PROVIDERS list
+
+public/
+└── workable-icon.svg               # Brand icon — used as favicon + StartScreen logo
+```
+
+---
+
+## Core Systems
+
+### State Management
+
+Server state lives in a single module-level object (`global.__graphState`) in `serverState.ts`. All API routes import helpers from this file:
+
+| Helper | Purpose |
+|---|---|
+| `getGraphState()` | Returns full state snapshot |
+| `importState({ customNodes, customEdges, … })` | Bulk-load a new workflow (used after AI parse) |
+| `addCustomNode / removeCustomNode` | CRUD for nodes |
+| `addCustomEdge / removeCustomEdge` | CRUD for edges; auto-updates `metadataOverrides[sourceId].connections` |
+| `updateMetadata(id, patch)` | Patch any entity's metadata override |
+| `updateEdgeParams(edgeId, …)` | Update sequence / weight / isImprovementOnly |
+
+**`metadataOverrides`** is a flat `Record<string, PartialEntityMeta>` keyed by both node IDs and edge IDs. Fields: `name`, `role`, `status`, `summary`, `constraints`, `processes` (workflow group memberships), `connections` (neighbour names), `tasks`.
+
+The client polls `GET /api/graph-state?since=<ts>` every 3 seconds; the server returns `{ unchanged: true }` if `lastUpdated` hasn't changed, keeping bandwidth low.
+
+---
+
+### AI Pipeline
+
+**Entry point:** `POST /api/ai/parse-workflow`
+
+```
+1. Receive { provider, model, apiKey, baseUrl?, prompt }
+2. Build structured prompt (schema + examples + user description)
+3. generateText() — provider switch:
+     anthropic  → @anthropic-ai/sdk  (Messages API)
+     google     → @google/generative-ai
+     doubao     → fetch() to baseUrl (OpenAI-compatible REST)
+4. extractJSON(rawText)
+     → strip markdown fences
+     → find first '{', track brace depth to matching '}'
+     → extract just the JSON object regardless of surrounding prose
+5. jsonrepair(extracted)
+     → fixes missing quotes, trailing commas, single quotes
+     → handles malformed output from any model
+6. JSON.parse → validated graph object
+7. Build CustomNodeConfig[] + CustomEdgeConfig[] (with name field)
+8. Build metadataOverrides:
+     - per node: name, role, summary, constraints, tasks
+     - per node: connections derived from edges (neighbour display names)
+     - per node: processes derived from workflowGroups membership
+     - per edge: name, summary (for sidebar)
+9. hierarchicalLayout() → baseline process map positions
+10. groupAwareLayout() → ecosystem hub positions with group physics
+11. importState() → write to singleton
+12. Return { success, promptUsed, rawAIResponse } for debug log
+```
+
+**Token budget:** `maxTokens: 8000` (raised from 3000 to handle 30-node workflows).
+
+**Post-import layout pass (added 0.38):**
+
+After `importState()` is called, `importStateAndStart` in `page.tsx` immediately fires a second
+`PUT /api/graph-state { action: "resetLayout" }` before setting `isAppStarted = true`.
+This ensures the very first generation of a workflow uses identical layout rules to the
+Reset Layout button — group zone assignment, AABB collision resolution, and canvas clamping
+all apply on first render, not only after the user manually resets.
+
+**Provider notes:**
+- **Anthropic:** Native SDK, best JSON fidelity
+- **Gemini:** Native SDK, fast, free-tier friendly
+- **Doubao:** OpenAI-compatible; `baseUrl` is overridable in settings to switch between standard billing (`/api/v3`) and Coding Plan (`/api/coding/v3`) without code changes. The endpoint ID (e.g. `doubao-seed-2.0-lite`) is **always preserved** in `localStorage` — the stale-value purge that previously cleared any non-`ep-` prefixed value has been removed (0.38)
+
+**Adding a new provider:**
+1. Add ID to `AIProvider` union in `aiClient.ts`
+2. Add `generateText` branch (call provider SDK, return `{ text: string }`)
+3. Add config entry to `PROVIDERS` in `AISettingsModal.tsx` (name, colour, defaultModel, models list)
+
+---
+
+### Layout Engine
+
+`src/lib/layout.ts` contains two layout algorithms:
+
+#### `hierarchicalLayout(nodes, edges)`
+Sugiyama-style topological sort → assign columns → centre within column. Produces left-to-right flow for the baseline process map view.
+
+#### `groupAwareLayout(nodes, edges, groups, canvasW, canvasH)`
+Multi-force physics solver — no velocity, pure position assignment. Runs in a temperature-cooled loop:
+
+**Top-level group detection (updated 0.38):**
+A group is treated as top-level when either:
+- `parentGroupId` is `null` / `undefined`, **or**
+- `parentGroupId` references a group ID that does not exist in the groups list (orphaned subgroup — e.g. a CSV export that referenced a parent that was never defined such as `grp_daily_reconciliation`).
+
+Previously such orphaned subgroups were silently excluded from the physics solver, causing their nodes to be stranded outside all group zones after a Reset Layout.
+
+**Forces (per iteration):**
+
+| # | Force | Description |
+|---|---|---|
+| 1 | **Hub gravity** | All groups attracted toward the most-connected node (highest degree). Strength scaled by temperature. |
+| 2 | **Shared-node tension** | Groups sharing ≥1 node are pulled toward each other. |
+| 3 | **Centroid repulsion** | Sharing groups whose centroids are closer than `GC_SZ*2 + SEP_GAP` (~128 px) are pushed apart — prevents pile-up when all groups share the same hub node. |
+| 4 | **AABB collision** | Non-sharing groups whose bounding boxes overlap are pushed apart. Uses **accumulated node-level deltas** (not rigid body) — collect all pair contributions, apply once per pass — prevents oscillation for same-shape groups. |
+
+**Post-processing passes:**
+
+| Pass | Iterations | Description |
+|---|---|---|
+| Strict separation | 60 | Resolves residual group overlaps at node level. Facing-half strategy: sort group nodes by proximity to opponent bbox, push only `ceil(n/2)` of them — breaks symmetry for identical-shape groups. |
+| Union-bbox eviction | 40 | Non-member nodes trapped inside foreign group bboxes: compute union of all containing bboxes, find shortest canvas-valid exit direction, move once. Prevents oscillation from competing per-group pushes. |
+
+---
+
+### Analysis Sidebar
+
+`AnalysisSidebar.tsx` renders the right slide-out panel. Data flows:
+
+```
+page.tsx useEffect (on selectedId change)
+  ├── lookup workflowCache[selectedId]   (static workflow data if any)
+  ├── merge fullServerState.settings.metadataOverrides[selectedId]
+  ├── if edge: resolve edgeSourceLabel / edgeTargetLabel
+  │     from customNodes[source/target].label
+  │     or metadataOverrides[source/target].name
+  └── setAnalysisData({ ...all merged fields, type: "node"|"edge" })
+        ↓
+  AnalysisSidebar receives:
+    data: AnalysisData
+    metadataOverrides: Record<string, Partial<AnalysisData> & { tasks? }>
+    nodeSources: Record<string, "ai-generated" | "user-added">
+```
+
+**`metadataOverrides` type (updated 0.38):**
+The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explicitly declares `connections` and `processes` fields, matching the runtime shape that was already being spread in. This prevents TypeScript from widening the type to `unknown` when these fields are accessed in the same function scope.
+
+**Edge-specific fields** (added in 0.36):
+- `edgeSourceLabel` / `edgeTargetLabel` — resolved node display names
+- `name` — AI connection label (e.g. "Send Exception File for review")
+- `summary` — auto-generated: `"${name} — flow from ${source} to ${target}."`
+
+**Node-specific fields:**
+- `processes` — workflow group names the node belongs to (renamed from "Assigned Processes" → "Assigned Workflows" in sidebar display)
+- `connections` — display names of all direct neighbour nodes
+- `constraints` — free-text operational/compliance constraints (amber styling)
+- `tasks[]` — inline editable task list (persisted via `updateMetadata`)
+
+---
+
+## Feature Status
+
+| Feature | Status | Branch |
+|---|---|---|
+| Dual-view canvas (process map + ecosystem hub) | ✅ Complete | 0.1 |
+| SVG custom edges with animated pulses | ✅ Complete | 0.1 |
+| Node/edge CRUD (right-click, drag-to-connect, delete) | ✅ Complete | 0.1 |
+| CSV export / import | ✅ Complete | 0.1 |
+| PNG export | ✅ Complete | 0.1 |
+| AI workflow generation (Claude) | ✅ Complete | 0.2 |
+| AI bottleneck analysis | ✅ Complete | 0.2 |
+| Google Gemini support | ✅ Complete | 0.2 |
+| ByteDance Doubao support | ✅ Complete | 0.33 |
+| Configurable base URL (Coding Plan) | ✅ Complete | 0.35 |
+| Workflow groups + nested sub-groups | ✅ Complete | 0.33 |
+| Group-aware physics layout (hub gravity, AABB) | ✅ Complete | 0.33 |
+| AABB oscillation fix (accumulated node-level deltas) | ✅ Complete | 0.33 |
+| Sharing-group centroid repulsion | ✅ Complete | 0.33 |
+| Union-bbox node eviction | ✅ Complete | 0.33 |
+| Node tasks (status, priority, due date, notes) | ✅ Complete | 0.33 |
+| Entity constraints field (amber badge) | ✅ Complete | 0.33 |
+| `maxTokens` 3 000 → 8 000 | ✅ Complete | 0.34 |
+| `extractJSON` + `jsonrepair` robust parsing | ✅ Complete | 0.34 |
+| AI Debug Log button (always visible, modal) | ✅ Complete | 0.34 |
+| Hydration SSR fix (static init + useEffect) | ✅ Complete | 0.34 |
+| 8 000-char textarea cap + counter | ✅ Complete | 0.34 |
+| Edge `name` stored & displayed in sidebar | ✅ Complete | 0.36 |
+| Data Flow Direction row (From → To pill) | ✅ Complete | 0.36 |
+| `connections` derived from edges in metadata | ✅ Complete | 0.37 |
+| `processes` derived from workflow groups | ✅ Complete | 0.37 |
+| Template metadata (real names, derived fields) | ✅ Complete | 0.37 |
+| Workable brand icon (SVG, favicon, header logo) | ✅ Complete | 0.37 |
+| Doubao endpoint ID preserved across sessions | ✅ Complete | 0.38 |
+| First-generation layout enforces Reset Layout rules | ✅ Complete | 0.38 |
+| Orphaned subgroup treated as top-level in layout | ✅ Complete | 0.38 |
+| `metadataOverrides` type includes `connections` + `processes` | ✅ Complete | 0.38 |
+| Persistent database backend | ⬜ Roadmap | — |
+| Real-time WebSocket sync | ⬜ Roadmap | — |
+| Constraint propagation (risk cascading) | ⬜ Roadmap | — |
+| Webhook ingestion (Slack, Jira, GitHub) | ⬜ Roadmap | — |
+| OCR / PDF import | ⬜ Roadmap | — |
+| Diff view (workflow version comparison) | ⬜ Roadmap | — |
+| Shareable read-only links | ⬜ Roadmap | — |
+
+---
+
+## Branch & Version History
+
+| Branch | Key changes |
+|---|---|
+| `0.1` | Foundation: Next.js scaffold, SVG canvas, node/edge CRUD, CSV export, polling |
+| `0.2` | AI integration: Claude parse-workflow, AI analyze, Gemini support |
+| `0.21` | Smart layout, ecosystem web-map, entity constraints field |
+| `0.33-personal` | Doubao provider, workflow groups, group-aware physics layout, node tasks, all layout bug fixes |
+| `0.34-personal` | 8k token budget, `extractJSON` + `jsonrepair`, AI Debug Log, hydration fix, char counter |
+| `0.35-personal` | Configurable `baseUrl` per provider (Coding Plan support) |
+| `0.36-personal` | Edge name/summary in sidebar, Data Flow Direction row, `edgeSourceLabel`/`edgeTargetLabel` |
+| `0.37-personal` | Derived connections + workflow group memberships in metadata, template metadata overhaul, Workable brand icon + README |
+| `0.38-personal` | Endpoint ID caching (Doubao no longer wiped on load), post-import `resetLayout` pass so first-generation layout matches Reset Layout, orphaned subgroup fix in `groupAwareLayout`, explicit `connections`/`processes` in `metadataOverrides` type |
+
+---
+
+## Development Patterns
+
+### Adding a new template
+
+Templates live in `src/lib/templates.ts`. Each template calls `buildTemplateState(config)` which:
+1. Takes `nodes`, `edges`, `groups`, and `settings` overrides
+2. Auto-derives `metadataOverrides` per node: `connections` from edges, `processes` from group membership
+3. Returns a `GraphState`-compatible object ready for `importState()`
+
+```typescript
+// Minimal template structure
+export function buildMyTemplate(): Partial<GraphState> {
+  const nodes: CustomNodeConfig[] = [ /* ... */ ];
+  const edges: CustomEdgeConfig[]  = [ /* ... */ ];
+  const groups: WorkflowGroup[]    = [ /* ... */ ];
+  return buildTemplateState({ nodes, edges, groups });
+}
+```
+
+### Adding a new sidebar field
+
+1. Add the field to `AnalysisData` in `AnalysisSidebar.tsx`
+2. Populate it in the `useEffect` in `page.tsx` (from `fullServerState`, `workflowCache`, or derived logic)
+3. Render it in the sidebar body using `<EditableField>` or `<EditableList>`
+4. If it needs persistence: add the field to `updateMetadata`'s PUT body in `handleSave`
+
+### Debugging AI parse failures
+
+1. Click **AI Debug Log** (always visible, bottom-left corner)
+2. The modal shows:
+   - **Prompt sent** — full text with schema injected
+   - **Raw AI response** — exactly what the model returned before any parsing
+3. Common failure modes:
+   - Model wraps JSON in `\`\`\`json` fences → handled by `extractJSON`
+   - Model adds preamble / postamble text → handled by brace-depth scan
+   - Model generates invalid JSON (missing quote, trailing comma) → handled by `jsonrepair`
+   - Model generates semantically wrong structure (wrong field names) → prompt engineering
+
+### Doubao endpoint ID persistence
+
+The `loadAIConfig()` function in `AISettingsModal.tsx` merges the saved `localStorage` value with defaults on every page load. Prior to 0.38, a guard clause erased any `models.doubao` value that did not start with `"ep-"`, which wiped user-configured model names (e.g. `doubao-seed-2.0-lite`) every session.
+
+That guard has been removed. The saved endpoint / model value is now always respected. If a user needs to reset it, they open AI Settings and clear the Endpoint ID field manually.
+
+### First-generation layout consistency
+
+`importStateAndStart` in `page.tsx` (called after both AI parse and template load) now issues two sequential server calls before revealing the canvas:
+
+1. `PUT /api/graph-state { action: "importState", … }` — stores nodes, edges, groups, metadata
+2. `PUT /api/graph-state { action: "resetLayout" }` — re-runs `hierarchicalLayout` + `groupAwareLayout` using the just-stored groups
+
+This guarantees that the positions the user sees on first load are identical to what Reset Layout would produce, instead of using the raw positions that the parse-workflow route calculated before group sanitization was complete.
+
+### Hydration / SSR rules
+
+- **Never** call `localStorage` inside `useState(initializer)` or component body
+- Use `useEffect` for any client-side-only reads (AI config, saved state)
+- `aiConfig` is initialised with a static default object, then overwritten in `useEffect(() => setAiConfig(loadAIConfig()), [])`
+
+---
+
+## Roadmap
+
+### Near-term
+
+- **Persistent storage** — swap the singleton for SQLite (`better-sqlite3`) or Postgres via Prisma. The `importState` / `getGraphState` interface is the only boundary that needs to change.
+- **Real-time collaboration** — upgrade 3-second polling to WebSocket (`socket.io` or Next.js built-in). Server pushes `lastUpdated` diffs; clients apply patches.
+
+### Medium-term
+
+- **Constraint propagation** — when a constrained node is blocked, visually cascade a risk indicator through all downstream edges and nodes
+- **Webhook ingestion** — receive POST events from Slack / Jira / GitHub and animate a live pulse on the relevant graph edge when the event fires
+
+### Long-term
+
+- **OCR / PDF import** — extract workflow actors and handoffs from scanned SOPs or Jira CSV exports
+- **Diff view** — snapshot two graph states and highlight added/removed nodes, changed edge names, and shifted groups
+- **Shareable links** — serialise graph state to a URL-safe token; render read-only view without auth

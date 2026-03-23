@@ -1,0 +1,33 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <mask id="hollow-rings-favicon">
+      <rect width="256" height="256" fill="white"/>
+      <circle cx="92" cy="188" r="14" fill="black"/>
+      <circle cx="164" cy="188" r="14" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- Gradient rounded-square background -->
+  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
+
+  <!-- W path (white, masked for hollow nodes) -->
+  <g mask="url(#hollow-rings-favicon)">
+    <path d="M 44 68 L 92 188 L 128 104 L 164 188 L 212 68"
+          stroke="white" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Solid top-left node -->
+  <circle cx="44" cy="68" r="18" fill="white"/>
+  <!-- Solid top-right node -->
+  <circle cx="212" cy="68" r="18" fill="white"/>
+  <!-- Hub / centre node -->
+  <circle cx="128" cy="104" r="22" fill="white"/>
+  <!-- Hollow bottom-left node -->
+  <circle cx="92" cy="188" r="18" fill="none" stroke="white" stroke-width="10"/>
+  <!-- Hollow bottom-right node -->
+  <circle cx="164" cy="188" r="18" fill="none" stroke="white" stroke-width="10"/>
+</svg>

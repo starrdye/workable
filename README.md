@@ -1,128 +1,304 @@
-# Neural Workflow & Ecosystem Twin
+<div align="center">
+  <img src="./public/workable-icon.svg" width="96" height="96" alt="Workable icon" />
+  <h1>Workable</h1>
+  <p><strong>Map your workflow. Spot the cracks. Ship faster.</strong></p>
+  <p>
+    Paste your notes → watch your workflow appear as a live graph →<br/>
+    get AI-powered bottleneck analysis — in under 60 seconds.
+  </p>
 
-<p align="center">
-  <em>An interactive visualizer for mapping, analyzing, and optimizing business operations — built with Next.js, React Flow, and TypeScript.</em>
-</p>
-
----
-
-## 📌 Project Overview
-
-The **Neural Workflow & Ecosystem Twin** is a full-stack web application that transforms raw workflow descriptions into a dynamic, interactive digital twin. Users can spot bottlenecks, model optimization scenarios, add custom nodes/edges in real time, and export results — all from a clean, prototype-faithful UI.
-
----
-
-## 🏆 Version 0.1 — Achievements
-
-Version 0.1 marks the successful transition from a static prototype to a production-grade interactive framework.
-
-- **Framework Migration**: Fully ported from vanilla HTML/JS to **Next.js 16 + React 19 + TypeScript**.
-- **Interactive Canvas**: Integrated **React Flow (v12)** with custom physics, squircle/circle nodes, and SVG data-pulse wires.
-- **Dynamic CRUD**: Full support for adding, editing, and deleting nodes and edges via right-click and interactive handles.
-- **Bidirectional Metadata Sync**: Automated synchronization between the **Analysis Sidebar** and the visual graph (including name-to-ID resolution).
-- **Backend Persistence**: Server-side state management with real-time polling to ensure across-the-board synchronization.
-- **Advanced Optimization**: Implemented "Improvements Mode" to highlight optimized routes and fade legacy bottlenecks.
-- **Export Capabilities**: Native **PNG** rendering and **CSV** export for external data analysis.
-
----
-
-## ✅ Phase 1 — Prototype (UI/UX Baseline)
-
-The `prototype.html` file is the interactive frontend prototype. It demonstrates the following UI/UX paradigms:
-
-- **Miro-Style Start Screen** — frosted-glass landing page with natural language text input and a drag-and-drop file zone.
-- **Dual View Rendering** — seamless toggling between a linear *Baseline Process Map* and a human-centric *Ecosystem Hub*.
-- **Optimization Toggles** — "Improvements" engine that visually fades deprecated bottlenecks (e.g., Edward's manual review) and highlights newly automated routes (e.g., Mary → Dashboard API).
-- **Custom Physics & Interactivity** — draggable nodes (squircle/circle designs) with real-time recalculating connection lines and continuous CSS-animated data pulses.
-- **Deep-Dive Analysis** — clickable nodes and wires that trigger a slide-out right sidebar with entity roles, system status, assigned processes, and connections.
+  <p>
+    <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs&logoColor=white" alt="Next.js"/>
+    <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React"/>
+    <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript"/>
+    <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
+    <img src="https://img.shields.io/badge/AI-Multi--provider-8B5CF6" alt="AI"/>
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"/>
+  </p>
+  <p>
+    <a href="#-quick-start">Quick Start</a> ·
+    <a href="#-features">Features</a> ·
+    <a href="#-ai-providers">AI Providers</a> ·
+    <a href="#-templates">Templates</a> ·
+    <a href="#-how-it-works">How It Works</a>
+  </p>
+</div>
 
 ---
 
-## ✅ Phase 2 — Core Development (Frontend Framework Migration)
+## What is Workable?
 
-The vanilla HTML/JS prototype was ported to a production-ready **Next.js 16 + React 19 + TypeScript** app:
+Most workflow tools make you drag and drop from scratch. Workable flips that.
 
-| Area | Implementation |
-|---|---|
-| **Framework** | Next.js 16 (App Router) with React 19 |
-| **Graphing Engine** | `@xyflow/react` (React Flow v12) replacing custom Pythagorean wire math |
-| **Componentization** | `<StartScreen />`, `<GraphCanvas />`, `<NeuralNode />`, `<EcoNode />`, `<AnimatedPulseEdge />`, `<AnalysisSidebar />` |
-| **State Management** | React `useState` / `useEffect` with server-side API for persistence |
-| **Backend API** | Next.js Route Handlers (`/api/workflow`, `/api/graph-state`) |
-| **Font** | Inter (via `next/font/google`) matching prototype exactly |
-| **Animations** | CSS `pulse-amber` animation + SVG `animateMotion` data pulses |
+You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. You get a living map of your workflow that you can refine, export, and share.
 
----
-
-## ✅ Phase 3 — MVP Features
-
-All Phase 3 features from the development roadmap are now implemented:
-
-### 1. Dynamic Graph Generation
-The canvas renders dynamically based on a **JSON payload from the `/api/workflow` backend**, not hardcoded HTML elements. Node positions and graph structure are fetched on load and persisted server-side via the `/api/graph-state` endpoint.
-
-### 2. CRUD Capabilities for Nodes & Edges
-- **Add Node** — Right-click anywhere on the canvas background to open a context menu → "Add Node Here" → fill in name, initials, and role type in a modal form.
-- **Create Connection** — Drag from any node's handle to another node to create a new connection wire. The edge is saved to the server automatically.
-- **Delete Node/Edge** — Select any node or edge and press the `Delete` key to remove it. Custom nodes also show a **Delete Node** button in the Analysis Sidebar. Core workflow nodes are protected from deletion.
-
-### 3. Real-Time Collaboration (Polling-Based)
-- Every **3 seconds**, each client polls `/api/graph-state` to check for remote updates.
-- When a user drags a node to a new position, the coordinates are **immediately saved** to the server via `PUT /api/graph-state`.
-- If another browser tab (or user) polls next, they receive the updated positions and their canvas syncs automatically.
-- The server state uses a **module-level singleton** (`src/lib/serverState.ts`) that persists across requests in the Next.js dev server.
-
-### 4. Save & Export
-- **Export PNG** — Click the `PNG` button in the header. A native SVG is built from current node/edge positions and rendered to a `<canvas>` element, then downloaded as a `.png` file (no external library required).
-- **Export CSV** — Click the `CSV` button in the header. Node metadata (id, name, role, status, summary) is serialized to a `.csv` file using a Blob download — no server round-trip needed.
-
----
-
-## 🤖 Phase 4 — AI-Powered Workflow Analysis
-
-This phase integrates Large Language Models (LLMs) to bridge the gap between abstract descriptions and structured visual models.
-
-### 1. Automated Workflow Parsing
-- **Text Prompt to Graph**: The core AI feature allows users to paste natural language descriptions (e.g., "Script A sends data to Xingye, which then routes to Mary"). The AI automatically parses these prompts to create nodes, assignments, and relations on the canvas.
-- **Model Storage & CSV**: CSV ingestion remains focused on importing/exporting full model structures (preserving precisely mapped JSON states).
-
-### 2. Model & Key Management
-- **Vendor Agility**: Built-in support for providers like **Google Gemini**.
-- **User-Owned Keys**: A secure settings panel allows users to manage their own API keys (e.g., `GEMINI_API_KEY`) for full control over cost and privacy.
-- **Model Selection**: Toggle between models (e.g., Gemini 1.5 Flash for speed vs. Gemini 1.5 Pro for deep reasoning) based on the complexity of the workflow being parsed.
-
-### 3. Smart Optimization (Roadmap)
-- **Bottleneck Detection**: AI-driven analysis of node delays and edge sequences to autonomously suggest improvements.
-- **Proactive Design**: Suggesting best-practice architectures based on industry-standard process maps.
-
----
-
-## 🚀 Getting Started
-
-```bash
-npm install
-npm run dev
+```
+"Jack logs into Bloomberg at 9 AM, downloads the CSV, runs it through
+ the Python reconciliation script, and Slacks exceptions to Sarah..."
+                            ↓  ~5 seconds
+ [Bloomberg] → [Jack] → [Python Script] → [PostgreSQL] → [Ternary Dashboard]
+                                 ↓ exception path
+                              [Slack] → [Sarah] ⟳ [Jack]
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+---
 
-### Project Structure
+## ✨ Features
+
+### 🧠 AI-Powered Graph Generation
+Describe your workflow in plain English — names, tools, handoffs, blockers, all of it. The AI infers:
+- **Nodes** with roles (`person`, `tool`, `external source`, `output`)
+- **Directed edges** with descriptive connection names
+- **Workflow groups** (phases like "Data Ingestion" or "Review & Approval")
+- **Tasks** per node with priority and status
+- **Constraints** (GDPR limits, manual approvals, rate caps)
+
+### 🗺️ Dual-View Canvas
+| Baseline Process Map | Ecosystem Hub |
+|---|---|
+| Left-to-right hierarchical flow | Radial web-map centred on the most-connected node |
+| Clear sequence and handoffs | Visualise influence, coupling, and dependency rings |
+| Great for process documentation | Great for spotting architectural smells |
+
+Toggle instantly with no data loss.
+
+### 🔬 Analysis Sidebar
+Click any node or edge to open a deep-dive panel:
+- **Entity name**, role badge, and AI-generated vs user-added origin
+- **Summary** — concise description of the node's role in the workflow
+- **Assigned Workflows** — which phases/groups this node belongs to
+- **Direct Connections** — all neighbouring nodes (both directions)
+- **Constraints** — operational, compliance, or technical limits
+- **Tasks** — inline task list with status, priority, due date, and notes
+
+For edges:
+- **Data Flow Direction** — From → To pill with node names
+- **Connection Name** — the actual named handoff (e.g. "Send Exception File for review")
+- **Auto-generated summary** — what flows along this edge and why
+
+### 🧩 Workflow Groups & Nested Phases
+Colour-coded bounding regions that organise nodes into named phases. Supports:
+- **Top-level groups** (e.g. "Daily Price Reconciliation")
+- **Sub-groups** nested inside parent phases (e.g. "Automated Processing" inside the reconciliation group)
+- **Group-aware physics layout** — groups cluster intelligently without overlap, sharing nodes pull related groups together
+
+### ✅ Task Management
+Every node can own a task list with:
+- Status: `todo` / `in-progress` / `review` / `blocked` / `done`
+- Priority: `low` / `medium` / `high`
+- Due date + free-form notes
+- Visual progress counters (`3/5 open`)
+
+### 🔍 AI Bottleneck Analysis
+Run the optimiser on any graph to get a structured report:
+- **Workflow Summary** — two-sentence executive overview
+- **Bottlenecks Identified** — specific nodes and edges by name
+- **Constraint Analysis** — flags nodes with constraints that could propagate risk
+- **Quick Wins** — highest impact-to-effort improvements with suggested new connections
+
+### 📤 Export & Import
+| Format | What's included |
+|---|---|
+| **CSV** | All nodes, edges, positions, tasks, groups, settings |
+| **PNG** | Full canvas render at current zoom |
+| **CSV import** | Restore any previously exported workflow |
+
+### 🎨 Templates Gallery
+Four pre-built starters so you're never staring at a blank canvas:
+- **Morning Routine** — 7-node personal daily startup flow
+- **Project Workflow** — 14-node idea-to-publish pipeline
+- **Full Work Week** — 22-node complete weekly system
+- **Blank Canvas** — start from scratch
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Clone and install
+git clone https://github.com/your-username/workable.git
+cd workable
+npm install
+
+# 2. Start the dev server
+npm run dev
+# → http://localhost:3000
+```
+
+That's it. No `.env` file. No database. No signup.
+
+**To enable AI features:**
+1. Click **AI Settings** (gear icon) in the header
+2. Pick your provider (Anthropic, Gemini, or ByteDance Doubao)
+3. Paste your API key — it stays in your browser's `localStorage`, never hits a server
+4. Describe your workflow and hit **Generate**
+
+---
+
+## 🤖 AI Providers
+
+Workable is provider-agnostic. Swap between them any time in AI Settings.
+
+| Provider | Models | Notes |
+|---|---|---|
+| **Anthropic Claude** | `claude-sonnet-4-6` (default), `claude-opus-4-6`, `claude-haiku-4-5` | Best overall reasoning and JSON fidelity |
+| **Google Gemini** | `gemini-2.0-flash` (default), `gemini-1.5-pro`, `gemini-1.5-flash` | Fast, generous free tier |
+| **ByteDance Doubao** | Your endpoint ID (e.g. `ep-20260318…`) | OpenAI-compatible; supports Coding Plan base URL for cost control |
+
+**Base URL override** — Doubao (and any OpenAI-compatible endpoint) lets you set a custom base URL directly in settings. Switch between billing tiers without touching code.
+
+All API keys are stored client-side only. The server route forwards them per-request and never persists them.
+
+---
+
+## 📐 How It Works
+
+### Parse Pipeline
+
+```
+User prompt (plain text)
+        │
+        ▼
+POST /api/ai/parse-workflow
+        │  ┌─────────────────────────────┐
+        ├─▶│  generateText()             │  ← provider-agnostic, 8k token budget
+        │  │  (Anthropic / Gemini / Ark) │
+        │  └─────────────────────────────┘
+        │
+        ▼
+  extractJSON()      ← brace-depth scanner, handles preamble/postamble
+  jsonrepair()       ← fixes missing quotes, trailing commas, etc.
+        │
+        ▼
+  hierarchicalLayout()  ← Sugiyama-style left→right positioning
+  groupAwareLayout()    ← AABB physics: hub gravity + collision + centroid repulsion
+        │
+        ▼
+  metadataOverrides     ← per-node: name, role, summary, constraints, tasks,
+                           connections (derived from edges), workflows (from groups)
+        │
+        ▼
+  importState()         ← writes to in-memory server singleton
+  → client polls /api/graph-state every 3 s
+```
+
+### Layout Physics
+
+The group-aware layout runs a multi-force physics solver (no velocity, pure position):
+
+1. **Hub gravity** — all groups attract toward the most-connected node
+2. **Shared-node tension** — groups sharing a node are pulled together
+3. **Centroid repulsion** — sharing groups that collapse get pushed apart (prevents pile-up)
+4. **AABB collision** — non-sharing groups are pushed apart via node-level delta accumulation (no rigid-body oscillation)
+
+Followed by two post-processing passes:
+- **Strict separation** (60 iterations) — node-level adjustment, facing-half strategy to break symmetry for same-shaped groups
+- **Union-bbox eviction** (40 iterations) — non-member nodes trapped inside foreign groups exit via the shortest canvas-valid path
+
+### Data Model
+
+```
+GraphState
+├── customNodes[]      — id, label, initials, role, position, source
+├── customEdges[]      — id, source, target, name, sequence, weight
+├── ecosystemPositions — node → {x, y} for hub view
+├── workflowGroups[]   — id, name, color, nodeIds, parentGroupId?
+└── settings
+    ├── metadataOverrides  — per-entity: name, summary, tasks, constraints,
+    │                        connections, processes (workflow memberships)
+    ├── edgeWeightOverrides
+    ├── nodeDelayOverrides
+    └── hiddenCoreNodes
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 src/
 ├── app/
-│   ├── api/
-│   │   ├── workflow/route.ts       # Node/edge metadata + layout positions
-│   │   └── graph-state/route.ts   # Real-time state (GET poll / PUT mutate)
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx                   # Main app shell + header + tooltip
+│   ├── page.tsx                    # Root page — start screen + canvas router
+│   └── api/
+│       ├── ai/
+│       │   ├── parse-workflow/     # POST: text → graph JSON
+│       │   └── optimize/           # POST: graph → bottleneck report
+│       ├── graph-state/            # GET/PUT: server state CRUD
+│       └── workflow/               # GET: static workflow definitions
 ├── components/
-│   ├── AnalysisSidebar.tsx        # Slide-out panel with delete action
-│   ├── Edges.tsx                  # AnimatedPulseEdge (SVG animateMotion)
-│   ├── GraphCanvas.tsx            # React Flow canvas + CRUD + export
-│   ├── Nodes.tsx                  # NeuralNode (circle) + EcoNode (squircle)
-│   └── StartScreen.tsx            # Landing page
+│   ├── GraphCanvas.tsx             # SVG canvas, nodes, edges, pulses
+│   ├── AnalysisSidebar.tsx         # Right panel — node/edge deep-dive
+│   ├── StartScreen.tsx             # Landing, template gallery, AI input
+│   └── AISettingsModal.tsx         # Provider / key / base URL settings
 └── lib/
-    └── serverState.ts             # In-memory graph state singleton
+    ├── aiClient.ts                 # Provider-agnostic generateText()
+    ├── layout.ts                   # hierarchicalLayout + groupAwareLayout
+    ├── serverState.ts              # In-memory state singleton + mutations
+    ├── templates.ts                # Pre-built workflow templates
+    └── constants.ts                # Core node IDs, role colours, etc.
 ```
+
+---
+
+## 🧩 Templates
+
+Templates ship with full metadata — tasks, summaries, constraints, and workflow groups — so you get a rich, ready-to-explore graph the moment you pick one.
+
+### Morning Routine (7 nodes)
+```
+[Email / Inbox] ──┐
+                  ├──▶ [You] ──▶ [Notes] ──▶ [Stand-up] ──▶ [Deep Work]
+[Calendar]     ──┘           └──▶ [Task List] ──────────────────────────▶ ▲
+```
+Groups: Morning Inputs · Planning Layer · Execution
+
+### Project Workflow (14 nodes)
+Idea → Research → Outline → Draft → (Reviewer A + Reviewer B) → Feedback → Publish → Analytics → Archive
+
+Groups: Discovery · Production · Review Loop · Distribution
+
+### Full Work Week (22 nodes)
+Five external input streams → capture + planning → you (hub) → deep work blocks + collaboration → deliverables + published content + weekly KPIs
+
+Groups: External Inputs · Capture & Plan · Deep Focus · Collaboration · Outputs & Review
+
+---
+
+## 🛠️ Development
+
+```bash
+npm run dev     # Dev server with Turbopack → localhost:3000
+npm run build   # Production build
+npm run lint    # ESLint check
+```
+
+**State note:** The server uses an in-memory singleton (`src/lib/serverState.ts`). It resets on server restart. For persistence across restarts, swap the singleton with a database (SQLite, Postgres, etc.) using the same `importState` / `getGraphState` interface.
+
+**Adding a new AI provider:**
+1. Add the provider to `AIProvider` union type in `src/lib/aiClient.ts`
+2. Implement the `generateText` branch for the new provider
+3. Add the provider config (name, models, colour) to `PROVIDERS` in `AISettingsModal.tsx`
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] **Persistent storage** — SQLite or Postgres backend
+- [ ] **Real-time collaboration** — WebSocket sync, presence indicators
+- [ ] **Constraint propagation** — risk badges that cascade through the graph
+- [ ] **Webhook ingestion** — live workflow updates from GitHub, Jira, Slack
+- [ ] **OCR / PDF import** — extract workflow from scanned process docs
+- [ ] **Diff view** — visualise what changed between two workflow versions
+- [ ] **Shareable links** — read-only public URLs for graphs
+
+---
+
+## 📄 License
+
+MIT © 2026 — do whatever you want, just don't blame us when your workflow still has bottlenecks.
+
+---
+
+<div align="center">
+  <sub>Built with Next.js · React 19 · Tailwind CSS · Anthropic Claude · Google Gemini · ByteDance Doubao</sub>
+</div>

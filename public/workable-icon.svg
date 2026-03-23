@@ -1,0 +1,69 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#4338CA"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+
+    <mask id="hollow-rings">
+      <rect width="256" height="256" fill="white" />
+      <circle cx="88" cy="168" r="9" fill="black" />
+      <circle cx="168" cy="168" r="9" fill="black" />
+    </mask>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  
+  <g mask="url(#hollow-rings)">
+    <path id="w-track" d="M 52 72 L 88 168 L 128 108 L 168 168 L 204 72" 
+          fill="none" stroke="#C7D2FE" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+    
+    <g>
+      <circle r="5" fill="white" opacity="0.4"/>
+      <circle r="2.5" fill="white"/>
+      <animateMotion dur="4s" begin="0s" repeatCount="indefinite">
+        <mpath href="#w-track"/>
+      </animateMotion>
+    </g>
+
+    <g>
+      <circle r="5" fill="white" opacity="0.4"/>
+      <circle r="2.5" fill="white"/>
+      <animateMotion dur="4s" begin="2s" repeatCount="indefinite">
+        <mpath href="#w-track"/>
+      </animateMotion>
+    </g>
+  </g>
+
+  <line x1="128" y1="108" x2="52"  y2="72"  stroke="white" stroke-width="1.2" stroke-dasharray="4 6" opacity="0.2"/>
+  <line x1="128" y1="108" x2="204" y2="72"  stroke="white" stroke-width="1.2" stroke-dasharray="4 6" opacity="0.2"/>
+
+  <g>
+    <circle cx="52" cy="72" r="9" fill="white">
+      <animate attributeName="r" values="9; 14; 9" dur="2.4s" begin="0s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.1; 0.6; 0.1" dur="2.4s" begin="0s" repeatCount="indefinite" />
+    </circle>
+    <circle cx="52" cy="72" r="9" fill="white" />
+  </g>
+
+  <g>
+    <circle cx="128" cy="108" r="12" fill="white">
+      <animate attributeName="r" values="12; 18; 12" dur="2.4s" begin="0.8s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.1; 0.6; 0.1" dur="2.4s" begin="0.8s" repeatCount="indefinite" />
+    </circle>
+    <circle cx="128" cy="108" r="12" fill="white" />
+  </g>
+
+  <g>
+    <circle cx="204" cy="72" r="9" fill="white">
+      <animate attributeName="r" values="9; 14; 9" dur="2.4s" begin="1.6s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.1; 0.6; 0.1" dur="2.4s" begin="1.6s" repeatCount="indefinite" />
+    </circle>
+    <circle cx="204" cy="72" r="9" fill="white" />
+  </g>
+  
+  <circle cx="88"  cy="168" r="9"  fill="none" stroke="white" stroke-width="2.5" />
+  <circle cx="168" cy="168" r="9"  fill="none" stroke="white" stroke-width="2.5" />
+  
+  <text x="128" y="215" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="20" fill="white">WORKABLE</text>
+</svg>
