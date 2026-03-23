@@ -197,9 +197,12 @@ function buildSnapshot(state: ServerGraphState): string {
   allEdgeEntries.forEach(([id, e]) => {
     const meta = overrides[id];
     const name = meta?.name ?? e.name;
-    // Derive source/target from edge id convention (e.g. "nav-script" → "nav" → "script")
-    const [src, tgt] = id.replace(/^e_/, '').split('_');
-    const srcName = src ? (nameLookup[src] ?? src) : '?';
+    // EDGE_DATA keys use hyphens: "nav-xy", "xy-script", etc.
+    // Split on the first hyphen to get source and target node IDs.
+    const hyphenIdx = id.indexOf('-');
+    const src = hyphenIdx !== -1 ? id.slice(0, hyphenIdx) : id;
+    const tgt = hyphenIdx !== -1 ? id.slice(hyphenIdx + 1) : '';
+    const srcName = nameLookup[src] ?? src;
     const tgtName = tgt ? (nameLookup[tgt] ?? tgt) : '?';
     lines.push(`  [${id}]  ${srcName} → ${tgtName}  "${name}"`);
   });
@@ -399,7 +402,14 @@ export async function POST(req: NextRequest) {
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    if (message.includes('401') || message.includes('invalid_api_key') || message.includes('API_KEY')) {
+    const isAuthError =
+      message.includes('401') ||
+      message.includes('invalid_api_key') ||
+      message.includes('API_KEY') ||
+      message.includes('AuthenticationError') ||
+      message.includes('Unauthorized') ||
+      message.toLowerCase().includes('authentication');
+    if (isAuthError) {
       return NextResponse.json({ error: 'Invalid API key. Please check your key in AI Settings.' }, { status: 401 });
     }
     return NextResponse.json({ error: message }, { status: 500 });

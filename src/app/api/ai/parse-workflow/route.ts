@@ -380,7 +380,14 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    if (message.includes('401') || message.includes('invalid_api_key') || message.includes('API_KEY')) {
+    const isAuthError =
+      message.includes('401') ||
+      message.includes('invalid_api_key') ||
+      message.includes('API_KEY') ||
+      message.includes('AuthenticationError') ||
+      message.includes('Unauthorized') ||
+      message.toLowerCase().includes('authentication');
+    if (isAuthError) {
       return NextResponse.json({ error: 'Invalid API key. Please check your key in AI Settings.' }, { status: 401 });
     }
     return NextResponse.json({ error: message }, { status: 500 });
