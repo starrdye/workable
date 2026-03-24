@@ -95,15 +95,23 @@ The AI can return cyclic graphs (node A → B → A). `hierarchicalLayout` handl
 
 Surface input/output token counts and estimated cost per request in the AI Debug Log. Doubao and Gemini both return usage objects; Anthropic always has. This lets users understand why large workflows are slow or expensive.
 
-### 4f — AI Analyze: Real Data + Presentation + Cached Results ✅ IMPLEMENTED (`0.44-personal`)
+### 4f — AI Analyze: Real Data + Presentation + Cached Results + Legacy Fixes ✅ IMPLEMENTED (`0.44-personal`)
 
-The AI Analyze feature had three gaps:
+The AI Analyze feature had three gaps, and a broader legacy audit revealed four additional data-correctness issues across the codebase. All seven were resolved on `0.44-personal`.
 
 **Real data** — The `/api/ai/optimize` route always sent all core nodes (ignoring `hiddenCoreNodes`) with raw labels. Fixed: route now respects `hiddenCoreNodes`, uses display names and roles from `metadataOverrides`, passes node summaries/constraints/connections, group memberships per node, human-readable edge labels, and a `groups[]` block. Improvement-only edges are stripped from the snapshot (they are optimisations, not baseline workflow).
+
+**Core edge filtering** — The route built `coreEdges` from all `EDGE_DATA` entries without checking whether both endpoints were hidden. Fixed: edges where both `source` and `target` are in `hiddenCoreSet` are now filtered out before the AI snapshot is assembled.
 
 **Presentation** — Analysis text was rendered as plain markdown bullets. Fixed: `AIAnalysisModal` now parses `##` sections and renders each as a colour-coded card (indigo / red / amber / emerald / violet) with a matching icon and coloured bullet dots.
 
 **Cached results** — Every click on "AI Analyze" triggered a fresh fetch and wiped the previous result. Fixed: opening the modal preserves and shows the cached result immediately; a relative "Xs ago" badge shows freshness; a "Re-analyze" button in the header triggers a fresh fetch on demand; the error state shows "Try again" wired to the same handler.
+
+**Hover tooltip data** — `GraphCanvas` resolved node and edge hover tooltips using hardcoded `NODE_META`/`EDGE_META` lookup tables (Ridgeview-specific data), ignoring any `metadataOverrides` set by the user or AI. Fixed: tooltips now resolve display name and summary from `metadataOverrides` first, falling back to the static lookup only when no override exists.
+
+**Hardcoded bottleneck text** — `buildNodes()` always emitted `bottleneckText: "Queue: 2.3 Days"` for node `"ed"` regardless of the actual workflow. Fixed: `bottleneckText` is now `undefined`; the amber bottleneck glow remains but no fabricated metric is displayed.
+
+**Generic example prompts** — The five hardcoded examples in `AIUpdateModal` ("Bryan joins as Mary's mentee", "Bloomberg Terminal replaced by Reuters Feed") were Ridgeview-specific and misleading for any other workflow. Fixed: replaced with neutral, workflow-agnostic prompts that work for any organisation.
 
 ### Priority: P1
 
@@ -150,9 +158,9 @@ Add a lightweight version history: whenever the user explicitly saves (or on AI 
 
 Generate a short URL (e.g. `/view/abc123`) that renders the current graph in a read-only canvas — no editing, no sidebar editing, but full zoom/pan and node inspection. The encoded state lives in the URL (base64 compressed) or in a server-side key-value store. Useful for sharing workflow snapshots with stakeholders.
 
-### 6c — Smarter AI Update Examples
+### 6c — Dynamic AI Update Examples
 
-The five hardcoded example prompts in `AIUpdateModal` ("Bryan joins as Mary's mentee…") are generic. Replace them with examples generated dynamically from the current snapshot — e.g. suggest "Rename [actual group name] to…" or "Add a new [most common role] connecting [most active node]". Makes the feature feel context-aware.
+The five example prompts in `AIUpdateModal` were Ridgeview-specific and have been replaced with generic alternatives (`0.44-personal`). The next step is to generate them **dynamically from the current graph snapshot** — e.g. suggest "Rename [actual group name] to…" or "Add a new [most common role] connecting [most active node]". This makes the feature feel genuinely context-aware and surfaces prompts the user is likely to want.
 
 ### 6d — Node Search / Jump-to
 
@@ -165,6 +173,10 @@ Users can only act on one node or edge at a time. Add multi-select (shift-click 
 ### 6f — Dark Mode
 
 The entire UI is light-only. Tailwind's `dark:` variant is already in the stack — add a `prefers-color-scheme` toggle with a system-preference default. Most power users will use this at night.
+
+### 6g — Ecosystem View Completion
+
+The Ecosystem Web Map view has Z-depth coordinates defined in constants (`DEFAULT_ECOSYSTEM` positions include `z` values from −0.3 to +0.5) but the depth layer is never rendered — the canvas only draws the flat XY projection. Implement visual depth cueing: scale node size and opacity by Z value, add a subtle fog gradient on distant nodes, and label depth rings. This makes the ecosystem view meaningfully different from the process map.
 
 ### Priority: P2
 
@@ -196,7 +208,7 @@ The parsed AI JSON is passed through `jsonrepair` and then applied to state with
 
 ### 8a — Test Suite ✅ IMPLEMENTED
 
-The codebase has zero tests. The highest-value targets first:
+The codebase had zero tests. The highest-value targets first:
 
 1. **Layout algorithms** — pure functions, deterministic, easy to snapshot-test
 2. **`validatePatch`** — critical path for AI Update; needs edge-case coverage (empty arrays, duplicate IDs, protected nodes, cascade removal)
@@ -209,7 +221,7 @@ Use Vitest (already compatible with the Vite/Turbopack stack). Goal: 80% coverag
 
 ### 8b — Refactor page.tsx ✅ IMPLEMENTED
 
-`page.tsx` has grown to 900+ lines with 20+ `useState` hooks. Split into:
+`page.tsx` had grown to 900+ lines with 20+ `useState` hooks. Split into:
 - `useGraphState` — polling, server sync, optimistic updates
 - `useAIHandlers` — all AI modal trigger + response handlers
 - `useWorkflowGroups` — group CRUD
@@ -241,6 +253,44 @@ Add `zod` schemas for the parse-workflow and update route expected shapes. Repla
 
 **What was built (`0.43-personal`):** `src/lib/aiSchemas.ts` — `ParseWorkflowResponse` and `AIUpdatePatchResponse` Zod schemas. Both AI routes call `.safeParse()` after `jsonrepair`; on success, Zod-coerced data (with defaults filled) is used; on warning, raw data falls through to existing validation. Soft failure keeps user-facing behaviour unchanged.
 
+### 8e — Edge ID Robustness
+
+Core edges use a hyphen-delimited format (`"nav-xy"`) while custom edges use underscores or free text (`"e_source_target"`). The optimize route and several other places split on the first hyphen to extract source/target — a convention that breaks silently for multi-word node IDs. Introduce a canonical edge ID format (e.g. `source::target::uuid`) and a shared `parseEdgeId()` helper used by all routes and the layout engine.
+
+### Priority: P3
+
+---
+
+## Track 9 — Accessibility & Keyboard Navigation (Lower)
+
+### Problem
+
+The canvas interaction model is entirely pointer-based. There are no keyboard shortcuts, no ARIA labels on interactive elements, and no visible focus rings on canvas nodes. Screen-reader users cannot interact with the graph at all.
+
+### Proposed Improvements
+
+**9a — Keyboard shortcuts**
+A minimal shortcut layer improves speed for power users:
+
+| Shortcut | Action |
+|---|---|
+| `N` | Add new node (opens quick-add) |
+| `Delete` / `Backspace` | Delete selected node or edge |
+| `Cmd/Ctrl + Z` | Undo (requires Track 2) |
+| `Cmd/Ctrl + E` | Export CSV |
+| `Cmd/Ctrl + K` | Open node search / jump-to |
+| `Escape` | Deselect / close modal |
+| `Tab` | Cycle through nodes |
+
+**9b — ARIA labels and roles**
+All toolbar buttons, sidebar fields, and modal dialogs should carry `aria-label` or `aria-labelledby` attributes. The canvas SVG should have `role="application"` with a brief `aria-description`. Node circles should be `role="button"` with `aria-label="{node name} — {role}"`.
+
+**9c — Focus management in modals**
+When a modal opens, focus should move to the first interactive element. When it closes, focus should return to the trigger button. This is currently missing in all five modals.
+
+**9d — High-contrast mode**
+The graph uses low-opacity edges (base opacity 0.30) that are difficult to see in low-vision scenarios. A "High contrast" toggle in settings should raise edge opacity to 0.80, increase node border widths, and add text outlines on labels.
+
 ### Priority: P3
 
 ---
@@ -253,8 +303,9 @@ Add `zod` schemas for the parse-workflow and update route expected shapes. Repla
 | **0.41** | Named workflow library, SSE-based state sync (replaces polling), streaming AI responses | Planned |
 | **0.42** | SQLite persistence, shareable read-only links, workflow version history | Planned |
 | **0.43-personal** | Incremental layout (5b), layout web worker scaffold (5c), parallelised sidebar saves (5d), Vitest suite 23 tests (8a), page.tsx refactor into 4 hooks (8b), GraphAction discriminated union (8c), Zod AI response validation (8d) | ✅ Done |
-| **0.44-personal** | AI Analyze real workflow data — respects hiddenCoreNodes, metadata display names, groups, constraints (fix); section cards UI — colour-coded Workflow Summary / Bottlenecks / Constraint Analysis / Quick Wins; cached result preserved on re-open, Re-analyze button, relative timestamp | ✅ Done |
-| **0.45** | Multi-select + bulk ops, dark mode, dynamic AI Update examples, jump-to-node search | Planned |
+| **0.44-personal** | AI Analyze real workflow data (hiddenCoreNodes, metadataOverrides, groups, constraints); section cards UI; cached result + Re-analyze + relative timestamp; hover tooltip data correctness; remove hardcoded bottleneck text; core edge hidden-endpoint filtering; generic AI Update examples | ✅ Done |
+| **0.45** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
+| **0.46** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e), cycle detection on parse (4d) | Planned |
 | **0.50** | API key encryption, server-side session option, full security audit | Planned |
 
 ---
@@ -276,10 +327,12 @@ Add `zod` schemas for the parse-workflow and update route expected shapes. Repla
 | Undo / Redo | P0 | Medium | Removes fear of using AI features | Planned |
 | SSE state sync | P1 | Low | Better responsiveness, enables multi-tab | Planned |
 | AI reliability — streaming, retries, errors | P1 | Medium | Reduces friction on the core loop | Planned |
-| AI Analyze — real data, UI, caching (4f) | P1 | Low | Correct results, better UX | ✅ `0.44-personal` |
+| AI Analyze — real data, UI, caching, legacy fixes (4f) | P1 | Low | Correct results, better UX | ✅ `0.44-personal` |
 | Rendering performance (5b/5c/5d) | P2 | Medium | Faster layout, no jarring reflows | ✅ `0.43-personal` |
-| UX gaps (history, search, bulk, dark mode) | P2 | Medium | Daily delight | Planned |
-| Security (key encryption, sanitisation) | P2 | Low | Trust and safety | Planned |
+| UX gaps — history, search, bulk, dark mode, ecosystem view (6a–6g) | P2 | Medium | Daily delight + complete dual-view | Planned |
+| Security — key encryption, sanitisation (7a/7b) | P2 | Low | Trust and safety | Planned |
 | Tests + refactor (8a–8d) | P3 | High | Long-term maintainability | ✅ `0.43-personal` |
+| Accessibility + keyboard nav (Track 9) | P3 | Medium | Inclusivity, power-user speed | Planned |
+| Edge ID robustness + AI response validation (8e, 7c) | P3 | Low | Data integrity | Planned |
 
 The biggest single improvement with the least effort is **Track 1 Tier 1** — client-side auto-save. It costs one `localStorage.setItem` call per mutation and eliminates the most common user frustration (refresh = lost work) in an afternoon.

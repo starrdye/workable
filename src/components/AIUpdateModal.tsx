@@ -119,11 +119,11 @@ const ROLE_BADGE: Record<string, string> = {
 };
 
 const EXAMPLES = [
-  "Bryan joins as Mary's mentee — he's working on the company website",
-  "Mary's supervisor changed from Jack to Sarah",
-  "The Bloomberg Terminal was replaced by a Reuters Feed",
-  "Bryan left the company",
-  "Mary was promoted to Senior Analyst and now oversees reconciliation",
+  "Alice joins the team as Bob's apprentice and will assist with reporting",
+  "The reporting tool was replaced by a newer platform",
+  "Charlie transferred to a different department",
+  "A new approval step was added between data entry and final review",
+  "The team lead was promoted and now oversees two additional processes",
 ];
 
 function diffSummaryPill(result: AIUpdateResult) {

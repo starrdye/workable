@@ -156,7 +156,7 @@ function buildNodes(
       initials: BASE_LABELS[id].initials,
       label:    BASE_LABELS[id].label,
       subcategory: ECO_SUB[id],
-      bottleneck: isBottleneck, bottleneckText: isBottleneck ? "Queue: 2.3 Days" : undefined,
+      bottleneck: isBottleneck, bottleneckText: undefined,
       isDeprecated: isDep, isUpgraded: isUpgr,
       borderColor: border, textColor: text,
       labelBg: "rgba(255,255,255,0.95)", labelBorderColor: isDep ? "#F1F5F9" : "#E2E8F0",
@@ -1032,6 +1032,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
             const isSelected = selectedId === edge.id && selectedType === "edge";
             const edgeMeta   = EDGE_META[edge.id];
+            const edgeDisplayName    = serverState?.settings?.metadataOverrides?.[edge.id]?.name    ?? edgeMeta?.name    ?? '';
+            const edgeDisplaySummary = serverState?.settings?.metadataOverrides?.[edge.id]?.summary ?? edgeMeta?.summary ?? '';
             const srcDeg = nodeDeg[edge.source] || 0, tgtDeg = nodeDeg[edge.target] || 0;
             const avgDeg = (srcDeg + tgtDeg) / 2;
             const relWeight = edge.weight ?? serverState?.settings?.edgeWeightOverrides?.[edge.id]?.weight ?? 1;
@@ -1087,7 +1089,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 <path d={d} stroke="transparent" strokeWidth={22} fill="none"
                   style={{ cursor: edge.isDeprecated ? "default" : "pointer", pointerEvents: edge.isDeprecated ? "none" : "stroke" }}
                   onClick={(e) => { e.stopPropagation(); if (!edge.isDeprecated) handleEdgeClick(edge.id); }}
-                  onMouseEnter={() => { setHoveredEdgeId(edge.id); if (edgeMeta) onHover(edgeMeta.name, edgeMeta.summary); }}
+                  onMouseEnter={() => { setHoveredEdgeId(edge.id); if (edgeDisplayName) onHover(edgeDisplayName, edgeDisplaySummary); }}
                   onMouseLeave={() => { setHoveredEdgeId(null); onHoverEnd(); }}
                 />
               </g>
@@ -1113,7 +1115,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           const isBotl   = node.bottleneck && !isDep;
           const isSelected = selectedId === node.id && selectedType === "node";
           const isConnSrc  = connectFrom === node.id;
-          const nodeMeta   = NODE_META[node.id];
+          const nodeMeta        = NODE_META[node.id];
+          const nodeDisplayName    = serverState?.settings?.metadataOverrides?.[node.id]?.name    ?? nodeMeta?.name    ?? node.label;
+          const nodeDisplaySummary = serverState?.settings?.metadataOverrides?.[node.id]?.summary ?? nodeMeta?.summary ?? '';
           const opacity    = nodeOpacity(node.id);
           const highlight  = isNodeHighlighted(node.id);
 
@@ -1148,7 +1152,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
               onClick={(e) => handleNodeClick(e, node.id)}
               onContextMenu={(e) => handleNodeContextMenu(e, node.id)}
-              onMouseEnter={() => { setHoveredNodeId(node.id); if (nodeMeta) onHover(nodeMeta.name, nodeMeta.summary); }}
+              onMouseEnter={() => { setHoveredNodeId(node.id); if (nodeDisplayName) onHover(nodeDisplayName, nodeDisplaySummary); }}
               onMouseLeave={() => { setHoveredNodeId(null); onHoverEnd(); }}
             >
               {node.initials}

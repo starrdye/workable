@@ -139,20 +139,28 @@ export async function POST(req: NextRequest) {
     const nameLookup: Record<string, string> = {};
     [...coreNodes, ...customNodes].forEach(n => { nameLookup[n.id] = n.name; });
 
-    // Core edges
-    const coreEdges = Object.entries(EDGE_DATA).map(([id, e]) => {
-      const meta = metadataOverrides[id] ?? {};
-      const hyphen = id.indexOf('-');
-      const src = hyphen !== -1 ? id.slice(0, hyphen) : id;
-      const tgt = hyphen !== -1 ? id.slice(hyphen + 1) : '';
-      return {
-        id,
-        name:       meta.name ?? e.name,
-        sourceName: nameLookup[src] ?? src,
-        targetName: nameLookup[tgt] ?? tgt,
-        summary:    e.summary,
-      };
-    });
+    // Core edges (exclude edges where both endpoints are hidden)
+    const coreEdges = Object.entries(EDGE_DATA)
+      .filter(([id]) => {
+        const hyphen = id.indexOf('-');
+        if (hyphen === -1) return true;
+        const src = id.slice(0, hyphen);
+        const tgt = id.slice(hyphen + 1);
+        return !(hiddenCoreSet.has(src) && hiddenCoreSet.has(tgt));
+      })
+      .map(([id, e]) => {
+        const meta = metadataOverrides[id] ?? {};
+        const hyphen = id.indexOf('-');
+        const src = hyphen !== -1 ? id.slice(0, hyphen) : id;
+        const tgt = hyphen !== -1 ? id.slice(hyphen + 1) : '';
+        return {
+          id,
+          name:       meta.name ?? e.name,
+          sourceName: nameLookup[src] ?? src,
+          targetName: nameLookup[tgt] ?? tgt,
+          summary:    e.summary,
+        };
+      });
 
     // Custom edges (skip improvement-only ones — they are already optimisations)
     const customEdges = ((workflowData.customEdges ?? []) as Array<{ id: string; source: string; target: string; isImprovementOnly?: boolean; name?: string }>)
