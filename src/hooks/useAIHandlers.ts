@@ -57,6 +57,10 @@ export function useAIHandlers(
   const [aiSuggestedRemovals,   setAiSuggestedRemovals]   = useState<SuggestedRemoval[]>([]);
   const [aiAnalysisTimestamp,   setAiAnalysisTimestamp]   = useState<number | null>(null);
 
+  // Track which suggestions have already been applied so canvas can remove highlights
+  const [appliedRemovalIds,     setAppliedRemovalIds]     = useState<Set<string>>(() => new Set());
+  const [appliedConnectionKeys, setAppliedConnectionKeys] = useState<Set<string>>(() => new Set());
+
   // ── AI Update state ────────────────────────────────────────────────────────
   const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
   const [aiUpdateResult,  setAiUpdateResult]  = useState<AIUpdateResult | null>(null);
@@ -108,12 +112,14 @@ export function useAIHandlers(
     }
   };
 
-  // Re-run fresh analysis, clearing the previous result
+  // Re-run fresh analysis, clearing the previous result and applied tracking
   const handleReAnalyze = async () => {
     setAiAnalysis(null);
     setAiSuggestedConnections([]);
     setAiSuggestedRemovals([]);
     setAiAnalysisTimestamp(null);
+    setAppliedRemovalIds(new Set());
+    setAppliedConnectionKeys(new Set());
     await runAnalyze();
   };
 
@@ -253,6 +259,9 @@ export function useAIHandlers(
       ...prev,
       customEdges: [...(prev.customEdges ?? []).filter(e => e.id !== edgeId), newEdge],
     } : prev);
+    // Mark as applied so canvas removes the suggested-arc highlight
+    const key = `${conn.sourceId}-${conn.targetId}`;
+    setAppliedConnectionKeys(prev => { const next = new Set(prev); next.add(key); return next; });
   };
 
   const handleRemoveEntity = (removal: SuggestedRemoval) => {
@@ -264,6 +273,8 @@ export function useAIHandlers(
         customEdges: (prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
       } : prev);
       if (selectedId === removal.id) { setSelectedId(null); setSelectedType(null); }
+      // Mark as applied so canvas removes the amber-glow highlight
+      setAppliedRemovalIds(prev => { const next = new Set(prev); next.add(removal.id); return next; });
     }
   };
 
@@ -285,6 +296,7 @@ export function useAIHandlers(
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     // analysis actions
     handleAddConnection, handleRemoveEntity,
+    appliedRemovalIds, appliedConnectionKeys,
     // debug
     aiDebugLog, setAiDebugLog,
   };

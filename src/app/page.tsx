@@ -74,8 +74,19 @@ export default function Home() {
     aiUpdateLoading, aiUpdateResult, aiUpdateError,
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     handleAddConnection, handleRemoveEntity,
+    appliedRemovalIds, appliedConnectionKeys,
     aiDebugLog, setAiDebugLog,
   } = useAIHandlers(fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType);
+
+  // ── AI analysis canvas highlights ─────────────────────────────────────────
+  // Nodes from AI suggestions that are pending removal (not yet applied) → amber glow
+  const pendingBottleneckNodeIds = aiSuggestedRemovals
+    .filter(r => r.type === 'node' && !appliedRemovalIds.has(r.id))
+    .map(r => r.id);
+  // Connection pairs from AI suggestions that are pending addition (not yet applied) → dashed arc
+  const pendingSuggestedConnectionPairs = aiSuggestedConnections
+    .filter(c => !appliedConnectionKeys.has(`${c.sourceId}-${c.targetId}`))
+    .map(c => ({ sourceId: c.sourceId, targetId: c.targetId }));
 
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
 
@@ -675,6 +686,8 @@ export default function Home() {
             onDeleteNode={(id) => { if (selectedId === id) { setSelectedId(null); setSelectedType(null); } }}
             searchQuery={searchQuery}
             activeFilters={{ roles: roleFilters, groupIds: groupFilters }}
+            bottleneckNodeIds={pendingBottleneckNodeIds}
+            suggestedConnectionPairs={pendingSuggestedConnectionPairs}
           />
 
           {/* Active filter badge */}
@@ -694,13 +707,7 @@ export default function Home() {
           <div className="absolute bottom-6 left-6 z-50">
             <button
               title="Reset layout to default positions"
-              onClick={async () => {
-                await fetch("/api/graph-state", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "resetLayout" }),
-                }).catch(console.error);
-              }}
+              onClick={() => canvasRef.current?.triggerResetLayout()}
               className="bg-white/90 backdrop-blur-md border border-slate-200 rounded-full shadow-lg px-3 py-2 text-slate-600 hover:bg-slate-100 flex items-center gap-1.5 text-sm font-semibold transition-colors"
             >
               <LayoutGrid className="w-4 h-4" />

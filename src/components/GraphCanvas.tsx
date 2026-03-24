@@ -11,6 +11,8 @@ export interface GraphCanvasRef {
   exportCsv: () => void;
   exportPng: () => void;
   importCsv: (text: string) => void;
+  /** Fire resetLayout server action, immediately re-fetch positions, and reset the viewport. */
+  triggerResetLayout: () => Promise<void>;
 }
 
 export interface GraphCanvasProps {
@@ -28,6 +30,10 @@ export interface GraphCanvasProps {
   searchQuery?:     string;
   /** Filter nodes by role and/or workflow group. Empty array = no filter applied. */
   activeFilters?:   { roles: string[]; groupIds: string[] };
+  /** Node IDs from AI analysis that should show the amber bottleneck-glow highlight. */
+  bottleneckNodeIds?: string[];
+  /** Pairs from AI analysis showing suggested-but-not-yet-added connections as dashed arcs. */
+  suggestedConnectionPairs?: Array<{ sourceId: string; targetId: string }>;
 }
 
 interface CanvasNode {
@@ -443,6 +449,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     onSelectNode, onDeselect, onHover, onHoverEnd, onDeleteNode,
     searchQuery = "",
     activeFilters = { roles: [], groupIds: [] },
+    bottleneckNodeIds = [],
+    suggestedConnectionPairs = [],
   }, ref) {
     const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -761,6 +769,23 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             lastPollTs.current = s.lastUpdated;
           }
         }).catch(console.error);
+      },
+      triggerResetLayout: async () => {
+        // 1. Run the layout computation on the server
+        await fetch("/api/graph-state", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "resetLayout" }),
+        }).catch(console.error);
+        // 2. Immediately pull fresh positions instead of waiting for the 3-second poll
+        const s: WorkflowApiState = await fetch("/api/graph-state").then(r => r.json()).catch(() => null);
+        if (s) {
+          lastPollTs.current = s.lastUpdated;
+          setServerState(prev => prev ? { ...prev, ...s } : s);
+        }
+        // 3. Reset the viewport so repositioned nodes are in view
+        const reset = { x: 0, y: 0, scale: 1 };
+        vtRef.current = reset;
+        setViewTransform(reset);
       },
     }));
 
@@ -1120,6 +1145,29 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           })}
           </g>
 
+          {/* AI-suggested connection arcs — dashed emerald, removed once applied */}
+          {showNodes && suggestedConnectionPairs.length > 0 && suggestedConnectionPairs.map((pair) => {
+            const src = nodeMap[pair.sourceId], tgt = nodeMap[pair.targetId];
+            if (!src || !tgt) return null;
+            const x1 = src.x + R, y1 = src.y + R;
+            const x2 = tgt.x + R, y2 = tgt.y + R;
+            const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+            const dx = x2 - x1, dy = y2 - y1;
+            const len = Math.hypot(dx, dy);
+            const curvature = Math.min(len * 0.28, 90);
+            const cpx = mx - (dy / Math.max(len, 1)) * curvature;
+            const cpy = my + (dx / Math.max(len, 1)) * curvature;
+            const d = `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`;
+            return (
+              <path
+                key={`${pair.sourceId}-${pair.targetId}-suggested`}
+                d={d} fill="none"
+                stroke="#10B981" strokeWidth={2.5} strokeDasharray="9 5" opacity={0.8}
+                style={{ filter: "drop-shadow(0 0 5px rgba(16,185,129,0.65))", pointerEvents: "none" }}
+              />
+            );
+          })}
+
           {/* Connect mode rubber band */}
           {showNodes && connectFrom && (() => {
             const src = nodeMap[connectFrom];
@@ -1135,7 +1183,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* ── Node layer ────────────────────────────────────────── */}
         {nodes.map((node) => {
           const isDep    = node.isDeprecated;
-          const isBotl   = node.bottleneck && !isDep;
+          // Show amber glow if: (a) hardcoded bottleneck OR (b) in AI-suggested removals pending list
+          const isBotl   = (node.bottleneck || bottleneckNodeIds.includes(node.id)) && !isDep;
           const isSelected = selectedId === node.id && selectedType === "node";
           const isConnSrc  = connectFrom === node.id;
           const nodeMeta        = NODE_META[node.id];

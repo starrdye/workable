@@ -319,6 +319,27 @@ Clicking "Add" or "Remove/Automate/Merge" in the AI Analysis modal had no visual
 
 ---
 
+## Track 11 — Reset Layout & AI Analysis Visual Highlights
+
+### 11a — Reset Layout Fix ✅ IMPLEMENTED (0.46-personal)
+
+The "Reset Layout" button fired a `PUT { action: "resetLayout" }` but the canvas only picked up the new positions on its next 3-second poll cycle, making the button appear broken. Additionally, after layout changes the pan/zoom viewport was not reset, leaving repositioned nodes potentially out-of-frame.
+
+**What was built:** Added `triggerResetLayout(): Promise<void>` to `GraphCanvasRef`. When called it: (1) sends the `resetLayout` PUT, (2) immediately fetches fresh positions from `GET /api/graph-state` and calls `setServerState` — bypassing the poll wait, (3) resets `viewTransform` to `{x:0, y:0, scale:1}` so all nodes return to the visible viewport. The Reset Layout button in `page.tsx` now delegates to this imperative method.
+
+### 11b — AI Analysis Canvas Highlights ✅ IMPLEMENTED (0.46-personal)
+
+After running AI Analyze, the bottleneck nodes and suggested connections were not visually highlighted on the canvas. Users had to read the modal text to understand what was being suggested, with no spatial reference.
+
+**What was built:**
+- **Amber bottleneck glow on suggested-removal nodes** — `aiSuggestedRemovals` of type `node` are passed to `GraphCanvas` as `bottleneckNodeIds`. These nodes receive the same amber `box-shadow` and `bottleneck-glow` CSS class as the hardcoded bottleneck node, giving them the distinctive amber/yellow halo. The glow persists until the user clicks "Remove" in the analysis modal.
+- **Dashed emerald arcs for suggested connections** — `aiSuggestedConnections` are rendered as dashed green quadratic-bezier paths in the SVG layer (same curve geometry as real edges). They include a `drop-shadow(0 0 5px rgba(16,185,129,0.65))` glow so they are clearly visible without overlapping real edges.
+- **Applied-state lift-up** — `appliedRemovalIds` (Set\<string\>) and `appliedConnectionKeys` (Set\<string\>) are now tracked in `useAIHandlers` rather than only in the modal's local state. When the user clicks Add/Remove in the analysis modal the corresponding suggestion is removed from the highlight sets, so the amber glow and dashed arc immediately disappear from the canvas. On Re-analyze both sets reset to empty.
+
+### Priority: P1 — correctness; core feature loop was visually broken
+
+---
+
 ## Suggested Release Cadence
 
 | Release | Key deliverables | Status |
@@ -329,8 +350,9 @@ Clicking "Add" or "Remove/Automate/Merge" in the AI Analysis modal had no visual
 | **0.43-personal** | Incremental layout (5b), layout web worker scaffold (5c), parallelised sidebar saves (5d), Vitest suite 23 tests (8a), page.tsx refactor into 4 hooks (8b), GraphAction discriminated union (8c), Zod AI response validation (8d) | ✅ Merged |
 | **0.44-personal** | AI Analyze real workflow data (hiddenCoreNodes, metadataOverrides, groups, constraints); section cards UI; cached result + Re-analyze + relative timestamp; hover tooltip data correctness; remove hardcoded bottleneck text; core edge hidden-endpoint filtering; generic AI Update examples | ✅ Merged |
 | **0.45-personal** | Always-on data flow mode (all edges lit + animated toggle); vivid improvements mode (upgraded edges always glow green at opacity 0.90, deprecated fade to 0.06); analysis action buttons grey out after apply (Add → Added ✓, Automate → Automated ✓, etc.) | ✅ Merged |
-| **0.46** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
-| **0.47** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e), cycle detection on parse (4d) | Planned |
+| **0.46-personal** | Reset Layout fix — immediate re-fetch + viewport reset via `triggerResetLayout()` imperative ref; AI analysis canvas highlights — amber bottleneck glow on suggested-removal nodes, dashed emerald arcs for suggested connections, applied-state lifted to `useAIHandlers` | In Progress |
+| **0.47** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
+| **0.48** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e), cycle detection on parse (4d) | Planned |
 | **0.50** | API key encryption, server-side session option, full security audit | Planned |
 
 ---
@@ -355,6 +377,7 @@ Clicking "Add" or "Remove/Automate/Merge" in the AI Analysis modal had no visual
 | AI Analyze — real data, UI, caching, legacy fixes (4f) | P1 | Low | Correct results, better UX | ✅ merged |
 | Rendering performance (5b/5c/5d) | P2 | Medium | Faster layout, no jarring reflows | ✅ merged |
 | Data flow mode + vivid improvements + applied buttons | P2 | Low | Clear workflow visibility | ✅ merged |
+| Reset Layout fix + AI analysis canvas highlights (11a/11b) | P1 | Low | Core feature loop correctness | ✅ `0.46-personal` |
 | UX gaps — history, search, bulk, dark mode, ecosystem view (6a–6g) | P2 | Medium | Daily delight + complete dual-view | Planned |
 | Security — key encryption, sanitisation (7a/7b) | P2 | Low | Trust and safety | Planned |
 | Tests + refactor (8a–8d) | P3 | High | Long-term maintainability | ✅ `0.43-personal` |
