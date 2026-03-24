@@ -34,30 +34,30 @@ Swap the in-memory singleton for SQLite (via Drizzle ORM or Prisma). The `import
 
 ---
 
-## Track 2 — Undo / Redo (Critical)
+## Track 2 — Undo / Redo (Critical) ✅ IMPLEMENTED (`0.42-personal`)
 
 ### Problem
-Every destructive action — deleting a node, applying an AI Update, removing a group — is irreversible. A misfire on "Apply to Graph" after an AI Update has no recovery path.
+Every destructive action — deleting a node, applying an AI Update, removing a group — was previously irreversible. A misfire on "Apply to Graph" after an AI Update had no recovery path.
 
-### Proposed Solution: Command History Stack
+### Implemented Solution: Command History Stack
+Introduced `useUndoRedo` hook that captures a snapshot of `GraphState` before every mutation. Stores up to 50 snapshots in a circular buffer (in-memory on the client). 
 
-Introduce an `UndoManager` that captures a snapshot of `GraphState` before every mutation. Store up to 50 snapshots in a circular buffer (in-memory on the client). `Ctrl/Cmd+Z` calls `PUT /api/graph-state` with `action: importState` and the previous snapshot; `Ctrl/Cmd+Shift+Z` re-applies.
+**Key Features:**
+- **Global Keyboard Shortcuts**: `Ctrl/Cmd+Z` to undo; `Ctrl/Cmd+Shift+Z` to redo.
+- **Snapshot Integrity**: Uses `JSON.parse(JSON.stringify(state))` deep cloning before each mutating PUT.
+- **AI Cascade Support**: Track 12 implementation ensures an entire recursive AI cascade is captured as a single history entry for atomic undo.
+- **Server Sync**: Replays the full state on each undo via `PUT /api/graph-state` with `action: importState`.
 
-The state shape is already serialisable — the snapshot cost is a `JSON.parse(JSON.stringify(state))` deep clone before each mutating PUT. Because the server is the source of truth, the undo stack lives on the client and replays the full state on each undo.
-
-For AI Update specifically, the "Back" button in the diff preview is already half-way there — it just needs to be wired to the undo stack instead of only resetting the modal.
-
-### Priority: P0 — user trust issue
+### Priority: P0 — user trust issues resolved
 
 ---
 
 ## Track 3 — Real-time State Sync (High)
 
 ### Problem
-The client polls `GET /api/graph-state?since=<ts>` every 3 seconds. On an idle graph this wastes bandwidth and prevents multi-tab or future multi-user sync from feeling live.
+The client currently polls `GET /api/graph-state?since=<ts>` every 3 seconds. On an idle graph this wastes bandwidth and prevents multi-tab or future multi-user sync from feeling truly live.
 
 ### Proposed Solution: Server-Sent Events (SSE)
-
 Replace the polling loop with a `GET /api/graph-state/stream` SSE endpoint. The server pushes a lightweight diff (positions hash + lastUpdated) whenever state changes. The client re-fetches the full state only on a hash mismatch — matching the current hash-based deduplication logic, but event-driven instead of polling.
 
 SSE is simpler than WebSockets (no handshake, works over HTTP/2, stateless on server), and Next.js supports it natively with `Response` streaming. The existing 3-second poll can remain as a fallback.
@@ -739,7 +739,7 @@ These tests assure the multi-step cascading logic introduced in Track 12 resolve
 | Track | Priority | Effort | Impact | Status |
 |---|---|---|---|---|
 | Persistence (localStorage → SQLite) | P0 | Low → Medium | Unblocks daily use | Planned |
-| Undo / Redo | P0 | Medium | Removes fear of using AI features | Planned |
+| Undo / Redo | P0 | Medium | Removes fear of using AI features | ✅ `0.42-personal` |
 | SSE state sync | P1 | Low | Better responsiveness, enables multi-tab | Planned |
 | AI reliability — streaming, retries, errors | P1 | Medium | Reduces friction on the core loop | Planned |
 | AI Analyze — real data, UI, caching, legacy fixes (4f) | P1 | Low | Correct results, better UX | ✅ merged |
@@ -749,7 +749,8 @@ These tests assure the multi-step cascading logic introduced in Track 12 resolve
 | UX gaps — history, search, bulk, dark mode, ecosystem view (6a–6g) | P2 | Medium | Daily delight + complete dual-view | Planned |
 | Security — key encryption, sanitisation (7a/7b) | P2 | Low | Trust and safety | Planned |
 | Tests + refactor (8a–8d) | P3 | High | Long-term maintainability | ✅ `0.43-personal` |
-| Accessibility + keyboard nav (Track 9) | P3 | Medium | Inclusivity, power-user speed | Planned |
+| Accessibility + keyboard nav (Track 9) | P3 | Medium | Inclusivity, power-user speed | ✅ `0.47-personal` |
+| Cascading AI Analysis & Fishbone Reasoning (Track 12) | P1 | High | Deep, context-aware optimizations | ✅ `0.47-personal` |
 | Edge ID robustness + AI response validation (8e, 7c) | P3 | Low | Data integrity | Planned |
 
 The biggest single improvement with the least effort is **Track 1 Tier 1** — client-side auto-save. It costs one `localStorage.setItem` call per mutation and eliminates the most common user frustration (refresh = lost work) in an afternoon.
