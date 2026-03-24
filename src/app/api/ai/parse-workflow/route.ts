@@ -4,6 +4,7 @@ import type { CustomNodeConfig, CustomEdgeConfig, WorkflowGroup } from '@/lib/se
 import { hierarchicalLayout, groupAwareLayout } from '@/lib/layout';
 import { CORE_NODE_IDS } from '@/lib/constants';
 import { jsonrepair } from 'jsonrepair';
+import { ParseWorkflowResponse } from '@/lib/aiSchemas';
 
 const SYSTEM_PROMPT = `You are a workflow graph parser. Convert natural language workflow descriptions into structured JSON graphs.
 
@@ -262,7 +263,18 @@ export async function POST(req: NextRequest) {
 
     let parsed: { nodes: AINode[]; edges: AIEdge[]; groups?: AIGroup[] };
     try {
-      parsed = JSON.parse(jsonrepair(extractJSON(rawText)));
+      const rawParsed = JSON.parse(jsonrepair(extractJSON(rawText)));
+
+      // 8d — Zod schema validation (soft: log warnings but fall through to existing validation)
+      const zodResult = ParseWorkflowResponse.safeParse(rawParsed);
+      if (zodResult.success) {
+        // Use Zod-coerced data (fills defaults, strips extra fields)
+        parsed = zodResult.data as typeof parsed;
+      } else {
+        // Log but continue — the manual validation below will still catch hard errors
+        console.warn('[parse-workflow] Zod validation warnings:', zodResult.error.flatten());
+        parsed = rawParsed;
+      }
     } catch {
       return NextResponse.json(
         {

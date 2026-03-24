@@ -4,16 +4,20 @@ import { useState, useEffect, useRef } from "react";
 import { StartScreen, type AIParsedResult, type AIDebugLog } from "@/components/StartScreen";
 import { GraphCanvas, GraphCanvasRef } from "@/components/GraphCanvas";
 import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
-import { AISettingsModal, loadAIConfig, type AIConfig } from "@/components/AISettingsModal";
-import { AIAnalysisModal, type SuggestedConnection, type SuggestedRemoval } from "@/components/AIAnalysisModal";
-import { AIUpdateModal, type AIUpdateResult } from "@/components/AIUpdateModal";
-import { AI_CONFIG_KEY } from "@/components/AISettingsModal";
+import { AISettingsModal } from "@/components/AISettingsModal";
+import { AIAnalysisModal } from "@/components/AIAnalysisModal";
+import { AIUpdateModal } from "@/components/AIUpdateModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
 } from "lucide-react";
-import { PROVIDERS, type AIProvider } from "@/lib/aiClient";
-import type { ServerGraphState } from "@/lib/serverState";
+import { PROVIDERS } from "@/lib/aiClient";
+
+// ── Custom hooks (Track 8b) ────────────────────────────────────────────────────
+import { useGraphState }      from "@/hooks/useGraphState";
+import { useCanvasFilters }   from "@/hooks/useCanvasFilters";
+import { useWorkflowGroups }  from "@/hooks/useWorkflowGroups";
+import { useAIHandlers }      from "@/hooks/useAIHandlers";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -22,52 +26,13 @@ const ROLE_CHIPS = [
   { id: "output",   label: "Output",   color: "#10B981" },
 ] as const;
 
-const GROUP_COLORS = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#14B8A6"];
-
 export default function Home() {
-  const [isAppStarted, setIsAppStarted]           = useState(false);
-  const [showImprovements, setShowImprovements]   = useState(false);
-  const [selectedId, setSelectedId]               = useState<string | null>(null);
-  const [selectedType, setSelectedType]           = useState<"node" | "edge" | null>(null);
-  const [analysisData, setAnalysisData]           = useState<AnalysisData | null>(null);
-  const [fullServerState, setFullServerState]     = useState<ServerGraphState | null>(null);
-
-  // Search + Filter
-  const [searchQuery, setSearchQuery]             = useState("");
-  const [roleFilters, setRoleFilters]             = useState<string[]>([]);
-  const [groupFilters, setGroupFilters]           = useState<string[]>([]);
-  const [showFilters, setShowFilters]             = useState(false);
-  const [showGroups, setShowGroups]               = useState(true);
-
-  // Workgroup management state
-  const [editingGroupId, setEditingGroupId]       = useState<string | null>(null);
-  const [editingGroupName, setEditingGroupName]   = useState("");
-
-  // Initialize with a static default so server and client render the same HTML
-  // (no localStorage read during SSR). useEffect loads the real config client-side.
-  const [aiConfig, setAiConfig] = useState<AIConfig>(() => ({
-    provider: "anthropic" as AIProvider,
-    models: Object.fromEntries(PROVIDERS.map(p => [p.id, p.defaultModel])) as Record<AIProvider, string>,
-    keys:   Object.fromEntries(PROVIDERS.map(p => [p.id, ""])) as Record<AIProvider, string>,
-  }));
-  const [showAISettings, setShowAISettings]       = useState(false);
-  const [showAIAnalysis, setShowAIAnalysis]       = useState(false);
-  const [aiAnalysis, setAiAnalysis]               = useState<string | null>(null);
-  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
-  const [aiAnalysisError, setAiAnalysisError]     = useState<string | null>(null);
-  const [aiSuggestedConnections, setAiSuggestedConnections] = useState<SuggestedConnection[]>([]);
-  const [aiSuggestedRemovals, setAiSuggestedRemovals]       = useState<SuggestedRemoval[]>([]);
-
-  // AI Update state
-  const [showAIUpdate,    setShowAIUpdate]    = useState(false);
-  const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
-  const [aiUpdateResult,  setAiUpdateResult]  = useState<AIUpdateResult | null>(null);
-  const [aiUpdateError,   setAiUpdateError]   = useState<string | null>(null);
-
-  // AI debug log — stores last parse attempt prompt + raw AI response
-  const [aiDebugLog, setAiDebugLog]               = useState<AIDebugLog | null>(null);
-  const [showDebugLog, setShowDebugLog]           = useState(false);
-
+  // ── App state ──────────────────────────────────────────────────────────────
+  const [isAppStarted,  setIsAppStarted]  = useState(false);
+  const [showImprovements, setShowImprovements] = useState(false);
+  const [selectedId,   setSelectedId]    = useState<string | null>(null);
+  const [selectedType, setSelectedType]  = useState<"node" | "edge" | null>(null);
+  const [analysisData, setAnalysisData]  = useState<AnalysisData | null>(null);
   const [tooltip, setTooltip] = useState<{ name: string; summary: string; x: number; y: number; visible: boolean }>
     ({ name: "", summary: "", x: 0, y: 0, visible: false });
 
@@ -75,95 +40,44 @@ export default function Home() {
   const importInput = useRef<HTMLInputElement>(null);
   const workflowCache = useRef<Record<string, any> | null>(null);
 
-  useEffect(() => { setAiConfig(loadAIConfig()); }, []);
+  // ── Composed hooks ─────────────────────────────────────────────────────────
+  const { fullServerState, setFullServerState } = useGraphState();
 
-  const handleSaveAiConfig = (config: AIConfig) => {
-    setAiConfig(config);
-    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
-  };
+  const {
+    searchQuery, setSearchQuery,
+    roleFilters, setRoleFilters,
+    groupFilters, setGroupFilters,
+    showFilters, setShowFilters,
+    showGroups, setShowGroups,
+    hasActiveFilters, clearAllFilters,
+  } = useCanvasFilters();
 
-  const activeApiKey = aiConfig.keys[aiConfig.provider]?.trim() ?? "";
+  const {
+    workflowGroups,
+    editingGroupId, setEditingGroupId,
+    editingGroupName, setEditingGroupName,
+    createGroup, renameGroup, changeGroupColor, deleteGroup,
+    GROUP_COLORS,
+  } = useWorkflowGroups(fullServerState, setFullServerState, setGroupFilters);
+
+  const {
+    aiConfig, handleSaveAiConfig, activeApiKey,
+    showAISettings, setShowAISettings,
+    showAIAnalysis, setShowAIAnalysis,
+    showAIUpdate,   setShowAIUpdate,
+    showDebugLog,   setShowDebugLog,
+    aiAnalysis, aiAnalysisLoading, aiAnalysisError,
+    aiSuggestedConnections, aiSuggestedRemovals,
+    handleAiAnalyze,
+    aiUpdateLoading, aiUpdateResult, aiUpdateError,
+    handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
+    handleAddConnection, handleRemoveEntity,
+    aiDebugLog, setAiDebugLog,
+  } = useAIHandlers(fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType);
+
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
 
-  const importStateAndStart = async (result: AIParsedResult) => {
-    await fetch("/api/graph-state", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action:             "importState",
-        customNodes:        result.customNodes,
-        customEdges:        result.customEdges,
-        baselinePositions:  result.baselinePositions,
-        ecosystemPositions: result.ecosystemPositions,
-        settings: {
-          ...(result.metadataOverrides ? { metadataOverrides: result.metadataOverrides } : {}),
-          ...(result.workflowGroups   ? { workflowGroups:    result.workflowGroups   } : {}),
-          ...(result.settings ?? {}),
-        },
-      }),
-    }).catch(console.error);
-    // Re-run layout using the stored sanitized groups so first-generation
-    // positions are identical to what Reset Layout would produce.
-    await fetch("/api/graph-state", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "resetLayout" }),
-    }).catch(console.error);
-    setIsAppStarted(true);
-  };
-
-  const handleAiParsed     = importStateAndStart;
-  const handleTemplateLoad = importStateAndStart;
-
-  const handleAiAnalyze = async () => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
-    setAiAnalysis(null);
-    setAiAnalysisError(null);
-    setAiSuggestedConnections([]);
-    setAiSuggestedRemovals([]);
-    setAiAnalysisLoading(true);
-    setShowAIAnalysis(true);
-    try {
-      const res = await fetch("/api/ai/optimize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workflowData: fullServerState,
-          apiKey:       activeApiKey,
-          provider:     aiConfig.provider,
-          model:        aiConfig.models[aiConfig.provider],
-          baseUrl:      aiConfig.baseUrls?.[aiConfig.provider] || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAiAnalysisError(data.error ?? "Analysis failed.");
-      } else {
-        setAiAnalysis(data.analysis);
-        setAiSuggestedConnections(data.suggestedConnections ?? []);
-        setAiSuggestedRemovals(data.suggestedRemovals ?? []);
-      }
-    } catch {
-      setAiAnalysisError("Network error. Please try again.");
-    } finally {
-      setAiAnalysisLoading(false);
-    }
-  };
-
-  const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { const text = ev.target?.result as string; if (text) canvasRef.current?.importCsv(text); };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-
-  const handleImportAndStart = (csvText: string) => {
-    setIsAppStarted(true);
-    setTimeout(() => canvasRef.current?.importCsv(csvText), 400);
-  };
-
+  // ── Workflow cache + tooltip ───────────────────────────────────────────────
   useEffect(() => {
     const handleMove = (e: MouseEvent) =>
       setTooltip((t) => t.visible ? { ...t, x: e.pageX + 15, y: e.pageY + 15 } : t);
@@ -175,6 +89,7 @@ export default function Home() {
     fetch("/api/workflow").then(r => r.json()).then(d => { workflowCache.current = d; }).catch(() => {});
   }, []);
 
+  // ── Sidebar data derivation ────────────────────────────────────────────────
   useEffect(() => {
     if (selectedId && selectedType) {
       const data = workflowCache.current ?? {};
@@ -192,7 +107,6 @@ export default function Home() {
             techParams.isImprovementOnly = customEdge.isImprovementOnly;
             techParams.sequence = techParams.sequence ?? customEdge.sequence;
             techParams.weight   = techParams.weight   ?? customEdge.weight;
-            // Resolve direction labels for the sidebar
             techParams.edgeSourceId = customEdge.source;
             techParams.edgeTargetId = customEdge.target;
             const overrides = fullServerState.settings?.metadataOverrides ?? {};
@@ -209,248 +123,52 @@ export default function Home() {
     }
   }, [selectedId, selectedType, fullServerState]);
 
-  const lastPollTs = useRef(0);
-  useEffect(() => {
-    const pull = () =>
-      fetch(`/api/graph-state?since=${lastPollTs.current}`)
-        .then(r => r.json())
-        .then((s: ServerGraphState & { unchanged?: boolean }) => {
-          if (s.unchanged) return;
-          lastPollTs.current = s.lastUpdated;
-          setFullServerState(s);
-        }).catch(() => {});
-    pull();
-    const t = setInterval(pull, 3000);
-    return () => clearInterval(t);
-  }, []);
-
-  // ── Workgroup helpers ─────────────────────────────────────────────────────
-  const workflowGroups = fullServerState?.settings?.workflowGroups ?? [];
-
-  const createGroup = () => {
-    const id    = `group-${Date.now()}`;
-    const color = GROUP_COLORS[workflowGroups.length % GROUP_COLORS.length];
-    const group = { id, name: "New Group", color, nodeIds: [] };
-    fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "upsertWorkflowGroup", group }) }).catch(console.error);
-    // optimistic update
-    setFullServerState(prev => prev ? {
-      ...prev,
-      settings: { ...prev.settings!, workflowGroups: [...(prev.settings?.workflowGroups ?? []), group] },
-    } : prev);
-    // start editing its name right away
-    setEditingGroupId(id);
-    setEditingGroupName("New Group");
+  // ── Import helpers ─────────────────────────────────────────────────────────
+  const importStateAndStart = async (result: AIParsedResult) => {
+    await fetch("/api/graph-state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action:             "importState",
+        customNodes:        result.customNodes,
+        customEdges:        result.customEdges,
+        baselinePositions:  result.baselinePositions,
+        ecosystemPositions: result.ecosystemPositions,
+        settings: {
+          ...(result.metadataOverrides ? { metadataOverrides: result.metadataOverrides } : {}),
+          ...(result.workflowGroups   ? { workflowGroups:    result.workflowGroups   } : {}),
+          ...(result.settings ?? {}),
+        },
+      }),
+    }).catch(console.error);
+    await fetch("/api/graph-state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resetLayout" }),
+    }).catch(console.error);
+    setIsAppStarted(true);
   };
 
-  const renameGroup = (id: string, name: string) => {
-    const group = workflowGroups.find(g => g.id === id);
-    if (!group) return;
-    const updated = { ...group, name };
-    fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "upsertWorkflowGroup", group: updated }) }).catch(console.error);
-    setFullServerState(prev => prev ? {
-      ...prev,
-      settings: { ...prev.settings!, workflowGroups: (prev.settings?.workflowGroups ?? []).map(g => g.id === id ? updated : g) },
-    } : prev);
+  const handleAiParsed     = importStateAndStart;
+  const handleTemplateLoad = importStateAndStart;
+
+  const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { const text = ev.target?.result as string; if (text) canvasRef.current?.importCsv(text); };
+    reader.readAsText(file);
+    e.target.value = "";
   };
 
-  const changeGroupColor = (id: string, color: string) => {
-    const group = workflowGroups.find(g => g.id === id);
-    if (!group) return;
-    const updated = { ...group, color };
-    fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "upsertWorkflowGroup", group: updated }) }).catch(console.error);
-    setFullServerState(prev => prev ? {
-      ...prev,
-      settings: { ...prev.settings!, workflowGroups: (prev.settings?.workflowGroups ?? []).map(g => g.id === id ? updated : g) },
-    } : prev);
+  const handleImportAndStart = (csvText: string) => {
+    setIsAppStarted(true);
+    setTimeout(() => canvasRef.current?.importCsv(csvText), 400);
   };
 
-  const deleteGroup = (id: string) => {
-    fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "deleteWorkflowGroup", groupId: id }) }).catch(console.error);
-    setFullServerState(prev => prev ? {
-      ...prev,
-      settings: { ...prev.settings!, workflowGroups: (prev.settings?.workflowGroups ?? []).filter(g => g.id !== id) },
-    } : prev);
-    setGroupFilters(f => f.filter(gid => gid !== id));
-  };
-
-  const handleAddConnection = (conn: SuggestedConnection) => {
-    const edgeId = `${conn.sourceId}-${conn.targetId}-opt`;
-    const newEdge = {
-      id: edgeId, source: conn.sourceId, target: conn.targetId,
-      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
-    };
-    fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "addEdge", edge: newEdge }) }).catch(console.error);
-    setFullServerState(prev => prev ? {
-      ...prev,
-      customEdges: [...(prev.customEdges ?? []).filter(e => e.id !== edgeId), newEdge],
-    } : prev);
-  };
-
-  const handleRemoveEntity = (removal: SuggestedRemoval) => {
-    if (removal.type === "node") {
-      fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "deleteNode", nodeId: removal.id }) }).catch(console.error);
-      setFullServerState(prev => prev ? {
-        ...prev,
-        customNodes: (prev.customNodes ?? []).filter(n => n.id !== removal.id),
-        customEdges: (prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
-      } : prev);
-      if (selectedId === removal.id) { setSelectedId(null); setSelectedType(null); }
-    }
-  };
-
-  // ── AI Update handlers ─────────────────────────────────────────────────────
-
-  const handleAiUpdate = async (prompt: string) => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
-    setAiUpdateResult(null);
-    setAiUpdateError(null);
-    setAiUpdateLoading(true);
-    try {
-      const res = await fetch("/api/ai/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          currentState: fullServerState,
-          apiKey:   activeApiKey,
-          provider: aiConfig.provider,
-          model:    aiConfig.models[aiConfig.provider],
-          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider] || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAiUpdateError(data.error ?? "Update failed.");
-      } else {
-        setAiUpdateResult(data as AIUpdateResult);
-      }
-    } catch {
-      setAiUpdateError("Network error. Please try again.");
-    } finally {
-      setAiUpdateLoading(false);
-    }
-  };
-
-  const handleApplyUpdate = async (result: AIUpdateResult) => {
-    const put = (body: Record<string, unknown>) =>
-      fetch("/api/graph-state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).catch(console.error);
-
-    // 1. Remove edges first (avoid dangling references)
-    for (const edgeId of result.remove.edgeIds) {
-      await put({ action: "deleteEdge", edgeId });
-    }
-    // 2. Remove nodes
-    for (const nodeId of result.remove.nodeIds) {
-      await put({ action: "deleteNode", nodeId });
-    }
-    // 3. Add new nodes + their rich metadata
-    for (const n of result.add.nodes) {
-      await put({ action: "addNode", node: {
-        id: n.id,
-        labelInitials: n.initials || n.name.slice(0, 2).toUpperCase(),
-        label: n.name,
-        nodeType: "neural",
-        role: n.role,
-        source: "ai-generated",
-        position: { x: 0, y: 0 },
-      }});
-      // Always write full metadata so sidebar shows real data
-      await put({ action: "updateMetadata", id: n.id, metadata: {
-        name: n.name, role: n.role,
-        ...(n.summary     ? { summary:     n.summary     } : {}),
-        ...(n.constraints ? { constraints: n.constraints } : {}),
-        ...(n.tasks       ? { tasks:       n.tasks       } : {}),
-      }});
-    }
-    // 4. Add new edges
-    for (const e of result.add.edges) {
-      await put({ action: "addEdge", edge: {
-        id: e.id, source: e.source, target: e.target,
-        sequence: 1, weight: 1, isCustom: true,
-        ...(e.name ? { name: e.name } : {}),
-      }});
-    }
-    // 5. Add new groups
-    for (const g of result.add.groups) {
-      await put({ action: "upsertWorkflowGroup", group: g });
-    }
-    // 6. Patch existing node metadata
-    for (const n of result.update.nodes) {
-      const meta: Record<string, unknown> = {};
-      if (n.name)        meta.name        = n.name;
-      if (n.role)        meta.role        = n.role;
-      if (n.summary)     meta.summary     = n.summary;
-      if (n.constraints) meta.constraints = n.constraints;
-      if (Object.keys(meta).length) {
-        await put({ action: "updateMetadata", id: n.id, metadata: meta });
-      }
-    }
-    // 7. Extend/shrink existing groups
-    for (const ext of result.update.groupExtensions) {
-      const existing = fullServerState?.settings?.workflowGroups?.find(g => g.id === ext.groupId);
-      if (existing) {
-        const updatedNodeIds = [
-          ...existing.nodeIds.filter(id => !ext.removeNodeIds.includes(id)),
-          ...ext.addNodeIds.filter(id => !existing.nodeIds.includes(id)),
-        ];
-        await put({ action: "upsertWorkflowGroup", group: { ...existing, nodeIds: updatedNodeIds } });
-      }
-    }
-    // 8. Rename / recolor existing groups
-    for (const g of result.update.groups ?? []) {
-      const existing = fullServerState?.settings?.workflowGroups?.find(grp => grp.id === g.groupId);
-      if (existing) {
-        await put({ action: "upsertWorkflowGroup", group: {
-          ...existing,
-          ...(g.name  ? { name:  g.name  } : {}),
-          ...(g.color ? { color: g.color } : {}),
-        }});
-      }
-    }
-    // 9. Replace node task lists
-    for (const nt of result.update.nodeTasks ?? []) {
-      await put({ action: "updateMetadata", id: nt.nodeId, metadata: { tasks: nt.tasks } });
-    }
-    // 10. Patch edge metadata (rename)
-    for (const e of result.update.edges ?? []) {
-      const meta: Record<string, unknown> = {};
-      if (e.name)    meta.name    = e.name;
-      if (e.summary) meta.summary = e.summary;
-      if (Object.keys(meta).length) {
-        await put({ action: "updateMetadata", id: e.id, metadata: meta });
-      }
-    }
-    // 11. Delete groups
-    for (const groupId of result.remove.groupIds ?? []) {
-      await put({ action: "deleteWorkflowGroup", groupId });
-    }
-    // 12. Deselect any removed node
-    if (result.remove.nodeIds.includes(selectedId ?? "")) {
-      setSelectedId(null);
-      setSelectedType(null);
-    }
-    // 13. Re-run layout to reflow new nodes into the graph cleanly
-    await put({ action: "resetLayout" });
-    setShowAIUpdate(false);
-    setAiUpdateResult(null);
-  };
-
-  const hasActiveFilters = roleFilters.length > 0 || groupFilters.length > 0 || searchQuery.trim().length > 0;
-
-  // ── Shared debug modal (renders on both start screen and canvas) ────────────
+  // ── Debug modal (shared between start screen and canvas) ───────────────────
   const debugModal = (
     <>
-      {/* Always-visible debug button */}
       <button
         onClick={() => setShowDebugLog(true)}
         className={`fixed bottom-5 left-5 z-[200] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg transition-colors ${
@@ -465,7 +183,6 @@ export default function Home() {
         AI Debug Log{aiDebugLog?.error ? " ⚠" : ""}
       </button>
 
-      {/* Modal */}
       {showDebugLog && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
@@ -481,7 +198,6 @@ export default function Home() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-
             <div className="overflow-y-auto flex-1 p-6 space-y-5 text-sm">
               {!aiDebugLog ? (
                 <p className="text-slate-400 text-center py-8">No parse attempt yet. Submit a workflow description to see debug output here.</p>
@@ -509,7 +225,6 @@ export default function Home() {
                 </>
               )}
             </div>
-
             <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
               {aiDebugLog?.rawAIResponse && (
                 <button
@@ -532,6 +247,7 @@ export default function Home() {
     </>
   );
 
+  // ── Start screen ───────────────────────────────────────────────────────────
   if (!isAppStarted) {
     return (
       <>
@@ -552,6 +268,7 @@ export default function Home() {
     );
   }
 
+  // ── Canvas app shell ────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen relative bg-[#F8FAFC] overflow-hidden font-[var(--font-inter)] text-slate-800 antialiased">
 
@@ -690,7 +407,7 @@ export default function Home() {
             </div>
             {searchQuery.trim() && (
               <p className="text-[11px] text-indigo-500 mt-1.5 ml-1">
-                Highlighting nodes matching "{searchQuery.trim()}"
+                Highlighting nodes matching &ldquo;{searchQuery.trim()}&rdquo;
               </p>
             )}
           </div>
@@ -764,7 +481,7 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Clear all filters */}
+                {/* Clear all */}
                 {(roleFilters.length > 0 || groupFilters.length > 0) && (
                   <button onClick={() => { setRoleFilters([]); setGroupFilters([]); }}
                     className="text-[11px] text-slate-500 hover:text-red-500 transition-colors flex items-center gap-1">
@@ -800,13 +517,11 @@ export default function Home() {
                   </p>
                 )}
 
-                {/* Sort: top-level first, then subgroups indented under their parent */}
                 {workflowGroups.map((group) => (
                   <div key={group.id}
                     className={`group/row rounded-xl border bg-slate-50/70 p-2.5 ${group.parentGroupId ? "ml-4 border-dashed border-slate-200" : "border-slate-100"}`}
                   >
                     <div className="flex items-center gap-2">
-                      {/* Subgroup indent indicator */}
                       {group.parentGroupId && (
                         <span className="text-[9px] text-slate-300 font-bold flex-shrink-0">↳</span>
                       )}
@@ -851,12 +566,10 @@ export default function Home() {
                         </span>
                       )}
 
-                      {/* Member count */}
                       <span className="text-[10px] text-slate-400 flex-shrink-0">
                         {group.nodeIds.length} node{group.nodeIds.length !== 1 ? "s" : ""}
                       </span>
 
-                      {/* Actions (shown on row hover) */}
                       <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity flex-shrink-0">
                         <button
                           onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }}
@@ -899,7 +612,7 @@ export default function Home() {
                 </button>
 
                 <p className="text-[10px] text-slate-400 italic leading-snug">
-                  Right-click any node → "Add to group" to assign members.
+                  Right-click any node → &ldquo;Add to group&rdquo; to assign members.
                 </p>
               </div>
             )}
@@ -931,15 +644,14 @@ export default function Home() {
             activeFilters={{ roles: roleFilters, groupIds: groupFilters }}
           />
 
-          {/* Active filter badge (bottom of canvas) */}
+          {/* Active filter badge */}
           {hasActiveFilters && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-white/95 border border-indigo-200 rounded-full px-4 py-1.5 shadow-md text-xs font-semibold text-indigo-600">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
               {searchQuery.trim() ? `"${searchQuery.trim()}"` : ""}
               {roleFilters.length > 0 ? ` · ${roleFilters.join(", ")}` : ""}
               {groupFilters.length > 0 ? ` · ${groupFilters.length} group${groupFilters.length > 1 ? "s" : ""}` : ""}
-              <button onClick={() => { setSearchQuery(""); setRoleFilters([]); setGroupFilters([]); }}
-                className="ml-1 text-indigo-400 hover:text-indigo-700 transition-colors">
+              <button onClick={clearAllFilters} className="ml-1 text-indigo-400 hover:text-indigo-700 transition-colors">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1010,7 +722,6 @@ export default function Home() {
         onAddConnection={handleAddConnection}
         onRemoveEntity={handleRemoveEntity}
       />
-
       <AIUpdateModal
         isOpen={showAIUpdate}
         isLoading={aiUpdateLoading}

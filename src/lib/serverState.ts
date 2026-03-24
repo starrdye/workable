@@ -431,6 +431,50 @@ export function deleteWorkflowGroup(groupId: string) {
   state.lastUpdated = Date.now();
 }
 
+/**
+ * Incremental layout — place a small set of new nodes relative to their
+ * connected neighbours instead of re-running the full hierarchical layout.
+ *
+ * Used by handleApplyUpdate when an AI Update adds ≤5 nodes and removes none,
+ * to avoid jarring full re-renders of large existing graphs.
+ */
+export function incrementalLayout(newNodeIds: string[]) {
+  const state = global.__graphState!;
+  if (newNodeIds.length === 0) return;
+
+  const existing = state.baselinePositions;
+  const newSet   = new Set(newNodeIds);
+
+  for (const nodeId of newNodeIds) {
+    if (existing[nodeId]) continue; // already has a position — leave it
+
+    // Find IDs of existing (non-new) nodes connected to this node via custom edges.
+    const connectedIds = state.customEdges
+      .filter(e => (e.source === nodeId || e.target === nodeId))
+      .map(e => (e.source === nodeId ? e.target : e.source))
+      .filter(id => !newSet.has(id) && existing[id]);
+
+    if (connectedIds.length > 0) {
+      // Place near the centroid of connected existing nodes, offset to the right.
+      const cx = connectedIds.reduce((s, id) => s + existing[id].x, 0) / connectedIds.length;
+      const cy = connectedIds.reduce((s, id) => s + existing[id].y, 0) / connectedIds.length;
+      state.baselinePositions[nodeId] = { x: cx + 180, y: cy + 60 };
+    } else {
+      // No connections to existing nodes — place near the graph centroid.
+      const existingIds = Object.keys(existing).filter(id => !newSet.has(id));
+      if (existingIds.length > 0) {
+        const cx = existingIds.reduce((s, id) => s + existing[id].x, 0) / existingIds.length;
+        const cy = existingIds.reduce((s, id) => s + existing[id].y, 0) / existingIds.length;
+        state.baselinePositions[nodeId] = { x: cx + 180, y: cy };
+      } else {
+        state.baselinePositions[nodeId] = { x: 400, y: 300 };
+      }
+    }
+  }
+
+  state.lastUpdated = Date.now();
+}
+
 /** Restore positions to the snapshot taken at last importState call. */
 export function resetLayout() {
   const state = global.__graphState!;

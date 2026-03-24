@@ -3,6 +3,7 @@ import { generateText, type AIProvider } from '@/lib/aiClient';
 import { NODE_DATA, EDGE_DATA, CORE_NODE_IDS } from '@/lib/constants';
 import { jsonrepair } from 'jsonrepair';
 import type { ServerGraphState } from '@/lib/serverState';
+import { AIUpdatePatchResponse } from '@/lib/aiSchemas';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -460,7 +461,16 @@ export async function POST(req: NextRequest) {
 
     let parsed: Partial<AIUpdateResult>;
     try {
-      parsed = JSON.parse(jsonrepair(extractJSON(rawText)));
+      const rawParsed = JSON.parse(jsonrepair(extractJSON(rawText)));
+
+      // 8d — Zod schema validation (soft: log warnings, fall through to validatePatch)
+      const zodResult = AIUpdatePatchResponse.safeParse(rawParsed);
+      if (zodResult.success) {
+        parsed = zodResult.data as Partial<AIUpdateResult>;
+      } else {
+        console.warn('[ai/update] Zod validation warnings:', zodResult.error.flatten());
+        parsed = rawParsed;
+      }
     } catch {
       return NextResponse.json(
         { error: 'AI returned invalid JSON. Try rephrasing your update.', rawAIResponse: rawText },

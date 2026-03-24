@@ -452,8 +452,8 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
     if (!draft || !displayed) return;
     setSaving(true);
 
-    // 1. Update primary metadata
-    await fetch("/api/graph-state", {
+    // Build both fetch promises and run them in parallel (5d — parallelise saves).
+    const metaFetch = fetch("/api/graph-state", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -472,30 +472,29 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
       }),
     }).catch(console.error);
 
-    // 2. Update technical parameters
-    if (displayed.type === "edge") {
-      await fetch("/api/graph-state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "updateEdgeParams",
-          edgeId: displayed.id,
-          sequence: draft.sequence,
-          weight: draft.weight,
-          isImprovementOnly: draft.isImprovementOnly,
-        }),
-      }).catch(console.error);
-    } else {
-      await fetch("/api/graph-state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "updateNodeDelay",
-          nodeId: displayed.id,
-          delay: draft.outputDelay,
-        }),
-      }).catch(console.error);
-    }
+    const techFetch = displayed.type === "edge"
+      ? fetch("/api/graph-state", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "updateEdgeParams",
+            edgeId: displayed.id,
+            sequence: draft.sequence,
+            weight: draft.weight,
+            isImprovementOnly: draft.isImprovementOnly,
+          }),
+        }).catch(console.error)
+      : fetch("/api/graph-state", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "updateNodeDelay",
+            nodeId: displayed.id,
+            delay: draft.outputDelay,
+          }),
+        }).catch(console.error);
+
+    await Promise.all([metaFetch, techFetch]);
 
     setSaving(false);
     setEditing(false);
