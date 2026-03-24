@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, type AIProvider } from '@/lib/aiClient';
+import { classifyAIError } from '@/lib/aiErrors';
 import { NODE_DATA, EDGE_DATA } from '@/lib/constants';
 
 const SYSTEM_PROMPT = `You are a workflow optimization expert specializing in business process improvement and operational efficiency.
@@ -218,7 +219,7 @@ export async function POST(req: NextRequest) {
       null, 2
     );
 
-    const rawText = await generateText({
+    const pass1Result = await generateText({
       provider,
       model: resolvedModel,
       apiKey,
@@ -227,6 +228,7 @@ export async function POST(req: NextRequest) {
       maxTokens:    2000,
       baseUrl:      baseUrl || undefined,
     });
+    const rawText = pass1Result.text;
 
     let analysis: string;
     let suggestedConnections: any[] = [];
@@ -259,15 +261,16 @@ export async function POST(req: NextRequest) {
             coreNodes, coreEdges: tempEdges, customNodes, groups: groupSummary
           }, null, 2);
 
-          const pass2Text = await generateText({
+          const pass2Result = await generateText({
             provider,
             model: resolvedModel,
             apiKey,
             systemPrompt: PASS2_PROMPT,
-            userMessage: `Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName}'.\n\nWorkflow:\n${modifiedSnapshot}`,
+            userMessage: `Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName()}'.\n\nWorkflow:\n${modifiedSnapshot}`,
             maxTokens: 1000,
             baseUrl: baseUrl || undefined,
           });
+          const pass2Text = pass2Result.text;
 
           const effects = JSON.parse(stripFences(pass2Text));
           if (Array.isArray(effects)) {
@@ -284,17 +287,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ analysis, suggestedConnections, suggestedRemovals });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    const isAuthError =
-      message.includes('401') ||
-      message.includes('invalid_api_key') ||
-      message.includes('API_KEY') ||
-      message.includes('AuthenticationError') ||
-      message.includes('Unauthorized') ||
-      message.toLowerCase().includes('authentication');
-    if (isAuthError) {
-      return NextResponse.json({ error: 'Invalid API key. Please check your key in AI Settings.' }, { status: 401 });
-    }
-    return NextResponse.json({ error: message }, { status: 500 });
+    const { userMessage, status } = classifyAIError(err);
+    return NextResponse.json({ error: userMessage }, { status });
   }
 }

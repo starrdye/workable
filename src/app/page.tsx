@@ -7,20 +7,22 @@ import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
 import { AISettingsModal } from "@/components/AISettingsModal";
 import { AIAnalysisModal } from "@/components/AIAnalysisModal";
 import { AIUpdateModal } from "@/components/AIUpdateModal";
+import { KeyboardHelpModal } from "@/components/KeyboardHelpModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
-  Undo2, Redo2,
+  Undo2, Redo2, BookOpen, Keyboard,
 } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
 
 // ── Custom hooks (Track 8b) ────────────────────────────────────────────────────
-import { useGraphState }      from "@/hooks/useGraphState";
-import { useCanvasFilters }   from "@/hooks/useCanvasFilters";
-import { useWorkflowGroups }  from "@/hooks/useWorkflowGroups";
-import { useAIHandlers }      from "@/hooks/useAIHandlers";
-import { useUndoRedo }        from "@/hooks/useUndoRedo";
+import { useGraphState }        from "@/hooks/useGraphState";
+import { useCanvasFilters }     from "@/hooks/useCanvasFilters";
+import { useWorkflowGroups }    from "@/hooks/useWorkflowGroups";
+import { useAIHandlers }        from "@/hooks/useAIHandlers";
+import { useUndoRedo }          from "@/hooks/useUndoRedo";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useWorkflowLibrary }   from "@/hooks/useWorkflowLibrary";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -40,6 +42,9 @@ export default function Home() {
   const [analysisData, setAnalysisData]  = useState<AnalysisData | null>(null);
   const [tooltip, setTooltip] = useState<{ name: string; summary: string; x: number; y: number; visible: boolean }>
     ({ name: "", summary: "", x: 0, y: 0, visible: false });
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [showLibrary,      setShowLibrary]      = useState(false);
+  const [librarySaveName,  setLibrarySaveName]  = useState("");
 
   const canvasRef   = useRef<GraphCanvasRef>(null);
   const importInput = useRef<HTMLInputElement>(null);
@@ -87,15 +92,18 @@ export default function Home() {
     if (next) await applyHistoryState(next);
   }, [popRedo, applyHistoryState]);
 
-  // Track 9: Keyboard shortcuts (Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo, Cmd+E = export, Cmd+K = search)
+  // Track 9: Keyboard shortcuts (Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo, Cmd+E = export, Cmd+K = search, ? = help)
   useKeyboardShortcuts(isAppStarted, {
     onUndo: handleUndo,
     onRedo: handleRedo,
     onExportCsv: () => canvasRef.current?.exportCsv(),
-    onSearchOpen: () => {
-      searchInputRef.current?.focus();
-    }
+    onSearchOpen: () => { searchInputRef.current?.focus(); },
   });
+
+  // Track 1: Workflow Library hook
+  const { entries: libraryEntries, saveWorkflow, loadWorkflow, deleteWorkflow } = useWorkflowLibrary();
+
+
 
   const {
     searchQuery, setSearchQuery,
@@ -373,6 +381,28 @@ export default function Home() {
               <Redo2 className="w-4 h-4" />
             </button>
           </div>
+
+          <div className="h-6 w-px bg-gray-200" />
+
+          {/* Track 1: Workflow Library */}
+          <button
+            onClick={() => setShowLibrary(true)}
+            title="Workflow Library — save & load named snapshots"
+            aria-label="Open workflow library"
+            className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+          >
+            <BookOpen className="w-4 h-4" />
+          </button>
+
+          {/* Track 9: Keyboard Help */}
+          <button
+            onClick={() => setShowKeyboardHelp(true)}
+            title="Keyboard shortcuts (?)"
+            aria-label="Show keyboard shortcuts"
+            className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+          >
+            <Keyboard className="w-4 h-4" />
+          </button>
 
           <div className="h-6 w-px bg-gray-200" />
 
@@ -887,6 +917,76 @@ export default function Home() {
       />
 
       {debugModal}
+
+      {/* Track 9: Keyboard Help Modal */}
+      {showKeyboardHelp && <KeyboardHelpModal onClose={() => setShowKeyboardHelp(false)} />}
+
+      {/* Track 1: Workflow Library Modal */}
+      {showLibrary && (
+        <div
+          className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowLibrary(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-indigo-500" />
+                <span className="font-semibold text-slate-800">Workflow Library</span>
+              </div>
+              <button onClick={() => setShowLibrary(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {/* Save current workflow */}
+            <div className="px-6 py-3 border-b border-slate-100 flex gap-2">
+              <input
+                type="text"
+                placeholder="Name this workflow…"
+                value={librarySaveName}
+                onChange={e => setLibrarySaveName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && librarySaveName.trim() && fullServerState) { saveWorkflow(librarySaveName, fullServerState); setLibrarySaveName(''); } }}
+                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+              <button
+                onClick={() => { if (librarySaveName.trim() && fullServerState) { saveWorkflow(librarySaveName, fullServerState); setLibrarySaveName(''); } }}
+                disabled={!librarySaveName.trim() || !fullServerState}
+                className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium"
+              >
+                Save
+              </button>
+            </div>
+            {/* Library list */}
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
+              {libraryEntries.length === 0 ? (
+                <p className="text-slate-400 text-sm text-center py-10">No saved workflows yet.</p>
+              ) : libraryEntries.map(entry => (
+                <div key={entry.id} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50">
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">{entry.name}</div>
+                    <div className="text-xs text-slate-400">{new Date(entry.savedAt).toLocaleString()}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        const e = loadWorkflow(entry.id);
+                        if (!e) return;
+                        await fetch('/api/graph-state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'importState', customNodes: e.state.customNodes ?? [], customEdges: e.state.customEdges ?? [], baselinePositions: e.state.baselinePositions ?? {}, ecosystemPositions: e.state.ecosystemPositions ?? {}, settings: e.state.settings }) });
+                        setFullServerState(e.state);
+                        setShowLibrary(false);
+                      }}
+                      className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-medium"
+                    >Load</button>
+                    <button
+                      onClick={() => deleteWorkflow(entry.id)}
+                      className="text-xs px-2 py-1 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 font-medium"
+                    >Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

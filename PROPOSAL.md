@@ -14,21 +14,18 @@ However, the product currently has a critical structural gap: **everything is ep
 
 ---
 
-## Track 1 — Persistence (Critical)
+## Track 1 — Persistence (Critical) ✅ PARTIAL (`0.5-personal`)
 
 ### Problem
 All workflow state lives in a Node.js in-memory singleton (`global.__graphState`). A server restart, Vercel cold start, or accidental page refresh destroys the entire graph. There is no auto-save, no manual save, and no cloud sync.
 
-### Proposed Solution: Tiered Persistence
+### Implemented Solution: Tiered Persistence
 
-**Tier 1 — Client-side auto-save (immediate, zero infrastructure)**
-Serialise the full server state to `localStorage` on every PUT call (debounced 1 s). On page load, if the server state is empty, re-hydrate from the local copy automatically. This costs ~5 KB per typical workflow and works entirely offline.
+**Tier 1 — Client-side auto-save ✅** `useGraphState.ts` now debounces every state update to `localStorage` (`workable_current_state`) at 500 ms. On page load, if the server has no content, it replays the cached state via `PUT importState` before any other interaction — making a refresh effectively lossless.
 
-**Tier 2 — Named workflow library (short-term)**
-Let users save the current graph under a name (stored in `localStorage` as a keyed list). A "My Workflows" drawer on the Start Screen lets them switch between saved workflows. No backend changes needed.
+**Tier 2 — Named workflow library ✅** New `useWorkflowLibrary` hook manages a `workable_library` list in localStorage. A "Workflow Library" modal (📖 toolbar button) lets users save/load/delete named snapshots. The full `ServerGraphState` is serialised per entry.
 
-**Tier 3 — Server-side database (medium-term)**
-Swap the in-memory singleton for SQLite (via Drizzle ORM or Prisma). The `importState` / `getGraphState` interface is already clean — the swap is mostly mechanical. This enables multi-tab sync, server restarts without data loss, and opens the door to user accounts.
+**Tier 3 — Server-side database (medium-term)** Swap the in-memory singleton for SQLite (via Drizzle ORM or Prisma). The `importState` / `getGraphState` interface is already clean — the swap is mostly mechanical. This enables multi-tab sync, server restarts without data loss, and opens the door to user accounts.
 
 ### Priority: P0 — blocks real daily use
 
@@ -52,50 +49,45 @@ Introduced `useUndoRedo` hook that captures a snapshot of `GraphState` before ev
 
 ---
 
-## Track 3 — Real-time State Sync (High)
+## Track 3 — Real-time State Sync (High) ✅ IMPLEMENTED (`0.5-personal`)
 
 ### Problem
-The client currently polls `GET /api/graph-state?since=<ts>` every 3 seconds. On an idle graph this wastes bandwidth and prevents multi-tab or future multi-user sync from feeling truly live.
+The client was polling `GET /api/graph-state?since=<ts>` every 3 seconds. On an idle graph this wastes bandwidth and prevents multi-tab or future multi-user sync from feeling truly live.
 
-### Proposed Solution: Server-Sent Events (SSE)
-Replace the polling loop with a `GET /api/graph-state/stream` SSE endpoint. The server pushes a lightweight diff (positions hash + lastUpdated) whenever state changes. The client re-fetches the full state only on a hash mismatch — matching the current hash-based deduplication logic, but event-driven instead of polling.
+### Implemented Solution: Server-Sent Events (SSE)
+`GET /api/graph-state/stream` — new SSE endpoint that pushes a lightweight `{ lastUpdated, hash }` event every 800 ms whenever state changes. The client re-fetches the full state only on a hash mismatch — no redundant payloads.
 
-SSE is simpler than WebSockets (no handshake, works over HTTP/2, stateless on server), and Next.js supports it natively with `Response` streaming. The existing 3-second poll can remain as a fallback.
+`useGraphState.ts` now opens an `EventSource` connection first, falling back to the original 3-second polling loop only when SSE encounters an error or isn't supported by the browser. Multi-tab behaviour is now near-instant (< 1 s latency).
 
 ### Priority: P1 — required before multi-user or persistence features feel responsive
 
 ---
 
-## Track 4 — AI Quality & Reliability (High)
+## Track 4 — AI Quality & Reliability (High) ✅ IMPLEMENTED (`0.5-personal`)
 
 ### 4a — Streaming Responses
+Not yet implemented. Currently all three AI routes buffer the full response before returning.
 
-Currently all three AI routes buffer the full response before returning. For a large workflow parse (8 000 token budget) this can take 8–12 seconds with zero visual feedback. Add streaming with `ReadableStream` — the client displays a partial node count ("Parsed 4 nodes so far…") while the stream arrives.
+### 4b — Retry + Exponential Backoff ✅
+`aiClient.ts` now wraps all provider calls in a `withRetry(fn, 3)` helper using 1 s / 2 s / 4 s backoff. Non-retryable errors (401, 400, 422, auth failures) are detected and rethrown immediately without retrying.
 
-### 4b — Retry + Exponential Backoff
-
-A single failed network call surfaces immediately as an error. Add up to 3 retries with 1 s / 2 s / 4 s backoff in `aiClient.ts`. Doubao and Gemini both return transient 503s on rate spikes; retries turn these invisible to the user.
-
-### 4c — Smarter Error Messages
-
-The current catch block returns raw error message strings to the UI. Instead, maintain a server-side error classification map:
+### 4c — Smarter Error Messages ✅
+New `src/lib/aiErrors.ts` module exports `classifyAIError(err)` that maps error patterns to user-facing strings:
 
 | Pattern | User-facing message |
 |---|---|
 | Auth / 401 | "Invalid API key — check AI Settings" |
 | 429 / rate limit | "Rate limit hit — try again in a moment" |
-| 503 / timeout | "Provider is slow — retrying…" |
+| 503 / timeout | "Provider is currently slow — please retry" |
 | JSON parse fail | "AI returned unexpected output — try rephrasing" |
 
-### 4d — Cycle Detection on Parse
+All three AI routes (`optimize`, `update`, `parse-workflow`) now use `classifyAIError` in their catch blocks.
 
-The AI can return cyclic graphs (node A → B → A). `hierarchicalLayout` handles this with back-edge detection, but downstream consumers (edge rendering, analysis) do not. Add a lightweight DFS cycle check in `parse-workflow/route.ts` before calling layout, and either break the cycle automatically or flag it in the API response.
+### 4d — Cycle Detection on Parse ✅
+`parse-workflow/route.ts` now runs a DFS `breakCycles()` function on the returned edges before calling layout. Detected back-edges are removed and reported in a `warnings[]` array in the response.
 
-### 4e — Token Usage Tracking
-
-Surface input/output token counts and estimated cost per request in the AI Debug Log. Doubao and Gemini both return usage objects; Anthropic always has. This lets users understand why large workflows are slow or expensive.
-
-### 4f — AI Analyze: Real Data + Presentation + Cached Results + Legacy Fixes ✅ IMPLEMENTED (`0.44-personal`)
+### 4e — Token Usage Tracking ✅
+`generateText` now returns `{ text, usage: { inputTokens, outputTokens } | null }`. `parse-workflow` includes `usage` in its response so the client can display token counts in the AI Debug Log.
 
 The AI Analyze feature had three gaps, and a broader legacy audit revealed four additional data-correctness issues across the codebase. All seven were resolved on `0.44-personal`.
 
@@ -738,10 +730,10 @@ These tests assure the multi-step cascading logic introduced in Track 12 resolve
 
 | Track | Priority | Effort | Impact | Status |
 |---|---|---|---|---|
-| Persistence (localStorage → SQLite) | P0 | Low → Medium | Unblocks daily use | Planned |
+| Persistence (localStorage → SQLite) | P0 | Low → Medium | Unblocks daily use | ✅ `0.5-personal` (Tier 1 & 2) |
 | Undo / Redo | P0 | Medium | Removes fear of using AI features | ✅ `0.42-personal` |
-| SSE state sync | P1 | Low | Better responsiveness, enables multi-tab | Planned |
-| AI reliability — streaming, retries, errors | P1 | Medium | Reduces friction on the core loop | Planned |
+| SSE state sync | P1 | Low | Better responsiveness, enables multi-tab | ✅ `0.5-personal` |
+| AI reliability — streaming, retries, errors (4b/4c/4d/4e) | P1 | Medium | Reduces friction on the core loop | ✅ `0.5-personal` |
 | AI Analyze — real data, UI, caching, legacy fixes (4f) | P1 | Low | Correct results, better UX | ✅ merged |
 | Rendering performance (5b/5c/5d) | P2 | Medium | Faster layout, no jarring reflows | ✅ merged |
 | Data flow mode + vivid improvements + applied buttons | P2 | Low | Clear workflow visibility | ✅ merged |

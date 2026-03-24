@@ -1,6 +1,10 @@
 /**
  * aiClient.ts — provider-agnostic AI text generation.
  * Supports: Anthropic (Claude), Google (Gemini), ByteDance (Doubao).
+ *
+ * Track 4b: Retry + exponential backoff (1s/2s/4s, up to 3 retries).
+ *           Non-retryable: 400, 401, 422.
+ * Track 4e: Returns token usage alongside text when provider exposes it.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -75,18 +79,14 @@ export const PROVIDERS: ProviderMeta[] = [
     id: 'doubao',
     name: 'ByteDance',
     label: 'Doubao',
-    // Ark API keys are UUIDs, e.g. d31cc9d6-7c3d-4f76-8a59-cac41c7eac4f
     keyPlaceholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
     keyHint: 'Get a key at console.volcengine.com/ark → API Keys',
     color: 'violet',
-    // Doubao uses per-user endpoint IDs (ep-xxxxxxxx-xxxx) as the model identifier.
-    // There are no shared model names — each user deploys their own endpoint in the Ark console.
     usesEndpointId: true,
     endpointPlaceholder: 'ep-xxxxxxxxxxxxxxxx-xxxxx',
     endpointHint: 'Create an endpoint at console.volcengine.com/ark → Online Inference, then copy its ID here.',
-    defaultModel: '',  // empty until the user enters their endpoint ID
-    models: [],        // not used — endpoint ID is free-text
-    // Default uses the standard v3 URL. Switch to /api/coding/v3 for Coding Plan billing.
+    defaultModel: '',
+    models: [],
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     baseUrlPlaceholder: 'https://ark.cn-beijing.volces.com/api/v3',
     baseUrlHint: 'Use /api/coding/v3 for Coding Plan billing · /api/v3 for standard billing',
@@ -95,6 +95,43 @@ export const PROVIDERS: ProviderMeta[] = [
 
 export function getProviderMeta(provider: AIProvider): ProviderMeta {
   return PROVIDERS.find((p) => p.id === provider)!;
+}
+
+// ── Token usage ─────────────────────────────────────────────────────────────
+
+export interface TokenUsage {
+  inputTokens:  number;
+  outputTokens: number;
+}
+
+export interface GenerateResult {
+  text:  string;
+  usage: TokenUsage | null;
+}
+
+// ── Retry helper (Track 4b) ────────────────────────────────────────────────
+
+const NON_RETRYABLE_PATTERNS = ['401', '400', '422', 'invalid_api_key', 'authentication', 'AuthenticationError', 'Unauthorized'];
+
+function isNonRetryable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return NON_RETRYABLE_PATTERNS.some(p => msg.includes(p.toLowerCase()));
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (isNonRetryable(err)) throw err; // don't retry auth/validation errors
+      if (attempt < maxAttempts - 1) {
+        await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt))); // 1s, 2s, 4s
+      }
+    }
+  }
+  throw lastError;
 }
 
 // ── Unified generation ─────────────────────────────────────────────────────
@@ -107,62 +144,79 @@ export async function generateText(options: {
   userMessage: string;
   maxTokens?: number;
   baseUrl?: string;
-}): Promise<string> {
+}): Promise<GenerateResult> {
   const { provider, model, apiKey, systemPrompt, userMessage, maxTokens = 2048, baseUrl } = options;
 
   // ── Anthropic ─────────────────────────────────────────────────────────────
   if (provider === 'anthropic') {
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
+    return withRetry(async () => {
+      const client = new Anthropic({ apiKey });
+      const response = await client.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+      const content = response.content[0];
+      if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic.');
+      const usage: TokenUsage = {
+        inputTokens:  response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      };
+      return { text: content.text, usage };
     });
-    const content = response.content[0];
-    if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic.');
-    return content.text;
   }
 
   // ── Google Gemini ─────────────────────────────────────────────────────────
   if (provider === 'gemini') {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const geminiModel = genAI.getGenerativeModel({
-      model,
-      systemInstruction: systemPrompt,
+    return withRetry(async () => {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const geminiModel = genAI.getGenerativeModel({
+        model,
+        systemInstruction: systemPrompt,
+      });
+      const result = await geminiModel.generateContent(userMessage);
+      const meta = result.response.usageMetadata;
+      const usage: TokenUsage | null = meta
+        ? { inputTokens: meta.promptTokenCount ?? 0, outputTokens: meta.candidatesTokenCount ?? 0 }
+        : null;
+      return { text: result.response.text(), usage };
     });
-    const result = await geminiModel.generateContent(userMessage);
-    return result.response.text();
   }
 
   // ── Doubao (ByteDance Ark — OpenAI-compatible) ────────────────────────────
   if (provider === 'doubao') {
-    const doubaoBase = (baseUrl ?? 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, '');
-    const res = await fetch(`${doubaoBase}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userMessage  },
-        ],
-      }),
+    return withRetry(async () => {
+      const doubaoBase = (baseUrl ?? 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, '');
+      const res = await fetch(`${doubaoBase}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userMessage  },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text().catch(() => res.statusText);
+        throw new Error(`Doubao API error ${res.status}: ${err}`);
+      }
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (!text) throw new Error('Empty response from Doubao.');
+      const u = data?.usage;
+      const usage: TokenUsage | null = u
+        ? { inputTokens: u.prompt_tokens ?? 0, outputTokens: u.completion_tokens ?? 0 }
+        : null;
+      return { text: text as string, usage };
     });
-    if (!res.ok) {
-      const err = await res.text().catch(() => res.statusText);
-      throw new Error(`Doubao API error: ${err}`);
-    }
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content;
-    if (!text) throw new Error('Empty response from Doubao.');
-    return text as string;
   }
 
   throw new Error(`Unsupported AI provider: "${provider}"`);
-
 }

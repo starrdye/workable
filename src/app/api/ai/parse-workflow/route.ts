@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, type AIProvider } from '@/lib/aiClient';
+import { classifyAIError } from '@/lib/aiErrors';
 import type { CustomNodeConfig, CustomEdgeConfig, WorkflowGroup } from '@/lib/serverState';
 import { hierarchicalLayout, groupAwareLayout } from '@/lib/layout';
 import { CORE_NODE_IDS } from '@/lib/constants';
@@ -179,6 +180,50 @@ function extractJSON(text: string): string {
 const ALLOWED_COLORS = new Set(["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"]);
 const COLOR_CYCLE = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#8B5CF6","#EC4899","#EF4444"];
 
+/**
+ * Track 4d — DFS cycle detection.
+ * Returns true if edges contain a cycle; mutates edges to break the back-edge.
+ */
+function breakCycles(nodes: AINode[], edges: AIEdge[]): string[] {
+  const adj = new Map<string, string[]>();
+  nodes.forEach(n => adj.set(n.id, []));
+  edges.forEach(e => { adj.get(e.source)?.push(e.target); });
+
+  const visited  = new Set<string>();
+  const inStack  = new Set<string>();
+  const backEdges: string[] = [];
+
+  function dfs(nodeId: string) {
+    visited.add(nodeId);
+    inStack.add(nodeId);
+    for (const neighbor of (adj.get(nodeId) ?? [])) {
+      if (!visited.has(neighbor)) {
+        dfs(neighbor);
+      } else if (inStack.has(neighbor)) {
+        // Back-edge found — record it for removal
+        const id = `e_${nodeId}_${neighbor}`;
+        backEdges.push(id);
+      }
+    }
+    inStack.delete(nodeId);
+  }
+
+  nodes.forEach(n => { if (!visited.has(n.id)) dfs(n.id); });
+
+  // Remove the identified back-edges from the edges array
+  if (backEdges.length > 0) {
+    const backSet = new Set(backEdges);
+    for (let i = edges.length - 1; i >= 0; i--) {
+      const e = edges[i];
+      if (backSet.has(e.id) || backSet.has(`e_${e.source}_${e.target}`)) {
+        edges.splice(i, 1);
+      }
+    }
+  }
+
+  return backEdges;
+}
+
 function sanitizeGroups(groups: AIGroup[], nodeIds: Set<string>): WorkflowGroup[] {
   // Build a map of canonical group IDs first (for parentGroupId resolution)
   const rawGroups = (groups ?? []).filter(g => g.id && g.name && Array.isArray(g.nodeIds));
@@ -251,7 +296,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rawText = await generateText({
+    const genResult = await generateText({
       provider,
       model: resolvedModel,
       apiKey,
@@ -260,6 +305,7 @@ export async function POST(req: NextRequest) {
       maxTokens:    8000,
       baseUrl:      baseUrl || undefined,
     });
+    const rawText = genResult.text;
 
     let parsed: { nodes: AINode[]; edges: AIEdge[]; groups?: AIGroup[] };
     try {
@@ -289,6 +335,12 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
       return NextResponse.json({ error: 'AI response is missing nodes or edges.' }, { status: 422 });
     }
+
+    // Track 4d: Break cycles before layout
+    const brokenCycleEdgeIds = breakCycles(parsed.nodes, parsed.edges);
+    const warnings = brokenCycleEdgeIds.length > 0
+      ? [`${brokenCycleEdgeIds.length} cyclic connection(s) were automatically removed to ensure a valid workflow layout.`]
+      : [];
 
     const { baselinePositions, ecosystemPositions } = calcPositions(parsed.nodes, parsed.edges, parsed.groups ?? []);
 
@@ -389,19 +441,12 @@ export async function POST(req: NextRequest) {
       edgeCount: customEdges.length,
       rawAIResponse: rawText,
       promptUsed: prompt,
+      warnings,
+      // Track 4e: token usage
+      usage: genResult.usage,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    const isAuthError =
-      message.includes('401') ||
-      message.includes('invalid_api_key') ||
-      message.includes('API_KEY') ||
-      message.includes('AuthenticationError') ||
-      message.includes('Unauthorized') ||
-      message.toLowerCase().includes('authentication');
-    if (isAuthError) {
-      return NextResponse.json({ error: 'Invalid API key. Please check your key in AI Settings.' }, { status: 401 });
-    }
-    return NextResponse.json({ error: message }, { status: 500 });
+    const { userMessage, status } = classifyAIError(err);
+    return NextResponse.json({ error: userMessage }, { status });
   }
 }

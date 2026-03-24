@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, type AIProvider } from '@/lib/aiClient';
+import { classifyAIError } from '@/lib/aiErrors';
 import { NODE_DATA, EDGE_DATA, CORE_NODE_IDS } from '@/lib/constants';
 import { jsonrepair } from 'jsonrepair';
 import type { ServerGraphState } from '@/lib/serverState';
@@ -449,7 +450,7 @@ export async function POST(req: NextRequest) {
 
     const snapshot = buildSnapshot(currentState);
 
-    const rawText = await generateText({
+    const genResult = await generateText({
       provider,
       model:        resolvedModel,
       apiKey,
@@ -458,6 +459,7 @@ export async function POST(req: NextRequest) {
       maxTokens:    4000,
       baseUrl:      baseUrl || undefined,
     });
+    const rawText = genResult.text;
 
     let parsed: Partial<AIUpdateResult>;
     try {
@@ -482,17 +484,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
 
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    const isAuthError =
-      message.includes('401') ||
-      message.includes('invalid_api_key') ||
-      message.includes('API_KEY') ||
-      message.includes('AuthenticationError') ||
-      message.includes('Unauthorized') ||
-      message.toLowerCase().includes('authentication');
-    if (isAuthError) {
-      return NextResponse.json({ error: 'Invalid API key. Please check your key in AI Settings.' }, { status: 401 });
-    }
-    return NextResponse.json({ error: message }, { status: 500 });
+    const { userMessage, status } = classifyAIError(err);
+    return NextResponse.json({ error: userMessage }, { status });
   }
 }
