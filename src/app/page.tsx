@@ -63,6 +63,7 @@ export default function Home() {
   const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
   const [aiUpdateResult,  setAiUpdateResult]  = useState<AIUpdateResult | null>(null);
   const [aiUpdateError,   setAiUpdateError]   = useState<string | null>(null);
+  const [aiAnalysisTimestamp, setAiAnalysisTimestamp] = useState<number | null>(null);
 
   // AI debug log — stores last parse attempt prompt + raw AI response
   const [aiDebugLog, setAiDebugLog]               = useState<AIDebugLog | null>(null);
@@ -115,14 +116,9 @@ export default function Home() {
   const handleAiParsed     = importStateAndStart;
   const handleTemplateLoad = importStateAndStart;
 
-  const handleAiAnalyze = async () => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
-    setAiAnalysis(null);
+  const runAnalyze = async () => {
     setAiAnalysisError(null);
-    setAiSuggestedConnections([]);
-    setAiSuggestedRemovals([]);
     setAiAnalysisLoading(true);
-    setShowAIAnalysis(true);
     try {
       const res = await fetch("/api/ai/optimize", {
         method: "POST",
@@ -142,12 +138,30 @@ export default function Home() {
         setAiAnalysis(data.analysis);
         setAiSuggestedConnections(data.suggestedConnections ?? []);
         setAiSuggestedRemovals(data.suggestedRemovals ?? []);
+        setAiAnalysisTimestamp(Date.now());
       }
     } catch {
       setAiAnalysisError("Network error. Please try again.");
     } finally {
       setAiAnalysisLoading(false);
     }
+  };
+
+  const handleAiAnalyze = async () => {
+    if (!activeApiKey) { setShowAISettings(true); return; }
+    setShowAIAnalysis(true);
+    // Only auto-fetch if no cached result and not already loading
+    if (!aiAnalysis && !aiAnalysisError && !aiAnalysisLoading) {
+      await runAnalyze();
+    }
+  };
+
+  const handleReAnalyze = async () => {
+    setAiAnalysis(null);
+    setAiSuggestedConnections([]);
+    setAiSuggestedRemovals([]);
+    setAiAnalysisTimestamp(null);
+    await runAnalyze();
   };
 
   const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1009,6 +1023,8 @@ export default function Home() {
         onClose={() => setShowAIAnalysis(false)}
         onAddConnection={handleAddConnection}
         onRemoveEntity={handleRemoveEntity}
+        onReAnalyze={handleReAnalyze}
+        analysisTimestamp={aiAnalysisTimestamp}
       />
 
       <AIUpdateModal
