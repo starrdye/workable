@@ -295,6 +295,30 @@ The graph uses low-opacity edges (base opacity 0.30) that are difficult to see i
 
 ---
 
+## Track 10 — Workflow Visibility & Analysis Actions ✅ IMPLEMENTED (`0.45-personal`)
+
+### 10a — Always-on Data Flow Mode ✅ IMPLEMENTED
+
+Edges rested at 0.30 opacity and were only visible on hover. This made it impossible to see the full data-flow topology at a glance.
+
+**What was built:** A "Show Data Flow" toggle in the View Mode sidebar. When on, all non-deprecated edges render at opacity 0.90 with an indigo tint, stroke thickened by 0.8 px, subtle drop-shadow, and the flow-dash animation running continuously on every edge. Hovering a node still dims unconnected edges (to 0.45 instead of 0.05) so focused inspection still works. An animated pulsing dot in the toggle button signals active mode.
+
+### 10b — Vivid Improvements Mode ✅ IMPLEMENTED
+
+In "Optimised Workflow" mode the green improvement lines were invisible unless the user happened to hover them — defeating the purpose of the mode entirely.
+
+**What was built:** `isUpgraded` edges now use `isAlwaysLit` logic in improvements mode — opacity 0.90, flow pulse always playing, and a `drop-shadow(0 0 5px rgba(16,185,129,0.55))` green glow. `isDeprecated` edges drop from 0.10 → 0.06 opacity. The contrast between dead paths and live optimisations is now immediately striking on mode switch.
+
+### 10c — Applied-Action Buttons in Analysis Modal ✅ IMPLEMENTED
+
+Clicking "Add" or "Remove/Automate/Merge" in the AI Analysis modal had no visual confirmation — the button stayed active even after the action was performed, making it easy to apply the same change twice.
+
+**What was built:** Local `appliedConnections` and `appliedRemovals` Sets track which suggestions have been acted on. After clicking Add: the button swaps to a greyed-out "✓ Added" chip and row dims to slate. After clicking Remove/Automate/Merge: the button swaps to "Removed"/"Automated"/"Merged" (disabled), the row fades to 60% opacity, and the node name gets a strikethrough. Added connections are now created as permanent `isImprovementOnly: false` edges (always visible) rather than improvement-overlay-only edges.
+
+### Priority: P2 — visual clarity and UX correctness
+
+---
+
 ## Suggested Release Cadence
 
 | Release | Key deliverables | Status |
@@ -302,10 +326,11 @@ The graph uses low-opacity edges (base opacity 0.30) that are difficult to see i
 | **0.40** | Client-side auto-save (localStorage), undo/redo (50-step history), debounced sidebar saves | Planned |
 | **0.41** | Named workflow library, SSE-based state sync (replaces polling), streaming AI responses | Planned |
 | **0.42** | SQLite persistence, shareable read-only links, workflow version history | Planned |
-| **0.43-personal** | Incremental layout (5b), layout web worker scaffold (5c), parallelised sidebar saves (5d), Vitest suite 23 tests (8a), page.tsx refactor into 4 hooks (8b), GraphAction discriminated union (8c), Zod AI response validation (8d) | ✅ Done |
-| **0.44-personal** | AI Analyze real workflow data (hiddenCoreNodes, metadataOverrides, groups, constraints); section cards UI; cached result + Re-analyze + relative timestamp; hover tooltip data correctness; remove hardcoded bottleneck text; core edge hidden-endpoint filtering; generic AI Update examples | ✅ Done |
-| **0.45** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
-| **0.46** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e), cycle detection on parse (4d) | Planned |
+| **0.43-personal** | Incremental layout (5b), layout web worker scaffold (5c), parallelised sidebar saves (5d), Vitest suite 23 tests (8a), page.tsx refactor into 4 hooks (8b), GraphAction discriminated union (8c), Zod AI response validation (8d) | ✅ Merged |
+| **0.44-personal** | AI Analyze real workflow data (hiddenCoreNodes, metadataOverrides, groups, constraints); section cards UI; cached result + Re-analyze + relative timestamp; hover tooltip data correctness; remove hardcoded bottleneck text; core edge hidden-endpoint filtering; generic AI Update examples | ✅ Merged |
+| **0.45-personal** | Always-on data flow mode (all edges lit + animated toggle); vivid improvements mode (upgraded edges always glow green at opacity 0.90, deprecated fade to 0.06); analysis action buttons grey out after apply (Add → Added ✓, Automate → Automated ✓, etc.) | ✅ Merged |
+| **0.46** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
+| **0.47** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e), cycle detection on parse (4d) | Planned |
 | **0.50** | API key encryption, server-side session option, full security audit | Planned |
 
 ---
@@ -327,8 +352,9 @@ The graph uses low-opacity edges (base opacity 0.30) that are difficult to see i
 | Undo / Redo | P0 | Medium | Removes fear of using AI features | Planned |
 | SSE state sync | P1 | Low | Better responsiveness, enables multi-tab | Planned |
 | AI reliability — streaming, retries, errors | P1 | Medium | Reduces friction on the core loop | Planned |
-| AI Analyze — real data, UI, caching, legacy fixes (4f) | P1 | Low | Correct results, better UX | ✅ `0.44-personal` |
-| Rendering performance (5b/5c/5d) | P2 | Medium | Faster layout, no jarring reflows | ✅ `0.43-personal` |
+| AI Analyze — real data, UI, caching, legacy fixes (4f) | P1 | Low | Correct results, better UX | ✅ merged |
+| Rendering performance (5b/5c/5d) | P2 | Medium | Faster layout, no jarring reflows | ✅ merged |
+| Data flow mode + vivid improvements + applied buttons | P2 | Low | Clear workflow visibility | ✅ merged |
 | UX gaps — history, search, bulk, dark mode, ecosystem view (6a–6g) | P2 | Medium | Daily delight + complete dual-view | Planned |
 | Security — key encryption, sanitisation (7a/7b) | P2 | Low | Trust and safety | Planned |
 | Tests + refactor (8a–8d) | P3 | High | Long-term maintainability | ✅ `0.43-personal` |
