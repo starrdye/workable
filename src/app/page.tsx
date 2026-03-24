@@ -68,7 +68,8 @@ export default function Home() {
     showDebugLog,   setShowDebugLog,
     aiAnalysis, aiAnalysisLoading, aiAnalysisError,
     aiSuggestedConnections, aiSuggestedRemovals,
-    handleAiAnalyze,
+    aiAnalysisTimestamp,
+    handleAiAnalyze, handleReAnalyze,
     aiUpdateLoading, aiUpdateResult, aiUpdateError,
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     handleAddConnection, handleRemoveEntity,
@@ -721,6 +722,8 @@ export default function Home() {
         onClose={() => setShowAIAnalysis(false)}
         onAddConnection={handleAddConnection}
         onRemoveEntity={handleRemoveEntity}
+        onReAnalyze={handleReAnalyze}
+        analysisTimestamp={aiAnalysisTimestamp}
       />
       <AIUpdateModal
         isOpen={showAIUpdate}

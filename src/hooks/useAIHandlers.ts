@@ -55,6 +55,7 @@ export function useAIHandlers(
   const [aiAnalysisError,       setAiAnalysisError]       = useState<string | null>(null);
   const [aiSuggestedConnections,setAiSuggestedConnections] = useState<SuggestedConnection[]>([]);
   const [aiSuggestedRemovals,   setAiSuggestedRemovals]   = useState<SuggestedRemoval[]>([]);
+  const [aiAnalysisTimestamp,   setAiAnalysisTimestamp]   = useState<number | null>(null);
 
   // ── AI Update state ────────────────────────────────────────────────────────
   const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
@@ -66,14 +67,10 @@ export function useAIHandlers(
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleAiAnalyze = async () => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
-    setAiAnalysis(null);
+  // Core fetch — called by both handleAiAnalyze (first time) and handleReAnalyze
+  const runAnalyze = async () => {
     setAiAnalysisError(null);
-    setAiSuggestedConnections([]);
-    setAiSuggestedRemovals([]);
     setAiAnalysisLoading(true);
-    setShowAIAnalysis(true);
     try {
       const res = await fetch('/api/ai/optimize', {
         method: 'POST',
@@ -93,12 +90,31 @@ export function useAIHandlers(
         setAiAnalysis(data.analysis);
         setAiSuggestedConnections(data.suggestedConnections ?? []);
         setAiSuggestedRemovals(data.suggestedRemovals ?? []);
+        setAiAnalysisTimestamp(Date.now());
       }
     } catch {
       setAiAnalysisError('Network error. Please try again.');
     } finally {
       setAiAnalysisLoading(false);
     }
+  };
+
+  // Opens the modal; only auto-fetches when no cached result exists
+  const handleAiAnalyze = async () => {
+    if (!activeApiKey) { setShowAISettings(true); return; }
+    setShowAIAnalysis(true);
+    if (!aiAnalysis && !aiAnalysisError && !aiAnalysisLoading) {
+      await runAnalyze();
+    }
+  };
+
+  // Re-run fresh analysis, clearing the previous result
+  const handleReAnalyze = async () => {
+    setAiAnalysis(null);
+    setAiSuggestedConnections([]);
+    setAiSuggestedRemovals([]);
+    setAiAnalysisTimestamp(null);
+    await runAnalyze();
   };
 
   const handleAiUpdate = async (prompt: string) => {
@@ -227,9 +243,10 @@ export function useAIHandlers(
 
   const handleAddConnection = (conn: SuggestedConnection) => {
     const edgeId = `${conn.sourceId}-${conn.targetId}-opt`;
+    // Added from analysis = permanent edge, always visible (not improvement-only)
     const newEdge = {
       id: edgeId, source: conn.sourceId, target: conn.targetId,
-      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: false,
     };
     put({ action: 'addEdge', edge: newEdge });
     setFullServerState(prev => prev ? {
@@ -261,7 +278,8 @@ export function useAIHandlers(
     // analyze
     aiAnalysis, aiAnalysisLoading, aiAnalysisError,
     aiSuggestedConnections, aiSuggestedRemovals,
-    handleAiAnalyze,
+    aiAnalysisTimestamp,
+    handleAiAnalyze, handleReAnalyze,
     // update
     aiUpdateLoading, aiUpdateResult, aiUpdateError,
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
