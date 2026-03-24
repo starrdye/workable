@@ -120,7 +120,7 @@ Four pre-built starters so you're never staring at a blank canvas:
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-username/workable.git
+git clone https://github.com/starrdye/workable.git
 cd workable
 npm install
 
@@ -290,6 +290,7 @@ npm run lint    # ESLint check
 
 ## 🗺️ Roadmap
 
+- [x] **GitHub Launch** — Repository is live and ready for clones
 - [ ] **Persistent storage** — SQLite or Postgres backend
 - [ ] **Real-time collaboration** — WebSocket sync, presence indicators
 - [ ] **Constraint propagation** — risk badges that cascade through the graph

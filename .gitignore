@@ -21,6 +21,8 @@
 /build
 
 # misc
+/misc/
+/PROPOSAL.md
 .DS_Store
 *.pem
 

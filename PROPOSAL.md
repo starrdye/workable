@@ -340,6 +340,346 @@ After running AI Analyze, the bottleneck nodes and suggested connections were no
 
 ---
 
+## Track 12 — AI Analysis: Cascading Impact & Fishbone Reasoning
+
+### The Core Gap
+
+The current AI Analyze loop treats every suggestion as an isolated, independent action:
+- "Add a direct connection from **Mary** to **Dashboard**" — no mention of what that does to the **Edward** bottleneck or the **mary-ed** / **ed-cy** edges.
+- "Remove **Edward** (bottleneck)" — no guidance on what replaces his function, where his incoming connections should now point, or what new automation should close the gap.
+
+This is a shallow analysis. Real workflow optimisation is a chain of causes and effects. A single change ripples — adding a bypass edge makes a bottleneck redundant, removing a node orphans its dependencies, merging two steps changes who owns what. Treating each suggestion independently forces the user to figure out the cascade themselves, which is exactly the cognitive load the AI feature is meant to remove.
+
+The user insight that prompted this track: *"when new connections are added, we didn't consider what connections could be updated or removed as a result of that — same applies to bottleneck nodes. Sometimes we can't or shouldn't remove all connections. When we remove something, what should be added? Cascading thinking — like Miro's fishbone."*
+
+---
+
+### 12a — Fishbone Root Cause Decomposition
+
+**What it is:** When the AI identifies a bottleneck node, it should structure its reasoning as an Ishikawa (fishbone) diagram — the same mental model Miro uses in its diagramming templates. The bottleneck is the "fish head" (the effect). The incoming connections are the "bones" (the contributing causes). Each bone can have sub-bones (root causes one level deeper).
+
+**Why it matters:** Today the AI says "Edward is a bottleneck". The fishbone structure would say:
+- **Head:** Edward holds up report publishing (avg 2+ day queue)
+- **Bone 1 — Handoff dependency:** Mary always escalates to Edward; she has no publish authority
+  - Sub-bone: No direct-to-dashboard role assigned to Mary
+  - Sub-bone: Approval policy requires senior sign-off even for routine NAV reports
+- **Bone 2 — Volume mismatch:** Edward receives 100% of publish requests but works at 60% bandwidth
+  - Sub-bone: No parallel review path; single-threaded by design
+- **Bone 3 — No automation gate:** The ed→cy edge requires manual action; no rules-based trigger exists
+
+**Proposed AI schema extension:**
+
+```typescript
+interface FishboneNode {
+  nodeId:      string;            // the bottleneck
+  effectLabel: string;            // "holds up X by avg Y"
+  bones: Array<{
+    causeLabel:   string;         // "Handoff dependency"
+    connectionId: string | null;  // edge causing this bone, if identifiable
+    subBones:     string[];       // root causes
+    proposedFix:  string;         // what to change to address this bone
+  }>;
+}
+```
+
+**UI proposal:** In the AI Analysis modal, each bottleneck section shows a collapsible fishbone card. Clicking a bone highlights the corresponding edge on the canvas (amber pulse). The "Fix this bone" button triggers the specific cascading action for that branch.
+
+---
+
+### 12b — Cascading Connection Analysis
+
+**What it is:** Every suggested connection addition or removal should come with a `cascadeEffects` array — the secondary changes that become necessary or advisable as a result.
+
+**The problem today:** Adding the **mary→dashboard** bypass edge makes the **mary→edward→dashboard** path partially redundant, yet the AI Analysis lists them independently. The user adds the bypass, but the old path remains — creating two parallel routes where one should be deprecated, the old bottleneck node becomes stranded (still receives flow but its output is no longer the only path), and the graph becomes misleading rather than improved.
+
+**Proposed AI schema extension:**
+
+```typescript
+interface SuggestedConnection {
+  sourceId:       string;
+  targetId:       string;
+  reason:         string;
+  cascadeEffects: Array<{
+    type:         'deprecate-edge' | 'reduce-edge-weight' | 'reassign-node-role'
+                | 'suggest-remove-node' | 'update-group';
+    targetId:     string;           // which edge or node is affected
+    reason:       string;           // why this secondary change follows
+    severity:     'required' | 'recommended' | 'optional';
+  }>;
+}
+```
+
+**UI proposal:** In the suggestion row, a "▶ 2 follow-on changes" expandable section lists the cascade. Applying the primary suggestion auto-prompts: *"This addition makes the mary→edward edge redundant. Mark it as deprecated?"* with Yes/Skip buttons. Required cascade effects are shown with a warning badge.
+
+**Example cascade chain:**
+1. ✅ **Add** mary → dashboard (direct publish bypass)
+2. ↳ ⚠️ **Recommend deprecating** mary → edward (now redundant for routine reports)
+3. ↳ ⚠️ **Recommend deprecating** edward → dashboard (now redundant, edward no longer on critical path)
+4. ↳ 💡 **Suggest** edward's role changes from "Final approver" to "Exception reviewer"
+5. ↳ 💡 **Suggest** adding automation rule node between mary and dashboard
+
+---
+
+### 12c — Bottleneck Resolution Planner
+
+**What it is:** Removing a bottleneck without a replacement plan simply breaks the workflow. The AI should generate a **resolution plan** — a structured sequence of: what stays, what changes role, what new node/automation fills the gap, and in what order to apply changes so the graph is never left in an invalid intermediate state.
+
+**The problem today:** The "Remove" button on a bottleneck node in the Analysis modal removes the node and its edges, leaving the graph with orphaned endpoints and no guidance on what fills the function.
+
+**Proposed AI schema extension:**
+
+```typescript
+interface SuggestedRemoval {
+  id:               string;
+  type:             'node' | 'edge';
+  reason:           string;
+  resolutionPlan:   {
+    description:    string;         // prose summary
+    orderedSteps:   Array<{
+      stepIndex:    number;
+      action:       'add-node' | 'add-edge' | 'reassign-role' | 'remove-edge'
+                  | 'add-automation' | 'update-metadata';
+      targetId:     string;
+      detail:       string;         // what exactly to do
+      isPrerequisite: boolean;      // must happen before the removal
+      isFollowUp:   boolean;        // must happen after the removal
+    }>;
+    cannotRemoveIf: string[];       // conditions under which removal is inadvisable
+    alternativeToFullRemoval?: string; // "if full removal is not possible, consider…"
+  };
+}
+```
+
+**Example resolution plan for removing Edward:**
+
+> **Cannot remove if:** Any report requires regulatory sign-off (check compliance policy).
+> **Alternative if not removable:** Change Edward's role to Exception Reviewer — only escalate non-routine NAV discrepancies.
+>
+> **Pre-requisite steps (before removal):**
+> 1. Add automation node "Auto-Publish Gate" (rule-based, triggers on Mary approval + no-discrepancy flag)
+> 2. Add edge mary → Auto-Publish Gate
+> 3. Add edge Auto-Publish Gate → Dashboard
+>
+> **Post-removal steps:**
+> 4. Remove edge mary → edward (now orphaned)
+> 5. Remove edge edward → dashboard (now orphaned)
+> 6. Update Dashboard metadata: note new publish path
+
+**UI proposal:** The removal suggestion row expands to show the resolution plan as a numbered checklist with checkboxes. Each step has its own "Apply" button. Steps marked `isPrerequisite: true` must be checked before the "Remove node" button activates. Steps marked `isFollowUp: true` appear after removal, surfaced as "Recommended clean-up actions."
+
+---
+
+### 12d — Suggestion Dependency Graph & Ordered Apply
+
+**What it is:** Suggestions are not always independent. Adding connection A before removing node B matters. The AI should return an explicit **dependency graph** on its suggestions so the UI can enforce an order and prevent the user from applying suggestions in an invalid sequence.
+
+**Proposed schema:**
+
+```typescript
+interface AnalysisResult {
+  analysis:             string;
+  suggestedConnections: SuggestedConnection[];
+  suggestedRemovals:    SuggestedRemoval[];
+  suggestionPlan: {
+    phases: Array<{
+      phaseIndex:   number;
+      label:        string;    // "Phase 1 — Bypass routing"
+      description:  string;
+      suggestionIds: string[]; // IDs referencing connections/removals in this phase
+      prerequisitePhases: number[];
+    }>;
+  };
+}
+```
+
+**UI proposal:** The Analysis modal gains a "Step-by-step plan" tab alongside the current "Findings" tab. Each phase renders as a card with all its actions listed. Phases are gated: Phase 2's "Apply" buttons are disabled until all Phase 1 actions are applied. A "Apply all in order" master button walks through all phases sequentially with confirmations.
+
+---
+
+### 12e — Impact Preview Before Apply
+
+**What it is:** Before the user clicks "Add" or "Remove" on any suggestion, a hover/click preview shows exactly what the graph will look like — not just the direct change, but also all `cascadeEffects` that would be triggered in the same apply.
+
+**UI proposal:**
+- Hovering the "Add" button for a suggested connection draws the new edge on the canvas as a solid (not dashed) emerald arc + dims all cascade-affected edges simultaneously.
+- The tooltip reads: *"Adds 1 edge · marks 2 edges deprecated · updates 1 node role"*
+- Clicking "Apply cascade" applies everything in the correct order as a single undo-able snapshot.
+
+---
+
+### Implementation Approach: Two-Pass AI Prompting
+
+Generating cascading analysis in a single prompt is fragile — the AI tends to surface only the most obvious cascade steps if asked to do everything at once. A two-pass approach is more reliable:
+
+**Pass 1 — Structural analysis (current prompt, extended)**
+Send the workflow graph and ask for:
+1. Bottlenecks and their fishbone causes
+2. Suggested additions/removals without cascade detail yet
+3. A rough phasing order
+
+**Pass 2 — Cascade expansion**
+For each suggestion from Pass 1, send a focused prompt:
+> *"Given this workflow graph, we are about to add an edge from {source} to {target}. List all edges, nodes, and metadata that should be updated, deprecated, or added as a direct result of this change. Be specific about which changes are required vs optional."*
+
+This keeps each cascade prompt small and focused, reduces hallucination risk, and allows progressive disclosure in the UI — users can expand each suggestion to trigger its cascade analysis on demand (lazy-loaded).
+
+---
+
+### Priority: P1 — this is the feature gap that makes AI Analyze feel shallow rather than genuinely insightful
+
+---
+
+## Track 13 — Expanded Test Coverage
+
+### Current State
+
+The test suite introduced in `0.43-personal` covers 23 cases across two files:
+- `layout.test.ts` — 7 tests for `hierarchicalLayout` (empty, single, multi-node, bounds, 2-node, chain, determinism)
+- `csv.test.ts` — 16 tests for `buildCsvExport` / `parseCsvImport` round-trip, `csvCell`, `parseCsvRow`
+
+The coverage target was `src/lib/` at 80%, but the critical paths that have broken in practice (AI response handling, server state mutations, undo/redo) have zero test coverage. The following gap areas are prioritised by the likelihood of regression.
+
+---
+
+### 13a — Server State Mutation Tests
+
+**Target:** `src/lib/serverState.ts`
+
+These functions are the single most critical path in the app — every PUT action passes through them. They are currently untested.
+
+| Test case | What to verify |
+|---|---|
+| `addNode` on empty state | Node appears in `customNodes`, position stored in `baselinePositions` |
+| `addNode` with duplicate ID | Silently deduplicates or throws a typed error |
+| `deleteNode` removes edges | All edges where `source` or `target` === nodeId are also removed |
+| `deleteNode` on core node | Returns error; core nodes should be undeletable via this path |
+| `resetLayout` with custom nodes | Positions recomputed by hierarchicalLayout, `originalBaselinePositions` updated |
+| `resetLayout` with no custom nodes | Restores `originalBaselinePositions`, does not run layout |
+| `incrementalLayout` positions new nodes near neighbours | New node x/y within 200px of the centroid of connected nodes |
+| `upsertWorkflowGroup` creates and updates | Round-trips name, color, nodeIds correctly |
+| `deleteWorkflowGroup` removes from settings | Group absent after delete; nodeIds not leaked |
+| `updateMetadata` merges partial overrides | Existing keys preserved, only specified keys updated |
+| `importState` replaces all custom data | `customNodes`, `customEdges`, positions, settings all replaced cleanly |
+
+---
+
+### 13b — Undo/Redo Stack Tests
+
+**Target:** `src/hooks/useUndoRedo.ts`
+
+The 50-step history is a critical safety feature. It should be covered end-to-end.
+
+| Test case | What to verify |
+|---|---|
+| `push` then `undo` returns original | Deep clone fidelity — all nested objects match source |
+| `push × 3` then `undo × 2` | Past stack shrinks correctly; returns states in LIFO order |
+| `undo` then `redo` restores future | Future stack populated on undo; `redo` returns the undone state |
+| `push` after `undo` clears redo | New mutation discards the future stack |
+| `push × 51` stays at 50 entries | Circular buffer; oldest entry evicted; no memory leak |
+| Deep clone isolation | Mutating returned state does not corrupt the stored snapshot |
+| `canUndo` / `canRedo` reactive flags | `canUndo` is false on empty past; `canRedo` is false on empty future |
+| `undo` on empty stack | Returns null; no error |
+| `redo` on empty stack | Returns null; no error |
+
+---
+
+### 13c — AI Schema Validation Tests
+
+**Target:** `src/lib/aiSchemas.ts`
+
+The Zod schemas are the only defence against malformed AI responses reaching graph state. They need adversarial inputs.
+
+| Test case | What to verify |
+|---|---|
+| Valid `ParseWorkflowResponse` passes | All required fields present; optional fields defaulted |
+| Missing `customNodes` array | Schema fills with `[]` default, not error |
+| Node with no `id` field | `.safeParse` returns error with path `customNodes[n].id` |
+| Node ID that collides with core ID (`"ed"`) | Schema should flag or strip to prevent silent core-node overwrite |
+| Edge `source` referencing non-existent node ID | Schema detects orphan reference (requires cross-field validation) |
+| `baselinePositions` with non-numeric coords | Coerced or rejected |
+| Deeply nested group with circular `parentGroupId` | Schema or validator detects cycle |
+| Response with extra unknown fields | Passthrough or strip — must not crash |
+| `AIUpdatePatchResponse` with negative `weight` on edge | Rejected with typed error |
+| Malformed JSON repaired by `jsonrepair` then validated | Schema still rejects structural violations after repair |
+
+---
+
+### 13d — GraphAction Route Tests
+
+**Target:** `src/app/api/graph-state/route.ts`
+
+Integration tests using `fetch` mock or `msw` that verify each `GraphAction` variant round-trips correctly.
+
+| Test case | What to verify |
+|---|---|
+| PUT `addNode` returns updated state | New node in `state.customNodes` |
+| PUT `deleteNode` cascades to edges | Associated edges removed from response |
+| PUT `resetLayout` returns changed positions | `baselinePositions` keys include all nodes |
+| PUT `incrementalLayout` only moves named nodes | Existing node positions unchanged |
+| PUT `upsertWorkflowGroup` creates new group | Group ID in `state.settings.workflowGroups` |
+| PUT `updateMetadata` merges correctly | Existing metadata keys not wiped |
+| PUT with unknown action | Returns 400 with `{ error: "unknown action" }` |
+| GET returns full state | All required fields present |
+| Concurrent PUTs (sequential in test) | Last-write wins; `lastUpdated` strictly increases |
+
+---
+
+### 13e — Layout Edge Case Tests
+
+**Target:** `src/lib/layout.ts` (extensions to existing `layout.test.ts`)
+
+The current 7 layout tests cover the happy path. These adversarial cases have caused real bugs.
+
+| Test case | What to verify |
+|---|---|
+| Graph with a cycle (A→B→C→A) | Layout completes without infinite loop; back-edge receives Y offset |
+| Disconnected components (no shared edges) | Both components placed with horizontal separation, not overlapping |
+| Star topology (1 hub, 20 leaves) | Hub centred; leaf positions are distinct, non-overlapping |
+| Very long chain (20 nodes in sequence) | Canvas width expands; no node placed at x < 0 |
+| `groupAwareLayout` with overlapping groups | Groups do not occupy the same bounding rectangle |
+| `groupAwareLayout` with nested groups | Child group bounding box fits inside parent bounding box |
+| Single-node group | Group rendered without crashing; bounding box is non-zero |
+| All nodes in one group | Group bounding box covers entire canvas area without overflow |
+
+---
+
+### 13f — CSV Round-trip Edge Cases
+
+**Target:** `src/lib/csvExport.ts` / `src/lib/csvImport.ts` (extensions to existing `csv.test.ts`)
+
+| Test case | What to verify |
+|---|---|
+| Node label with commas | CSV-escaped correctly; re-imported label matches exactly |
+| Node label with double-quotes | Quotes escaped as `""` in CSV; round-trip lossless |
+| Node label with newline character | Wrapped in quotes; import reconstructs the multiline label |
+| Empty workflow (no custom nodes or edges) | Export produces valid CSV headers with empty sections; import produces empty state |
+| Metadata with Unicode (CJK, Arabic) | Characters survive CSV encode/decode without corruption |
+| `workflowGroups` with `parentGroupId` | Parent relationship preserved in `[WORKFLOW_GROUPS]` section |
+| Import with unknown section header | Silently ignored; known sections parsed correctly |
+| Import with duplicate node IDs | Later row overwrites earlier; no crash |
+
+---
+
+### 13g — End-to-End Smoke Tests (Playwright)
+
+A minimal Playwright suite that verifies the full user journey without mocking internals.
+
+| Test | Steps |
+|---|---|
+| Start screen → default workflow | Open app, click "Start without AI", verify canvas renders 7 nodes |
+| Add node via context menu | Right-click canvas, fill form, verify node appears on canvas |
+| Delete node clears sidebar | Select node, press Delete, verify sidebar closes |
+| Undo add then redo | Add node, Cmd+Z, verify node gone; Cmd+Shift+Z, verify node back |
+| Export and re-import CSV | Export, clear graph via importState with empty state, import CSV, verify node count matches |
+| Toggle improvements mode | Toggle on, verify edward node dims and mary-cy edge appears; toggle off, verify reverts |
+| Reset Layout brings nodes into view | Pan canvas far away, click Reset Layout, verify nodes visible in viewport |
+
+---
+
+### Priority: P2 for 13a–13f, P1 for 13g (smoke tests catch regressions before merge)
+
+---
+
 ## Suggested Release Cadence
 
 | Release | Key deliverables | Status |
