@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import {
-  X, Sparkles, Loader2, AlertCircle, Plus, Trash2,
+  X, Sparkles, Loader2, AlertCircle, Plus, Trash2, Check,
   RefreshCw, Info, AlertTriangle, ShieldAlert, Zap, CheckCircle2,
 } from "lucide-react";
 
@@ -193,6 +193,11 @@ const ACTION_LABEL: Record<string, string> = {
   automate: "Automate",
   merge:    "Merge",
 };
+const ACTION_DONE_LABEL: Record<string, string> = {
+  remove:   "Removed",
+  automate: "Automated",
+  merge:    "Merged",
+};
 const ACTION_COLOR: Record<string, string> = {
   remove:   "bg-red-50 text-red-600 border-red-200 hover:bg-red-100",
   automate: "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100",
@@ -206,6 +211,8 @@ export function AIAnalysisModal({
   error, onClose, onAddConnection, onRemoveEntity, onReAnalyze, analysisTimestamp,
 }: AIAnalysisModalProps) {
   const timeLabel = useRelativeTime(analysisTimestamp);
+  const [appliedConnections, setAppliedConnections] = useState<Set<number>>(new Set());
+  const [appliedRemovals,    setAppliedRemovals]    = useState<Set<number>>(new Set());
 
   if (!isOpen) return null;
 
@@ -335,14 +342,18 @@ export function AIAnalysisModal({
                 <span className="text-xs text-slate-400">— new routes to add</span>
               </div>
               <div className="space-y-2">
-                {suggestedConnections.map((conn, i) => (
+                {suggestedConnections.map((conn, i) => {
+                  const isApplied = appliedConnections.has(i);
+                  return (
                   <div key={i}
-                    className="flex items-start justify-between gap-3 p-4 rounded-xl border border-emerald-100 bg-emerald-50/40">
+                    className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-colors ${
+                      isApplied ? "border-slate-200 bg-slate-50/60" : "border-emerald-100 bg-emerald-50/40"
+                    }`}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1 flex-wrap">
-                        <span className="text-emerald-600 truncate max-w-[130px]">{conn.sourceName}</span>
+                        <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-emerald-600"}`}>{conn.sourceName}</span>
                         <span className="text-slate-400 text-xs flex-shrink-0">→</span>
-                        <span className="text-emerald-600 truncate max-w-[130px]">{conn.targetName}</span>
+                        <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-emerald-600"}`}>{conn.targetName}</span>
                         {conn.connectionName && (
                           <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full flex-shrink-0 ml-1">
                             {conn.connectionName}
@@ -352,15 +363,22 @@ export function AIAnalysisModal({
                       <p className="text-xs text-slate-500 leading-relaxed">{conn.reason}</p>
                     </div>
                     {onAddConnection && (
-                      <button
-                        onClick={() => onAddConnection(conn)}
-                        className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
-                      >
-                        <Plus className="w-3 h-3" /> Add
-                      </button>
+                      isApplied ? (
+                        <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
+                          <Check className="w-3 h-3" /> Added
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => { onAddConnection(conn); setAppliedConnections(s => new Set([...s, i])); }}
+                          className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
+                        >
+                          <Plus className="w-3 h-3" /> Add
+                        </button>
+                      )
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -376,35 +394,50 @@ export function AIAnalysisModal({
                 <span className="text-xs text-slate-400">— entities to remove or automate</span>
               </div>
               <div className="space-y-2">
-                {suggestedRemovals.map((rem, i) => (
+                {suggestedRemovals.map((rem, i) => {
+                  const isApplied = appliedRemovals.has(i);
+                  return (
                   <div key={i}
-                    className="flex items-start justify-between gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/60">
+                    className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-colors ${
+                      isApplied ? "border-slate-200 bg-slate-50/40 opacity-60" : "border-slate-200 bg-slate-50/60"
+                    }`}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-sm font-semibold text-slate-700 truncate">{rem.name}</span>
+                        <span className={`text-sm font-semibold truncate ${isApplied ? "text-slate-400 line-through" : "text-slate-700"}`}>{rem.name}</span>
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
+                          isApplied ? "bg-slate-100 text-slate-400 border-slate-200" :
                           rem.action === "remove"   ? "bg-red-50 text-red-500 border-red-200" :
                           rem.action === "automate" ? "bg-amber-50 text-amber-600 border-amber-200" :
                                                       "bg-violet-50 text-violet-600 border-violet-200"
                         }`}>
-                          {ACTION_LABEL[rem.action] ?? rem.action}
+                          {isApplied
+                            ? (ACTION_DONE_LABEL[rem.action] ?? rem.action)
+                            : (ACTION_LABEL[rem.action] ?? rem.action)}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed">{rem.reason}</p>
                     </div>
                     {onRemoveEntity && (
-                      <button
-                        onClick={() => onRemoveEntity(rem)}
-                        className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-                          ACTION_COLOR[rem.action] ?? "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
-                        }`}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        {ACTION_LABEL[rem.action] ?? "Apply"}
-                      </button>
+                      isApplied ? (
+                        <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default border border-slate-200">
+                          <Check className="w-3 h-3" />
+                          {ACTION_DONE_LABEL[rem.action] ?? "Applied"}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => { onRemoveEntity(rem); setAppliedRemovals(s => new Set([...s, i])); }}
+                          className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                            ACTION_COLOR[rem.action] ?? "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                          }`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {ACTION_LABEL[rem.action] ?? "Apply"}
+                        </button>
+                      )
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

@@ -30,6 +30,7 @@ export default function Home() {
   // ── App state ──────────────────────────────────────────────────────────────
   const [isAppStarted,  setIsAppStarted]  = useState(false);
   const [showImprovements, setShowImprovements] = useState(false);
+  const [showDataFlow,     setShowDataFlow]     = useState(false);
   const [selectedId,   setSelectedId]    = useState<string | null>(null);
   const [selectedType, setSelectedType]  = useState<"node" | "edge" | null>(null);
   const [analysisData, setAnalysisData]  = useState<AnalysisData | null>(null);
@@ -385,6 +386,36 @@ export default function Home() {
                 <p className="text-xs text-slate-500">AI-suggested improvements overlaid.</p>
               </button>
             </div>
+
+            {/* Data Flow toggle */}
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setShowDataFlow(v => !v)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border transition-colors ${
+                  showDataFlow
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`relative flex h-2.5 w-2.5 ${showDataFlow ? "" : "opacity-50"}`}>
+                    {showDataFlow && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
+                    )}
+                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${showDataFlow ? "bg-indigo-500" : "bg-slate-400"}`} />
+                  </span>
+                  <span className="text-xs font-semibold">Show Data Flow</span>
+                </div>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  showDataFlow ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-400"
+                }`}>
+                  {showDataFlow ? "ON" : "OFF"}
+                </span>
+              </button>
+              {showDataFlow && (
+                <p className="text-[10px] text-indigo-500 mt-1.5 ml-1">All connections lit — showing live data flow.</p>
+              )}
+            </div>
           </div>
 
           {/* Search */}
@@ -634,6 +665,7 @@ export default function Home() {
           <GraphCanvas
             ref={canvasRef}
             showImprovements={showImprovements}
+            showDataFlow={showDataFlow}
             selectedId={selectedId}
             selectedType={selectedType}
             onSelectNode={(id, type) => { setSelectedId(id); setSelectedType(type); }}

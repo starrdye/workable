@@ -15,6 +15,8 @@ export interface GraphCanvasRef {
 
 export interface GraphCanvasProps {
   showImprovements: boolean;
+  /** When true, all edges render at full opacity with animated flow — "always-on flow mode". */
+  showDataFlow?:    boolean;
   selectedId:       string | null;
   selectedType:     "node" | "edge" | null;
   onSelectNode:     (id: string, type: "node" | "edge") => void;
@@ -437,7 +439,7 @@ function downloadBlob(content: string, filename: string, mime: string) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
   function GraphCanvas({
-    showImprovements, selectedId, selectedType,
+    showImprovements, showDataFlow = false, selectedId, selectedType,
     onSelectNode, onDeselect, onHover, onHoverEnd, onDeleteNode,
     searchQuery = "",
     activeFilters = { roles: [], groupIds: [] },
@@ -1043,35 +1045,56 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             const isHoveredEdge = hoveredEdgeId === edge.id;
             const isConnected   = connectedEdgeIds?.has(edge.id) ?? false;
             const anyHover      = hoveredNodeId !== null || hoveredEdgeId !== null;
-            // Resting opacity is low (subtle lines); spikes to full on hover/selection
-            const baseOpacity   = edge.isDeprecated ? 0.10 : 0.30;
+
+            // ── Opacity: three distinct modes ──
+            // 1. Data-flow mode: all edges fully lit
+            // 2. Improvements mode: upgraded edges always glow, deprecated fade hard
+            // 3. Default: subtle resting opacity, spikes on hover/selection
+            const isAlwaysLit = showDataFlow
+              || (showImprovements && edge.isUpgraded);
+            const baseOpacity = edge.isDeprecated
+              ? (showImprovements ? 0.06 : 0.10)
+              : isAlwaysLit ? 0.90
+              : 0.30;
+            const dimOpacity = showDataFlow ? 0.45 : 0.05;
             const highlightOpacity = anyHover
-              ? (isHoveredEdge || isConnected ? 0.90 : 0.05)
+              ? (isHoveredEdge || isConnected ? 0.95 : dimOpacity)
               : (isSelected ? 1 : baseOpacity);
+
             const strokeColor = isSelected ? "#4F46E5"
               : edge.isUpgraded ? "#10B981"
               : edge.isDeprecated ? "#CBD5E1"
+              : showDataFlow ? "#6366F1"
               : "#94A3B8";
             const pulseColor = edge.isUpgraded ? "#10B981" : "#4F46E5";
+
+            // Flow animation: always in data-flow mode or for upgraded edges in improvements mode
+            const showFlowPulse = !edge.isDeprecated && (
+              isAlwaysLit || isHoveredEdge || isConnected || isSelected
+            );
 
             return (
               <g key={edge.id} style={{ opacity: highlightOpacity, transition: "opacity 0.18s" }}>
                 <path
                   d={d} pathLength="1"
                   stroke={strokeColor}
-                  strokeWidth={isSelected || isHoveredEdge ? sw + 2 : sw}
+                  strokeWidth={isSelected || isHoveredEdge ? sw + 2 : isAlwaysLit ? sw + 0.8 : sw}
                   fill="none"
                   strokeDasharray={edge.isDeprecated ? "0.04 0.04" : undefined}
                   style={{
                     filter: isSelected ? "drop-shadow(0 0 4px rgba(79,70,229,0.6))"
                       : isHoveredEdge ? "drop-shadow(0 0 6px rgba(99,102,241,0.7))"
                       : isConnected ? "drop-shadow(0 0 3px rgba(99,102,241,0.4))"
+                      : (showImprovements && edge.isUpgraded) ? "drop-shadow(0 0 5px rgba(16,185,129,0.55))"
+                      : showDataFlow ? "drop-shadow(0 0 3px rgba(99,102,241,0.25))"
                       : undefined,
                     transition: "stroke 0.2s, stroke-width 0.15s",
                   }}
                 />
-                {!edge.isDeprecated && (isHoveredEdge || isConnected || isSelected) && (
-                  <path d={d} pathLength="1" stroke={pulseColor} strokeWidth={sw + 1.0} fill="none"
+                {showFlowPulse && (
+                  <path d={d} pathLength="1" stroke={pulseColor}
+                    strokeWidth={isAlwaysLit ? sw + 1.5 : sw + 1.0}
+                    fill="none"
                     strokeDasharray="0.06 1"
                     style={{ animation: `svgflow-${edge.sequence || 1} ${cycleDur}s linear infinite` }}
                   />
