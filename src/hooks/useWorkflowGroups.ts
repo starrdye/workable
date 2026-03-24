@@ -22,6 +22,7 @@ export function useWorkflowGroups(
   fullServerState: ServerGraphState | null,
   setFullServerState: Dispatch<SetStateAction<ServerGraphState | null>>,
   setGroupFilters: Dispatch<SetStateAction<string[]>>,
+  pushSnapshot: (state: ServerGraphState) => void,
 ) {
   const [editingGroupId,   setEditingGroupId]   = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
@@ -29,6 +30,7 @@ export function useWorkflowGroups(
   const workflowGroups = fullServerState?.settings?.workflowGroups ?? [];
 
   const createGroup = () => {
+    if (fullServerState) pushSnapshot(fullServerState);
     const id    = `group-${Date.now()}`;
     const color = GROUP_COLORS[workflowGroups.length % GROUP_COLORS.length];
     const group = { id, name: 'New Group', color, nodeIds: [] };
@@ -44,6 +46,7 @@ export function useWorkflowGroups(
   const renameGroup = (id: string, name: string) => {
     const group = workflowGroups.find(g => g.id === id);
     if (!group) return;
+    if (fullServerState) pushSnapshot(fullServerState);
     const updated = { ...group, name };
     put({ action: 'upsertWorkflowGroup', group: updated });
     setFullServerState(prev => prev ? {
@@ -55,6 +58,7 @@ export function useWorkflowGroups(
   const changeGroupColor = (id: string, color: string) => {
     const group = workflowGroups.find(g => g.id === id);
     if (!group) return;
+    if (fullServerState) pushSnapshot(fullServerState);
     const updated = { ...group, color };
     put({ action: 'upsertWorkflowGroup', group: updated });
     setFullServerState(prev => prev ? {
@@ -64,6 +68,7 @@ export function useWorkflowGroups(
   };
 
   const deleteGroup = (id: string) => {
+    if (fullServerState) pushSnapshot(fullServerState);
     put({ action: 'deleteWorkflowGroup', groupId: id });
     setFullServerState(prev => prev ? {
       ...prev,

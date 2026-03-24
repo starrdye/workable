@@ -1145,8 +1145,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           })}
           </g>
 
-          {/* AI-suggested connection arcs — dashed emerald, removed once applied */}
-          {showNodes && suggestedConnectionPairs.length > 0 && suggestedConnectionPairs.map((pair) => {
+          {/* AI-suggested connection arcs — dashed emerald, only in Optimised Workflow mode */}
+          {showNodes && showImprovements && suggestedConnectionPairs.length > 0 && suggestedConnectionPairs.map((pair) => {
             const src = nodeMap[pair.sourceId], tgt = nodeMap[pair.targetId];
             if (!src || !tgt) return null;
             const x1 = src.x + R, y1 = src.y + R;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { StartScreen, type AIParsedResult, type AIDebugLog } from "@/components/StartScreen";
 import { GraphCanvas, GraphCanvasRef } from "@/components/GraphCanvas";
 import { AnalysisSidebar, AnalysisData } from "@/components/AnalysisSidebar";
@@ -10,6 +10,7 @@ import { AIUpdateModal } from "@/components/AIUpdateModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
+  Undo2, Redo2,
 } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
 
@@ -18,6 +19,7 @@ import { useGraphState }      from "@/hooks/useGraphState";
 import { useCanvasFilters }   from "@/hooks/useCanvasFilters";
 import { useWorkflowGroups }  from "@/hooks/useWorkflowGroups";
 import { useAIHandlers }      from "@/hooks/useAIHandlers";
+import { useUndoRedo }        from "@/hooks/useUndoRedo";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -44,6 +46,60 @@ export default function Home() {
   // ── Composed hooks ─────────────────────────────────────────────────────────
   const { fullServerState, setFullServerState } = useGraphState();
 
+  // ── Undo / Redo (Track 2) ─────────────────────────────────────────────────
+  const { push: pushSnapshot, undo: popUndo, redo: popRedo, canUndo, canRedo } = useUndoRedo();
+
+  // Stable ref so keyboard handler never captures a stale closure
+  const fullServerStateRef = useRef<typeof fullServerState>(null);
+  useEffect(() => { fullServerStateRef.current = fullServerState; }, [fullServerState]);
+
+  /** Apply a historical state to the server and update local state optimistically. */
+  const applyHistoryState = useCallback(async (state: NonNullable<typeof fullServerState>) => {
+    setFullServerState(state);
+    await fetch("/api/graph-state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action:             "importState",
+        baselinePositions:  state.baselinePositions  ?? {},
+        ecosystemPositions: state.ecosystemPositions ?? {},
+        customNodes:        state.customNodes        ?? [],
+        customEdges:        state.customEdges        ?? [],
+        settings:           state.settings,
+      }),
+    }).catch(console.error);
+  }, [setFullServerState]);
+
+  const handleUndo = useCallback(async () => {
+    const cur = fullServerStateRef.current;
+    if (!cur) return;
+    const prev = popUndo(cur);
+    if (prev) await applyHistoryState(prev);
+  }, [popUndo, applyHistoryState]);
+
+  const handleRedo = useCallback(async () => {
+    const cur = fullServerStateRef.current;
+    if (!cur) return;
+    const next = popRedo(cur);
+    if (next) await applyHistoryState(next);
+  }, [popRedo, applyHistoryState]);
+
+  // Keyboard shortcuts: Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo
+  useEffect(() => {
+    if (!isAppStarted) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if (e.key === "z" &&  e.shiftKey) { e.preventDefault(); handleRedo(); }
+      if (e.key === "y" && !e.shiftKey) { e.preventDefault(); handleRedo(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isAppStarted, handleUndo, handleRedo]);
+
   const {
     searchQuery, setSearchQuery,
     roleFilters, setRoleFilters,
@@ -59,7 +115,7 @@ export default function Home() {
     editingGroupName, setEditingGroupName,
     createGroup, renameGroup, changeGroupColor, deleteGroup,
     GROUP_COLORS,
-  } = useWorkflowGroups(fullServerState, setFullServerState, setGroupFilters);
+  } = useWorkflowGroups(fullServerState, setFullServerState, setGroupFilters, pushSnapshot);
 
   const {
     aiConfig, handleSaveAiConfig, activeApiKey,
@@ -76,7 +132,7 @@ export default function Home() {
     handleAddConnection, handleRemoveEntity,
     appliedRemovalIds, appliedConnectionKeys,
     aiDebugLog, setAiDebugLog,
-  } = useAIHandlers(fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType);
+  } = useAIHandlers(fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType, pushSnapshot);
 
   // ── AI analysis canvas highlights ─────────────────────────────────────────
   // Nodes from AI suggestions that are pending removal (not yet applied) → amber glow
@@ -299,6 +355,28 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Undo / Redo (Track 2) */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleUndo}
+              disabled={!canUndo}
+              title={canUndo ? "Undo (⌘Z)" : "Nothing to undo"}
+              className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={!canRedo}
+              title={canRedo ? "Redo (⌘⇧Z)" : "Nothing to redo"}
+              className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <Redo2 className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="h-6 w-px bg-gray-200" />
+
           {/* AI Analyze */}
           <button onClick={handleAiAnalyze}
             title={activeApiKey ? `Analyze with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Analyze"}
@@ -728,6 +806,7 @@ export default function Home() {
           )}
           onClose={() => { setSelectedId(null); setSelectedType(null); }}
           onDelete={(id) => {
+            if (fullServerState) pushSnapshot(fullServerState);
             fetch("/api/graph-state", {
               method: "PUT",
               headers: { "Content-Type": "application/json" },

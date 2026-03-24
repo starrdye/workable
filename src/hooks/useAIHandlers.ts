@@ -26,6 +26,7 @@ export function useAIHandlers(
   selectedId: string | null,
   setSelectedId: Dispatch<SetStateAction<string | null>>,
   setSelectedType: Dispatch<SetStateAction<'node' | 'edge' | null>>,
+  pushSnapshot: (state: ServerGraphState) => void,
 ) {
   // ── AI Config ──────────────────────────────────────────────────────────────
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => ({
@@ -155,6 +156,9 @@ export function useAIHandlers(
   };
 
   const handleApplyUpdate = async (result: AIUpdateResult) => {
+    // Snapshot before applying so the user can undo the whole AI patch in one step
+    if (fullServerState) pushSnapshot(fullServerState);
+
     // 1. Remove edges first (avoid dangling references)
     for (const edgeId of result.remove.edgeIds)  await put({ action: 'deleteEdge', edgeId });
     // 2. Remove nodes
@@ -248,11 +252,12 @@ export function useAIHandlers(
   };
 
   const handleAddConnection = (conn: SuggestedConnection) => {
+    if (fullServerState) pushSnapshot(fullServerState);
     const edgeId = `${conn.sourceId}-${conn.targetId}-opt`;
-    // Added from analysis = permanent edge, always visible (not improvement-only)
+    // improvement-only: visible in Optimised Workflow mode, faded in Current Workflow
     const newEdge = {
       id: edgeId, source: conn.sourceId, target: conn.targetId,
-      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: false,
+      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
     };
     put({ action: 'addEdge', edge: newEdge });
     setFullServerState(prev => prev ? {
@@ -266,6 +271,7 @@ export function useAIHandlers(
 
   const handleRemoveEntity = (removal: SuggestedRemoval) => {
     if (removal.type === 'node') {
+      if (fullServerState) pushSnapshot(fullServerState);
       put({ action: 'deleteNode', nodeId: removal.id });
       setFullServerState(prev => prev ? {
         ...prev,
