@@ -386,9 +386,7 @@ interface FishboneNode {
 
 ---
 
-### 12b — Cascading Connection Analysis
-
-**What it is:** Every suggested connection addition or removal should come with a `cascadeEffects` array — the secondary changes that become necessary or advisable as a result.
+**What it is:** Every suggested connection addition or removal should trigger a recursive cascade analysis. The AI doesn't stop at the immediate next step; it evaluates the *secondary* effects of its own primary suggestions, and the *tertiary* effects of those, iterating until it determines the graph has reached a completely stable, fully-resolved state (i.e., no hanging nodes, no orphaned sub-workflows, and no new bottlenecks created by the patch).
 
 **The problem today:** Adding the **mary→dashboard** bypass edge makes the **mary→edward→dashboard** path partially redundant, yet the AI Analysis lists them independently. The user adds the bypass, but the old path remains — creating two parallel routes where one should be deprecated, the old bottleneck node becomes stranded (still receives flow but its output is no longer the only path), and the graph becomes misleading rather than improved.
 
@@ -400,29 +398,31 @@ interface SuggestedConnection {
   targetId:       string;
   reason:         string;
   cascadeEffects: Array<{
+    depth:        number;           // 1 = immediate, 2 = secondary, etc.
     type:         'deprecate-edge' | 'reduce-edge-weight' | 'reassign-node-role'
                 | 'suggest-remove-node' | 'update-group';
     targetId:     string;           // which edge or node is affected
     reason:       string;           // why this secondary change follows
     severity:     'required' | 'recommended' | 'optional';
+    triggersEffects: string[];      // IDs of deeper cascade effects caused by this one
   }>;
 }
 ```
 
-**UI proposal:** In the suggestion row, a "▶ 2 follow-on changes" expandable section lists the cascade. Applying the primary suggestion auto-prompts: *"This addition makes the mary→edward edge redundant. Mark it as deprecated?"* with Yes/Skip buttons. Required cascade effects are shown with a warning badge.
+**UI proposal:** In the suggestion row, a "▶ 4 follow-on changes" expandable section lists the deep cascade as a nested tree. Applying the primary suggestion auto-prompts: *"This addition makes the mary→edward edge redundant, which in turn orphans the edward node. Handle entire cascade?"* with Yes/Skip buttons. Required cascade effects are shown with a warning badge.
 
-**Example cascade chain:**
-1. ✅ **Add** mary → dashboard (direct publish bypass)
-2. ↳ ⚠️ **Recommend deprecating** mary → edward (now redundant for routine reports)
-3. ↳ ⚠️ **Recommend deprecating** edward → dashboard (now redundant, edward no longer on critical path)
-4. ↳ 💡 **Suggest** edward's role changes from "Final approver" to "Exception reviewer"
-5. ↳ 💡 **Suggest** adding automation rule node between mary and dashboard
+**Example recursive cascade chain:**
+1. ✅ **Depth 0 (Primary): Add** mary → dashboard (direct publish bypass)
+2. ↳ ⚠️ **Depth 1: Recommend deprecating** mary → edward (now redundant for routine reports)
+3.   ↳ ⚠️ **Depth 2: Recommend deprecating** edward → dashboard (now orphaned from input)
+4.     ↳ 💡 **Depth 3: Suggest** edward's role changes from "Final approver" to "Exception reviewer"
+5.       ↳ 💡 **Depth 4: Suggest** adding automation rule node between mary and dashboard to gate the exceptions
 
 ---
 
-### 12c — Bottleneck Resolution Planner
+### 12c — Bottleneck Resolution Planner (Recursive)
 
-**What it is:** Removing a bottleneck without a replacement plan simply breaks the workflow. The AI should generate a **resolution plan** — a structured sequence of: what stays, what changes role, what new node/automation fills the gap, and in what order to apply changes so the graph is never left in an invalid intermediate state.
+**What it is:** Removing a bottleneck without a replacement plan simply breaks the workflow. The AI should generate a **deep resolution plan** — thinking past the immediate removal to ask "what breaks next?". It must structure a sequence of: what stays, what changes role, what new node/automation fills the gap, and what happens to the downstream nodes that relied on the removed element, iterating until the workflow is fully connected again.
 
 **The problem today:** The "Remove" button on a bottleneck node in the Analysis modal removes the node and its edges, leaving the graph with orphaned endpoints and no guidance on what fills the function.
 
@@ -507,21 +507,33 @@ interface AnalysisResult {
 
 ---
 
-### Implementation Approach: Two-Pass AI Prompting
+### Implementation Approach: Iterative/Recursive Agentic Loop
 
-Generating cascading analysis in a single prompt is fragile — the AI tends to surface only the most obvious cascade steps if asked to do everything at once. A two-pass approach is more reliable:
+Generating a deep cascading analysis in a single prompt is fragile — the AI tends to surface only the most obvious Depth-1 cascade steps and hallucinate the rest if asked to predict the entire chain at once. An iterative approach is much more robust:
 
-**Pass 1 — Structural analysis (current prompt, extended)**
+**Pass 1 — Structural Discovery**
 Send the workflow graph and ask for:
-1. Bottlenecks and their fishbone causes
-2. Suggested additions/removals without cascade detail yet
-3. A rough phasing order
+1. Bottlenecks and their fishbone causes.
+2. Initial primary suggestions (additions/removals) to fix the root causes.
 
-**Pass 2 — Cascade expansion**
-For each suggestion from Pass 1, send a focused prompt:
-> *"Given this workflow graph, we are about to add an edge from {source} to {target}. List all edges, nodes, and metadata that should be updated, deprecated, or added as a direct result of this change. Be specific about which changes are required vs optional."*
+**Pass N — Recursive Evaluation (The "Does it break?" Loop)**
+For each primary suggestion from Pass 1, spin up an evaluation loop:
+1. Apply the primary suggestion to an in-memory graph shadow copy.
+2. Send the *modified* graph back to the AI with the prompt:
+> *"Given this workflow graph, we just [applied change]. Does this change leave any nodes orphaned? Does it create a new bottleneck? Are any existing edges now redundant? If yes, propose the required fixes. If no, reply 'STABLE'."*
+3. If the AI proposes fixes, apply them to the shadow copy and repeat step 2.
+4. The loop terminates when the AI replies "STABLE" (or hits a depth limit of 5 to prevent infinite loops). 
+5. The accumulated changes are flattened into the final `resolutionPlan` or `cascadeEffects` tree returned to the frontend.
 
-This keeps each cascade prompt small and focused, reduces hallucination risk, and allows progressive disclosure in the UI — users can expand each suggestion to trigger its cascade analysis on demand (lazy-loaded).
+This iterative evaluation mimics true human "cascading thinking" — walking the graph step-by-step and reacting to the consequences of each action before planning the next.
+
+---
+
+### 12f — Execution Architecture & State Validation
+
+**Backend Validation:** The AI-generated `resolutionPlan` specifies `isPrerequisite` and `isFollowUp` actions. The server route processing the `PUT /api/graph-state` apply command must enforce that prerequisite actions (e.g. adding a new bypass edge) succeed before the primary removal (e.g. deleting the bottleneck) executes. If it detects orphaned edges the client didn't specify in the resolution, the server rejects the patch to prevent the graph from breaking.
+
+**Frontend Transaction Stack:** The `useUndoRedo` hook currently saves a single snapshot per action. A cascading apply triggers multiple sequential graph mutations (add edge 1, remove edge 2, update node 3). The UI must batch these into a single transaction so that `Cmd+Z` reverts the entire cascade chain perfectly, rather than unwinding it operation by operation.
 
 ---
 
@@ -676,7 +688,23 @@ A minimal Playwright suite that verifies the full user journey without mocking i
 
 ---
 
-### Priority: P2 for 13a–13f, P1 for 13g (smoke tests catch regressions before merge)
+### 13h — AI Cascading Analysis Tests
+
+**Target:** `src/lib/aiSchemas.ts` and `src/hooks/useAIHandlers.ts`
+
+These tests assure the multi-step cascading logic introduced in Track 12 resolves safely without corrupting the graph.
+
+| Test case | What to verify |
+|---|---|
+| Zod Schema validates `cascadeEffects` | `cascadeEffects` array enforces valid target IDs and required `severity` values |
+| Dependent apply ordering | Applying a resolution plan correctly fires `isPrerequisite` actions before the primary node removal |
+| Transaction batching for Undo | A 5-step cascade resolves to exactly *one* new snapshot in `useUndoRedo`; `Cmd+Z` restores all 5 changes simultaneously |
+| Backend cycle rejection | Analysis returning conflicting `prerequisitePhases` (cycles) rejects via validation phase |
+| Orphaned edge detection | Attempting a cascading remove on a node without addressing its connected edges emits a warning |
+
+---
+
+### Priority: P2 for 13a–13f and 13h, P1 for 13g (smoke tests catch regressions before merge)
 
 ---
 
