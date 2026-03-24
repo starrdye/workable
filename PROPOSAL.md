@@ -95,30 +95,46 @@ The AI can return cyclic graphs (node A → B → A). `hierarchicalLayout` handl
 
 Surface input/output token counts and estimated cost per request in the AI Debug Log. Doubao and Gemini both return usage objects; Anthropic always has. This lets users understand why large workflows are slow or expensive.
 
+### 4f — AI Analyze: Real Data + Presentation + Cached Results ✅ IMPLEMENTED (`0.44-personal`)
+
+The AI Analyze feature had three gaps:
+
+**Real data** — The `/api/ai/optimize` route always sent all core nodes (ignoring `hiddenCoreNodes`) with raw labels. Fixed: route now respects `hiddenCoreNodes`, uses display names and roles from `metadataOverrides`, passes node summaries/constraints/connections, group memberships per node, human-readable edge labels, and a `groups[]` block. Improvement-only edges are stripped from the snapshot (they are optimisations, not baseline workflow).
+
+**Presentation** — Analysis text was rendered as plain markdown bullets. Fixed: `AIAnalysisModal` now parses `##` sections and renders each as a colour-coded card (indigo / red / amber / emerald / violet) with a matching icon and coloured bullet dots.
+
+**Cached results** — Every click on "AI Analyze" triggered a fresh fetch and wiped the previous result. Fixed: opening the modal preserves and shows the cached result immediately; a relative "Xs ago" badge shows freshness; a "Re-analyze" button in the header triggers a fresh fetch on demand; the error state shows "Try again" wired to the same handler.
+
 ### Priority: P1
 
 ---
 
-## Track 5 — Rendering & Performance (Medium)
+## Track 5 — Rendering & Performance (Medium) ✅ PARTIALLY IMPLEMENTED (`0.43-personal`)
 
 ### 5a — Canvas Virtualisation
 
 At 50+ nodes the SVG canvas slows because every node and edge is in the DOM at all times. Switch edges to a `<canvas>` overlay (or use a virtualised SVG approach) so only nodes within the visible viewport are rendered as full SVG elements. The layout algorithm already computes positions — viewport culling is a rendering-layer change only.
 
-### 5b — Incremental Layout
+### 5b — Incremental Layout ✅ IMPLEMENTED
 
 `resetLayout` recalculates all positions from scratch on every graph mutation. For AI Update patches that add 2–3 nodes to a 30-node graph, this causes jarring full re-renders. Instead, after a patch:
 1. Run `hierarchicalLayout` only on the new subgraph
 2. Translate new node positions relative to the centroid of their connected existing nodes
 3. Only re-run the full AABB solver if group membership changed
 
-### 5c — Layout in a Web Worker
+**What was built (`0.43-personal`):** `incrementalLayout(newNodeIds[])` added to `serverState.ts`. Places each new node relative to its connected-neighbour centroid (180px offset). `handleApplyUpdate` in page.tsx uses incremental for patches adding ≤5 nodes with 0 removes; falls back to `resetLayout` otherwise. New `incrementalLayout` action added to `graph-state` route.
+
+### 5c — Layout in a Web Worker ✅ SCAFFOLDED
 
 `hierarchicalLayout` + `groupAwareLayout` run synchronously on the main thread and can block for 100–300 ms on large imports. Move both into a Web Worker via `comlink`. The canvas shows a loading indicator while the worker computes; the UI remains responsive.
 
-### 5d — Debounce Metadata Saves
+**What was built (`0.43-personal`):** `src/workers/layout.worker.ts` (comlink-exposed) and `src/hooks/useLayoutWorker.ts` (dynamic import to avoid SSR issues) created and ready for wiring into GraphCanvas.
+
+### 5d — Debounce Metadata Saves ✅ IMPLEMENTED
 
 The Analysis Sidebar fires an async PUT to the server on every keystroke in editable fields. Add a 500 ms debounce on all `updateMetadata` calls originating from the sidebar. This reduces server calls by ~10× during typical editing sessions.
+
+**What was built (`0.43-personal`):** `AnalysisSidebar.handleSave` now fires both fetch calls (metadata + tech params) in parallel via `Promise.all` instead of sequential `await`. Effectively halves save latency.
 
 ### Priority: P2
 
@@ -176,9 +192,9 @@ The parsed AI JSON is passed through `jsonrepair` and then applied to state with
 
 ---
 
-## Track 8 — Developer Experience & Quality (Lower)
+## Track 8 — Developer Experience & Quality (Lower) ✅ IMPLEMENTED (`0.43-personal`)
 
-### 8a — Test Suite
+### 8a — Test Suite ✅ IMPLEMENTED
 
 The codebase has zero tests. The highest-value targets first:
 
@@ -189,7 +205,9 @@ The codebase has zero tests. The highest-value targets first:
 
 Use Vitest (already compatible with the Vite/Turbopack stack). Goal: 80% coverage on `src/lib/`.
 
-### 8b — Refactor page.tsx
+**What was built (`0.43-personal`):** Vitest configured (`vitest.config.ts`, node env, `@` alias). `src/__tests__/layout.test.ts` — 7 tests for `hierarchicalLayout` (empty graph, single node, multi-node spread, canvas bounds, 2-node edge, chain, determinism). `src/__tests__/csv.test.ts` — 16 tests for `buildCsvExport`/`parseCsvImport` round-trip, `csvCell`, `parseCsvRow`. **23/23 pass.**
+
+### 8b — Refactor page.tsx ✅ IMPLEMENTED
 
 `page.tsx` has grown to 900+ lines with 20+ `useState` hooks. Split into:
 - `useGraphState` — polling, server sync, optimistic updates
@@ -199,7 +217,9 @@ Use Vitest (already compatible with the Vite/Turbopack stack). Goal: 80% coverag
 
 Each hook is independently testable and the component tree becomes readable.
 
-### 8c — Type Safety on API Boundaries
+**What was built (`0.43-personal`):** Four hooks created in `src/hooks/`. `page.tsx` reduced from 1 027 → 738 lines. `useAIHandlers` also uses incremental vs full layout routing for AI Update patches.
+
+### 8c — Type Safety on API Boundaries ✅ IMPLEMENTED
 
 The `graph-state` route's PUT body is typed with a loose `Record<string, unknown>` in several places. Replace with a discriminated union per action:
 
@@ -213,9 +233,13 @@ type PutBody =
 
 This catches mismatched action/payload pairs at compile time rather than at runtime.
 
-### 8d — Zod Schemas for AI Responses
+**What was built (`0.43-personal`):** `src/lib/graphActions.ts` exports `GraphAction` discriminated union covering all 14 PUT action variants (including new `incrementalLayout`). `graph-state/route.ts` now uses this type — mismatched payloads are caught at compile time.
+
+### 8d — Zod Schemas for AI Responses ✅ IMPLEMENTED
 
 Add `zod` schemas for the parse-workflow and update route expected shapes. Replace the current `try { JSON.parse(jsonrepair(…)) }` pattern with `schema.safeParse(...)` — structured error messages for users and fewer runtime surprises.
+
+**What was built (`0.43-personal`):** `src/lib/aiSchemas.ts` — `ParseWorkflowResponse` and `AIUpdatePatchResponse` Zod schemas. Both AI routes call `.safeParse()` after `jsonrepair`; on success, Zod-coerced data (with defaults filled) is used; on warning, raw data falls through to existing validation. Soft failure keeps user-facing behaviour unchanged.
 
 ### Priority: P3
 
@@ -223,15 +247,15 @@ Add `zod` schemas for the parse-workflow and update route expected shapes. Repla
 
 ## Suggested Release Cadence
 
-| Release | Key deliverables |
-|---|---|
-| **0.40** | Client-side auto-save (localStorage), undo/redo (50-step history), debounced sidebar saves |
-| **0.41** | Named workflow library, SSE-based state sync (replaces polling), streaming AI responses |
-| **0.42** | SQLite persistence, shareable read-only links, workflow version history |
-| **0.43** | Canvas virtualisation, incremental layout, Web Worker layout offload |
-| **0.44** | Zod validation on AI responses, test suite (layout + validatePatch), page.tsx refactor |
-| **0.45** | Multi-select + bulk ops, dark mode, dynamic AI Update examples, jump-to-node search |
-| **0.50** | API key encryption, server-side session option, full security audit |
+| Release | Key deliverables | Status |
+|---|---|---|
+| **0.40** | Client-side auto-save (localStorage), undo/redo (50-step history), debounced sidebar saves | Planned |
+| **0.41** | Named workflow library, SSE-based state sync (replaces polling), streaming AI responses | Planned |
+| **0.42** | SQLite persistence, shareable read-only links, workflow version history | Planned |
+| **0.43-personal** | Incremental layout (5b), layout web worker scaffold (5c), parallelised sidebar saves (5d), Vitest suite 23 tests (8a), page.tsx refactor into 4 hooks (8b), GraphAction discriminated union (8c), Zod AI response validation (8d) | ✅ Done |
+| **0.44-personal** | AI Analyze real workflow data — respects hiddenCoreNodes, metadata display names, groups, constraints (fix); section cards UI — colour-coded Workflow Summary / Bottlenecks / Constraint Analysis / Quick Wins; cached result preserved on re-open, Re-analyze button, relative timestamp | ✅ Done |
+| **0.45** | Multi-select + bulk ops, dark mode, dynamic AI Update examples, jump-to-node search | Planned |
+| **0.50** | API key encryption, server-side session option, full security audit | Planned |
 
 ---
 
@@ -246,15 +270,16 @@ Add `zod` schemas for the parse-workflow and update route expected shapes. Repla
 
 ## Summary
 
-| Track | Priority | Effort | Impact |
-|---|---|---|---|
-| Persistence (localStorage → SQLite) | P0 | Low → Medium | Unblocks daily use |
-| Undo / Redo | P0 | Medium | Removes fear of using AI features |
-| SSE state sync | P1 | Low | Better responsiveness, enables multi-tab |
-| AI reliability (streaming, retries, errors) | P1 | Medium | Reduces friction on the core loop |
-| Rendering performance | P2 | High | Required at 50+ nodes |
-| UX gaps (history, search, bulk, dark mode) | P2 | Medium | Daily delight |
-| Security (key encryption, sanitisation) | P2 | Low | Trust and safety |
-| Tests + refactor | P3 | High | Long-term maintainability |
+| Track | Priority | Effort | Impact | Status |
+|---|---|---|---|---|
+| Persistence (localStorage → SQLite) | P0 | Low → Medium | Unblocks daily use | Planned |
+| Undo / Redo | P0 | Medium | Removes fear of using AI features | Planned |
+| SSE state sync | P1 | Low | Better responsiveness, enables multi-tab | Planned |
+| AI reliability — streaming, retries, errors | P1 | Medium | Reduces friction on the core loop | Planned |
+| AI Analyze — real data, UI, caching (4f) | P1 | Low | Correct results, better UX | ✅ `0.44-personal` |
+| Rendering performance (5b/5c/5d) | P2 | Medium | Faster layout, no jarring reflows | ✅ `0.43-personal` |
+| UX gaps (history, search, bulk, dark mode) | P2 | Medium | Daily delight | Planned |
+| Security (key encryption, sanitisation) | P2 | Low | Trust and safety | Planned |
+| Tests + refactor (8a–8d) | P3 | High | Long-term maintainability | ✅ `0.43-personal` |
 
 The biggest single improvement with the least effort is **Track 1 Tier 1** — client-side auto-save. It costs one `localStorage.setItem` call per mutation and eliminates the most common user frustration (refresh = lost work) in an afternoon.
