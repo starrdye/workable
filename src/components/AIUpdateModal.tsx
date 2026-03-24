@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X, GitMerge, Loader2, AlertCircle, Plus, Trash2, Pencil, ChevronLeft, ArrowRight } from "lucide-react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 // ── Public types (re-exported so page.tsx can import them) ────────────────────
 
@@ -159,6 +160,7 @@ export function AIUpdateModal({
   const [view, setView]       = useState<"prompt" | "preview">("prompt");
   const [prompt, setPrompt]   = useState("");
   const textareaRef           = useRef<HTMLTextAreaElement>(null);
+  const modalRef              = useFocusTrap(isOpen);
 
   // Switch to preview automatically when result arrives
   useEffect(() => {
@@ -214,7 +216,7 @@ export function AIUpdateModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col relative border border-slate-100">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-update-title" className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col relative border border-slate-100">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 flex-shrink-0">
@@ -223,7 +225,7 @@ export function AIUpdateModal({
               <GitMerge className="w-4 h-4 text-violet-600" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-800">AI Update</h2>
+              <h2 id="ai-update-title" className="text-base font-bold text-slate-800">AI Update</h2>
               {view === "preview" && result ? (
                 <p className="text-xs text-slate-500 font-medium">{diffSummaryPill(result)}</p>
               ) : (

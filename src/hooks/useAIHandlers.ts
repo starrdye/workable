@@ -260,10 +260,24 @@ export function useAIHandlers(
       sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
     };
     put({ action: 'addEdge', edge: newEdge });
-    setFullServerState(prev => prev ? {
-      ...prev,
-      customEdges: [...(prev.customEdges ?? []).filter(e => e.id !== edgeId), newEdge],
-    } : prev);
+    
+    // Process cascading automated actions (e.g. orphans)
+    const orphanedIds = conn.cascadeEffects
+      ?.filter(e => e.type === 'orphan' && e.id !== 'none' && !e.id.includes('effect'))
+      .map(e => e.id) || [];
+      
+    orphanedIds.forEach(nodeId => {
+      put({ action: 'deleteNode', nodeId });
+    });
+
+    setFullServerState(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        customNodes: (prev.customNodes ?? []).filter(n => !orphanedIds.includes(n.id)),
+        customEdges: [...(prev.customEdges ?? []).filter(e => e.id !== edgeId && !orphanedIds.includes(e.source) && !orphanedIds.includes(e.target)), newEdge],
+      };
+    });
     // Mark as applied so canvas removes the suggested-arc highlight
     const key = `${conn.sourceId}-${conn.targetId}`;
     setAppliedConnectionKeys(prev => { const next = new Set(prev); next.add(key); return next; });

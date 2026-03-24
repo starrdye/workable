@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { PROVIDERS, type AIProvider, type ProviderMeta } from "@/lib/aiClient";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,8 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
   const [config, setConfig] = useState<AIConfig>(currentConfig);
   const [showKey, setShowKey] = useState<Record<AIProvider, boolean>>({ anthropic: false, gemini: false, doubao: false });
   const [saved, setSaved] = useState(false);
+  
+  const modalRef = useFocusTrap(isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -135,12 +138,12 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg flex flex-col relative border border-slate-100 max-h-[90vh] overflow-hidden">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-settings-title" className="bg-white rounded-3xl shadow-2xl w-full max-w-lg flex flex-col relative border border-slate-100 max-h-[90vh] overflow-hidden">
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 shrink-0">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">AI Settings</h2>
+            <h2 id="ai-settings-title" className="text-lg font-bold text-slate-800">AI Settings</h2>
             <p className="text-xs text-slate-500 mt-0.5">Choose your AI provider, model, and API key</p>
           </div>
           <button

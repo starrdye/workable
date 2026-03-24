@@ -20,6 +20,7 @@ import { useCanvasFilters }   from "@/hooks/useCanvasFilters";
 import { useWorkflowGroups }  from "@/hooks/useWorkflowGroups";
 import { useAIHandlers }      from "@/hooks/useAIHandlers";
 import { useUndoRedo }        from "@/hooks/useUndoRedo";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -33,6 +34,7 @@ export default function Home() {
   const [isAppStarted,  setIsAppStarted]  = useState(false);
   const [showImprovements, setShowImprovements] = useState(false);
   const [showDataFlow,     setShowDataFlow]     = useState(false);
+  const [highContrast,     setHighContrast]     = useState(false);
   const [selectedId,   setSelectedId]    = useState<string | null>(null);
   const [selectedType, setSelectedType]  = useState<"node" | "edge" | null>(null);
   const [analysisData, setAnalysisData]  = useState<AnalysisData | null>(null);
@@ -41,6 +43,7 @@ export default function Home() {
 
   const canvasRef   = useRef<GraphCanvasRef>(null);
   const importInput = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const workflowCache = useRef<Record<string, any> | null>(null);
 
   // ── Composed hooks ─────────────────────────────────────────────────────────
@@ -84,21 +87,15 @@ export default function Home() {
     if (next) await applyHistoryState(next);
   }, [popRedo, applyHistoryState]);
 
-  // Keyboard shortcuts: Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo
-  useEffect(() => {
-    if (!isAppStarted) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
-      if (e.key === "z" &&  e.shiftKey) { e.preventDefault(); handleRedo(); }
-      if (e.key === "y" && !e.shiftKey) { e.preventDefault(); handleRedo(); }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isAppStarted, handleUndo, handleRedo]);
+  // Track 9: Keyboard shortcuts (Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo, Cmd+E = export, Cmd+K = search)
+  useKeyboardShortcuts(isAppStarted, {
+    onUndo: handleUndo,
+    onRedo: handleRedo,
+    onExportCsv: () => canvasRef.current?.exportCsv(),
+    onSearchOpen: () => {
+      searchInputRef.current?.focus();
+    }
+  });
 
   const {
     searchQuery, setSearchQuery,
@@ -361,6 +358,7 @@ export default function Home() {
               onClick={handleUndo}
               disabled={!canUndo}
               title={canUndo ? "Undo (⌘Z)" : "Nothing to undo"}
+              aria-label={canUndo ? "Undo" : "Nothing to undo"}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Undo2 className="w-4 h-4" />
@@ -369,6 +367,7 @@ export default function Home() {
               onClick={handleRedo}
               disabled={!canRedo}
               title={canRedo ? "Redo (⌘⇧Z)" : "Nothing to redo"}
+              aria-label={canRedo ? "Redo" : "Nothing to redo"}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Redo2 className="w-4 h-4" />
@@ -380,6 +379,7 @@ export default function Home() {
           {/* AI Analyze */}
           <button onClick={handleAiAnalyze}
             title={activeApiKey ? `Analyze with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Analyze"}
+            aria-label="AI Analyze Workflow"
             className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               activeApiKey
                 ? "border-indigo-300 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
@@ -392,6 +392,7 @@ export default function Home() {
           {/* AI Update */}
           <button onClick={() => { if (!activeApiKey) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
             title={activeApiKey ? `Update workflow with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Update"}
+            aria-label="AI Update Workflow"
             className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               activeApiKey
                 ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
@@ -403,6 +404,7 @@ export default function Home() {
 
           {/* AI Settings */}
           <button onClick={() => setShowAISettings(true)} title="AI settings"
+            aria-label="AI Settings"
             className="text-sm font-semibold p-2 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors relative">
             <Settings className="w-4 h-4" />
             {activeApiKey && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white" />}
@@ -411,14 +413,17 @@ export default function Home() {
           <div className="h-6 w-px bg-gray-300" />
 
           <button onClick={() => canvasRef.current?.exportPng()} title="Export graph as PNG"
+            aria-label="Export graph as PNG"
             className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
             <Download className="w-4 h-4" />PNG
           </button>
           <button onClick={() => canvasRef.current?.exportCsv()} title="Export workflow as CSV"
+            aria-label="Export workflow as CSV"
             className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
             <FileText className="w-4 h-4" />CSV
           </button>
           <button onClick={() => importInput.current?.click()} title="Import workflow from CSV"
+            aria-label="Import workflow from CSV"
             className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
             <Upload className="w-4 h-4" />Import
           </button>
@@ -428,6 +433,7 @@ export default function Home() {
 
           {/* Improvements toggle */}
           <button onClick={() => setShowImprovements((v) => !v)}
+            aria-label={showImprovements ? "Disable Improvements overlay" : "Enable Improvements overlay"}
             className={`text-sm font-semibold px-4 py-1.5 rounded-full border transition-colors flex items-center gap-2 ${
               showImprovements
                 ? "border-emerald-500 bg-emerald-50 text-emerald-600"
@@ -505,6 +511,31 @@ export default function Home() {
                 <p className="text-[10px] text-indigo-500 mt-1.5 ml-1">All connections lit — showing live data flow.</p>
               )}
             </div>
+
+            {/* High Contrast toggle */}
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <button
+                aria-label={highContrast ? "Disable High Contrast" : "Enable High Contrast"}
+                onClick={() => setHighContrast(v => !v)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border transition-colors ${
+                  highContrast
+                    ? "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`relative flex h-2.5 w-2.5 ${highContrast ? "" : "opacity-50"}`}>
+                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${highContrast ? "bg-fuchsia-500" : "bg-slate-400"}`} />
+                  </span>
+                  <span className="text-xs font-semibold">High Contrast</span>
+                </div>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  highContrast ? "bg-fuchsia-100 text-fuchsia-600" : "bg-slate-100 text-slate-400"
+                }`}>
+                  {highContrast ? "ON" : "OFF"}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -513,10 +544,11 @@ export default function Home() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search nodes by name…"
+                placeholder="Search nodes by name… (Cmd+K)"
                 className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 bg-slate-50"
               />
               {searchQuery && (
@@ -755,6 +787,7 @@ export default function Home() {
             ref={canvasRef}
             showImprovements={showImprovements}
             showDataFlow={showDataFlow}
+            highContrast={highContrast}
             selectedId={selectedId}
             selectedType={selectedType}
             onSelectNode={(id, type) => { setSelectedId(id); setSelectedType(type); }}

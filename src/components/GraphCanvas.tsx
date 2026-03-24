@@ -5,6 +5,7 @@ import {
 } from "react";
 import { CORE_NODE_IDS, ROLE_COLOR } from "@/lib/constants";
 import type { NodeTask } from "@/lib/serverState";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface GraphCanvasRef {
@@ -19,6 +20,8 @@ export interface GraphCanvasProps {
   showImprovements: boolean;
   /** When true, all edges render at full opacity with animated flow — "always-on flow mode". */
   showDataFlow?:    boolean;
+  /** When true, edges are more visible, borders are thicker, and text contrast is increased. */
+  highContrast?:    boolean;
   selectedId:       string | null;
   selectedType:     "node" | "edge" | null;
   onSelectNode:     (id: string, type: "node" | "edge") => void;
@@ -445,7 +448,7 @@ function downloadBlob(content: string, filename: string, mime: string) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
   function GraphCanvas({
-    showImprovements, showDataFlow = false, selectedId, selectedType,
+    showImprovements, showDataFlow = false, highContrast = false, selectedId, selectedType,
     onSelectNode, onDeselect, onHover, onHoverEnd, onDeleteNode,
     searchQuery = "",
     activeFilters = { roles: [], groupIds: [] },
@@ -711,41 +714,70 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       onDeselect();
     }, [onDeselect]);
 
-    useEffect(() => {
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key !== "Delete" && e.key !== "Backspace") return;
-        if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
-        if (!selectedId) return;
-        if (selectedType === "node") {
-          if (CORE_IDS.has(selectedId)) {
-            const newHidden = [...new Set([...(serverState?.settings?.hiddenCoreNodes ?? []), selectedId])];
-            setServerState((prev) => prev ? { ...prev, settings: { ...prev.settings, hiddenCoreNodes: newHidden }, lastUpdated: Date.now() } : prev);
-            fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "updateSettings", settings: { hiddenCoreNodes: newHidden } }),
-            }).catch(console.error);
-          } else {
-            onDeleteNode(selectedId);
-            setServerState((prev) => prev ? {
-              ...prev,
-              customNodes: prev.customNodes.filter(n => n.id !== selectedId),
-              customEdges: prev.customEdges.filter(e2 => e2.source !== selectedId && e2.target !== selectedId),
-              lastUpdated: Date.now(),
-            } : prev);
-            fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "deleteNode", nodeId: selectedId }),
-            }).catch(console.error);
-          }
-        } else if (selectedType === "edge") {
-          setServerState((prev) => prev ? { ...prev, customEdges: prev.customEdges.filter(e2 => e2.id !== selectedId), lastUpdated: Date.now() } : prev);
+    const handleDeleteSelected = useCallback(() => {
+      if (!selectedId) return;
+      if (selectedType === "node") {
+        if (CORE_IDS.has(selectedId)) {
+          const newHidden = [...new Set([...(serverState?.settings?.hiddenCoreNodes ?? []), selectedId])];
+          setServerState((prev) => prev ? { ...prev, settings: { ...prev.settings, hiddenCoreNodes: newHidden }, lastUpdated: Date.now() } : prev);
           fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "deleteEdge", edgeId: selectedId }),
+            body: JSON.stringify({ action: "updateSettings", settings: { hiddenCoreNodes: newHidden } }),
           }).catch(console.error);
-          onDeselect();
+        } else {
+          onDeleteNode(selectedId);
+          setServerState((prev) => prev ? {
+            ...prev,
+            customNodes: prev.customNodes.filter(n => n.id !== selectedId),
+            customEdges: prev.customEdges.filter(e2 => e2.source !== selectedId && e2.target !== selectedId),
+            lastUpdated: Date.now(),
+          } : prev);
+          fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "deleteNode", nodeId: selectedId }),
+          }).catch(console.error);
         }
-      };
-      window.addEventListener("keydown", onKey);
-      return () => window.removeEventListener("keydown", onKey);
-    }, [selectedId, selectedType, onDeleteNode, onDeselect]);
+      } else if (selectedType === "edge") {
+        setServerState((prev) => prev ? { ...prev, customEdges: prev.customEdges.filter(e2 => e2.id !== selectedId), lastUpdated: Date.now() } : prev);
+        fetch("/api/graph-state", { method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "deleteEdge", edgeId: selectedId }),
+        }).catch(console.error);
+        onDeselect();
+      }
+    }, [selectedId, selectedType, serverState?.settings?.hiddenCoreNodes, onDeleteNode, onDeselect]);
+
+    const handleEscape = useCallback(() => {
+      setCtxMenu(null);
+      setAddForm(null);
+      setConnectFrom(null);
+      setTaskPopup(null);
+      onDeselect();
+    }, [onDeselect]);
+
+    const handleAddNodeShortcut = useCallback(() => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const vx = rect.width / 2;
+      const vy = rect.height / 2;
+      const { x, y } = clientToCanvas(rect.left + vx, rect.top + vy);
+      setAddForm({ cx: x, cy: y, label: "", initials: "", role: "person" });
+    }, [clientToCanvas]);
+
+    const handleCycleNodes = useCallback(() => {
+      if (!nodes.length) return;
+      if (!selectedId || selectedType !== "node") {
+        onSelectNode(nodes[0].id, "node");
+        return;
+      }
+      const idx = nodes.findIndex(n => n.id === selectedId);
+      const nextNode = nodes[(idx + 1) % nodes.length];
+      onSelectNode(nextNode.id, "node");
+    }, [nodes, selectedId, selectedType, onSelectNode]);
+
+    useKeyboardShortcuts(true, {
+      onDeleteSelected: handleDeleteSelected,
+      onEscape: handleEscape,
+      onAddNode: handleAddNodeShortcut,
+      onCycleNodes: handleCycleNodes,
+    });
 
     useImperativeHandle(ref, () => ({
       exportPng: () => downloadSvgAsPng(buildSvgExport(nodes, edges)),
@@ -1080,10 +1112,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             const baseOpacity = edge.isDeprecated
               ? (showImprovements ? 0.06 : 0.10)
               : isAlwaysLit ? 0.90
-              : 0.30;
-            const dimOpacity = showDataFlow ? 0.45 : 0.05;
+              : highContrast ? 0.80 : 0.30;
+            const dimOpacity = showDataFlow ? 0.45 : (highContrast ? 0.25 : 0.05);
             const highlightOpacity = anyHover
-              ? (isHoveredEdge || isConnected ? 0.95 : dimOpacity)
+              ? (isHoveredEdge || isConnected ? 1.0 : dimOpacity)
               : (isSelected ? 1 : baseOpacity);
 
             const strokeColor = isSelected ? "#4F46E5"
@@ -1196,6 +1228,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           return (
             <div
               key={node.id}
+              role="button"
+              aria-label={`${nodeDisplayName} — ${node.role}`}
+              tabIndex={0}
               data-nodeid={node.id}
               style={{
                 position: "absolute", left: node.x, top: node.y,
@@ -1203,9 +1238,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 background: "white",
                 borderRadius: "50%",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontWeight: 700, fontSize: 14,
-                border: `${2}px solid ${node.borderColor}`,
+                fontWeight: highContrast ? 800 : 700, fontSize: 14,
+                border: `${highContrast ? 4 : 2}px solid ${node.borderColor}`,
                 color: node.textColor,
+                textShadow: highContrast ? "0px 1px 2px rgba(0,0,0,0.5)" : undefined,
                 boxShadow: isBotl
                   ? "0 0 0 3px rgba(245,158,11,0.35), 0 4px 6px -1px rgba(0,0,0,0.1)"
                   : highlight

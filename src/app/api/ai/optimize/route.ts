@@ -16,7 +16,15 @@ Analyze the provided workflow graph and return ONLY a valid JSON object with thi
       "targetName": "Target Node Name",
       "connectionName": "Short label for this connection",
       "connectionType": "optimised",
-      "reason": "One sentence explaining why this connection improves the workflow."
+      "reason": "One sentence explaining why this connection improves the workflow.",
+      "cascadeEffects": [
+        {
+          "id": "effect_1",
+          "type": "stable",
+          "description": "Explanation of cascading impact (or lack thereof)",
+          "depth": 1
+        }
+      ]
     }
   ],
   "suggestedRemovals": [
@@ -25,7 +33,13 @@ Analyze the provided workflow graph and return ONLY a valid JSON object with thi
       "id": "existing_node_id",
       "name": "Entity Name",
       "action": "remove|automate|merge",
-      "reason": "One sentence explaining why this entity should be removed, automated, or merged."
+      "reason": "One sentence explaining why this entity should be removed, automated, or merged.",
+      "fishboneBones": [
+        {
+          "category": "Process",
+          "cause": "Specific root cause for this bottleneck/redundancy"
+        }
+      ]
     }
   ]
 }
@@ -41,15 +55,33 @@ Rules for suggestedConnections:
 - Propose 1-3 new directed connections that would optimise the workflow
 - connectionType is always "optimised"
 - Only reference node IDs that actually exist in the workflow data provided
+- cascadeEffects: Recursively predict if this connection orphans existing nodes or creates new bottlenecks. Output "stable" if none. depth starts at 1.
 - If no useful connections can be suggested, return an empty array []
 
 Rules for suggestedRemovals:
 - Propose 0-3 entities (nodes) that are redundant, automatable, or could be merged
 - action: "remove" = delete entirely, "automate" = replace human with tool, "merge" = fold into another node
+- fishboneBones: Provide Ishikawa (Fishbone) root cause analysis for the removal, choosing from "People", "Process", "Technology", or "Environment".
 - Only reference node IDs that actually exist in the workflow data provided
 - If no removals are warranted, return an empty array []
 
 Output ONLY the JSON object — no markdown fences, no extra text`;
+
+const PASS2_PROMPT = `You are a workflow validation AI.
+A suggested change is being applied to the workflow. You must evaluate if this change breaks the workflow.
+Specifically, does this new connection orphan any existing nodes? Does it bypass a necessary bottleneck in a dangerous way?
+Return ONLY a JSON array of cascading effects describing the impact:
+
+[
+  {
+    "id": "affected_node_id",
+    "type": "orphan" | "bottleneck" | "stable",
+    "description": "Explanation of why it is orphaned, bottlenecked, or stable.",
+    "depth": 1
+  }
+]
+
+If the change is perfectly safe, return a single array item with type "stable" and id "none". Output ONLY the JSON array — no markdown fences, no extra text.`;
 
 function stripFences(text: string): string {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
@@ -197,20 +229,57 @@ export async function POST(req: NextRequest) {
     });
 
     let analysis: string;
-    let suggestedConnections: unknown[] = [];
-    let suggestedRemovals: unknown[] = [];
+    let suggestedConnections: any[] = [];
+    let suggestedRemovals: any[] = [];
 
     try {
       const parsed = JSON.parse(stripFences(rawText)) as {
         analysis?: string;
-        suggestedConnections?: unknown[];
-        suggestedRemovals?: unknown[];
+        suggestedConnections?: any[];
+        suggestedRemovals?: any[];
       };
       analysis             = parsed.analysis ?? rawText;
       suggestedConnections = Array.isArray(parsed.suggestedConnections) ? parsed.suggestedConnections : [];
       suggestedRemovals    = Array.isArray(parsed.suggestedRemovals)    ? parsed.suggestedRemovals    : [];
     } catch {
       analysis = rawText;
+    }
+
+    // Pass 2: Recursive Cascading Validation (Depth 1)
+    if (suggestedConnections.length > 0) {
+      const validationPromises = suggestedConnections.map(async (conn) => {
+        try {
+          // Apply Delta
+          const tempEdges = [...coreEdges, ...customEdges, {
+            id: `temp_${conn.sourceId}_${conn.targetId}`,
+            sourceName: nameLookup[conn.sourceId] ?? conn.sourceId,
+            targetName: nameLookup[conn.targetId] ?? conn.targetId,
+          }];
+          const modifiedSnapshot = JSON.stringify({
+            coreNodes, coreEdges: tempEdges, customNodes, groups: groupSummary
+          }, null, 2);
+
+          const pass2Text = await generateText({
+            provider,
+            model: resolvedModel,
+            apiKey,
+            systemPrompt: PASS2_PROMPT,
+            userMessage: `Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName}'.\n\nWorkflow:\n${modifiedSnapshot}`,
+            maxTokens: 1000,
+            baseUrl: baseUrl || undefined,
+          });
+
+          const effects = JSON.parse(stripFences(pass2Text));
+          if (Array.isArray(effects)) {
+            conn.cascadeEffects = effects;
+          } else {
+            conn.cascadeEffects = [{ id: `fb_${Date.now()}`, type: "stable", description: "Safe to apply", depth: 1 }];
+          }
+        } catch {
+          conn.cascadeEffects = [{ id: `fb_${Date.now()}`, type: "stable", description: "Could not evaluate cascade", depth: 1 }];
+        }
+      });
+      await Promise.all(validationPromises);
     }
 
     return NextResponse.json({ analysis, suggestedConnections, suggestedRemovals });

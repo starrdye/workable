@@ -5,6 +5,14 @@ import {
   X, Sparkles, Loader2, AlertCircle, Plus, Trash2, Check,
   RefreshCw, Info, AlertTriangle, ShieldAlert, Zap, CheckCircle2,
 } from "lucide-react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
+
+export interface CascadeEffect {
+  id: string;
+  type: "orphan" | "bottleneck" | "stable";
+  description: string;
+  depth: number;
+}
 
 export interface SuggestedConnection {
   sourceId: string;
@@ -14,6 +22,12 @@ export interface SuggestedConnection {
   connectionName: string;
   connectionType?: string;
   reason: string;
+  cascadeEffects?: CascadeEffect[];
+}
+
+export interface FishboneBone {
+  category: "People" | "Process" | "Technology" | "Environment";
+  cause: string;
 }
 
 export interface SuggestedRemoval {
@@ -22,6 +36,7 @@ export interface SuggestedRemoval {
   name: string;
   action: "remove" | "automate" | "merge";
   reason: string;
+  fishboneBones?: FishboneBone[];
 }
 
 interface AIAnalysisModalProps {
@@ -213,6 +228,8 @@ export function AIAnalysisModal({
   const timeLabel = useRelativeTime(analysisTimestamp);
   const [appliedConnections, setAppliedConnections] = useState<Set<number>>(new Set());
   const [appliedRemovals,    setAppliedRemovals]    = useState<Set<number>>(new Set());
+  
+  const modalRef = useFocusTrap(isOpen);
 
   if (!isOpen) return null;
 
@@ -222,7 +239,7 @@ export function AIAnalysisModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col relative border border-slate-100">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-analysis-title" className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col relative border border-slate-100">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 flex-shrink-0">
@@ -231,7 +248,7 @@ export function AIAnalysisModal({
               <Sparkles className="w-4 h-4 text-indigo-600" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-800">AI Workflow Analysis</h2>
+              <h2 id="ai-analysis-title" className="text-base font-bold text-slate-800">AI Workflow Analysis</h2>
               <div className="flex items-center gap-2">
                 <p className="text-xs text-slate-500">Powered by AI · click suggestions to apply</p>
                 {isCachedResult && timeLabel && (
@@ -361,6 +378,26 @@ export function AIAnalysisModal({
                         )}
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed">{conn.reason}</p>
+                      {conn.cascadeEffects && conn.cascadeEffects.length > 0 && (
+                        <div className="mt-3 pl-3 border-l-2 border-emerald-200/50 space-y-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cascading Impact</p>
+                          {conn.cascadeEffects.map(effect => (
+                            <div key={effect.id} className="flex items-start gap-2">
+                              {effect.type === 'orphan' ? <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" /> : 
+                               effect.type === 'bottleneck' ? <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" /> :
+                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />}
+                              <div>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 ${
+                                  effect.type === 'orphan' ? "bg-red-50 text-red-600" :
+                                  effect.type === 'bottleneck' ? "bg-amber-50 text-amber-600" :
+                                  "bg-emerald-50 text-emerald-600"
+                                }`}>{effect.type}</span>
+                                <span className="text-xs text-slate-600">{effect.description}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {onAddConnection && (
                       isApplied ? (
@@ -416,6 +453,22 @@ export function AIAnalysisModal({
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed">{rem.reason}</p>
+                      {rem.fishboneBones && rem.fishboneBones.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Root Cause Analysis</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {rem.fishboneBones.map((bone, idx) => (
+                              <div key={idx} className="bg-white/60 rounded-lg p-2.5 border border-slate-100/50 shadow-sm">
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                  {bone.category}
+                                </div>
+                                <div className="text-xs text-slate-600 leading-snug">{bone.cause}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     {onRemoveEntity && (
                       isApplied ? (
