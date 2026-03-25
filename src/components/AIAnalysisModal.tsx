@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   X, Sparkles, Loader2, AlertCircle, Plus, Trash2, Check,
   RefreshCw, Info, AlertTriangle, ShieldAlert, Zap, CheckCircle2,
+  MinusCircle, UserCog, Merge, ClipboardList, Link2Off, Layers,
 } from "lucide-react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
+// ─── Interfaces ───────────────────────────────────────────────────────────────
+
 export interface CascadeEffect {
   id: string;
-  type: "orphan" | "bottleneck" | "stable";
+  type: "orphan" | "bottleneck" | "stable" | "redundant-edge";
   description: string;
   depth: number;
 }
@@ -28,6 +31,10 @@ export interface SuggestedConnection {
 export interface FishboneBone {
   category: "People" | "Process" | "Technology" | "Environment";
   cause: string;
+  resolvedBy?: {
+    type: "connection" | "edgeRemoval" | "newNode" | "taskUpdate" | "removal" | "groupUpdate";
+    refId: string;
+  };
 }
 
 export interface SuggestedRemoval {
@@ -36,7 +43,55 @@ export interface SuggestedRemoval {
   name: string;
   action: "remove" | "automate" | "merge";
   reason: string;
+  mergeTargetId?: string;
   fishboneBones?: FishboneBone[];
+}
+
+export interface SuggestedEdgeRemoval {
+  edgeId: string;
+  sourceName: string;
+  targetName: string;
+  reason: string;
+  prerequisiteConnectionId?: string;
+}
+
+export interface SuggestedNewNode {
+  tempId: string;
+  label: string;
+  role: string;
+  summary: string;
+  connectFrom: string[];
+  connectTo: string[];
+  replacesNodeId?: string;
+}
+
+export interface SuggestedTaskUpdate {
+  nodeId: string;
+  nodeName: string;
+  addTasks: Array<{ id: string; title: string; status: string; priority: string }>;
+  removeTasks: string[];
+  reason: string;
+}
+
+export interface SuggestedGroupUpdate {
+  action: "create" | "update" | "delete";
+  groupId?: string;
+  tempId?: string;
+  currentName?: string;
+  name?: string;
+  color?: string;
+  nodeIds?: string[];
+  addNodeIds?: string[];
+  removeNodeIds?: string[];
+  reason: string;
+}
+
+export interface SuggestionPhase {
+  phaseIndex: number;
+  label: string;
+  description: string;
+  prerequisitePhases: number[];
+  suggestionRefs: Array<{ type: string; refId: string }>;
 }
 
 interface AIAnalysisModalProps {
@@ -44,15 +99,28 @@ interface AIAnalysisModalProps {
   isLoading: boolean;
   analysis: string | null;
   suggestedConnections?: SuggestedConnection[];
+  suggestedEdgeRemovals?: SuggestedEdgeRemoval[];
   suggestedRemovals?: SuggestedRemoval[];
+  suggestedNewNodes?: SuggestedNewNode[];
+  suggestedTaskUpdates?: SuggestedTaskUpdate[];
+  suggestedGroupUpdates?: SuggestedGroupUpdate[];
+  suggestionPlan?: { phases: SuggestionPhase[] } | null;
   error: string | null;
   onClose: () => void;
   onAddConnection?: (conn: SuggestedConnection) => void;
-  onRemoveEntity?: (removal: SuggestedRemoval) => void;
+  onRemoveEdge?: (removal: SuggestedEdgeRemoval) => void;
+  onRemoveEntity?: (removal: SuggestedRemoval) => void | Promise<void>;
+  onAddNewNode?: (node: SuggestedNewNode) => void;
+  onUpdateTasks?: (update: SuggestedTaskUpdate) => void;
+  onApplyGroupUpdate?: (update: SuggestedGroupUpdate) => void;
   /** Callback to trigger a fresh analysis (clears existing result) */
   onReAnalyze?: () => void;
   /** Unix ms timestamp when the cached analysis was generated */
   analysisTimestamp?: number | null;
+  /** Applied connection keys from parent (sourceId-targetId) */
+  appliedConnectionKeys?: Set<string>;
+  /** Applied removal node IDs from parent */
+  appliedRemovalIds?: Set<string>;
 }
 
 // ─── Section config ──────────────────────────────────────────────────────────
@@ -73,51 +141,36 @@ const SECTION_CONFIGS: SectionConfig[] = [
     key: "workflow summary",
     title: "Workflow Summary",
     icon: <Info className="w-3.5 h-3.5 text-indigo-600" />,
-    bg: "bg-indigo-50/60",
-    border: "border-indigo-100",
-    iconBg: "bg-indigo-100",
-    titleColor: "text-indigo-700",
-    dotColor: "bg-indigo-400",
+    bg: "bg-indigo-50/60", border: "border-indigo-100",
+    iconBg: "bg-indigo-100", titleColor: "text-indigo-700", dotColor: "bg-indigo-400",
   },
   {
     key: "bottlenecks identified",
     title: "Bottlenecks Identified",
     icon: <AlertTriangle className="w-3.5 h-3.5 text-red-500" />,
-    bg: "bg-red-50/60",
-    border: "border-red-100",
-    iconBg: "bg-red-100",
-    titleColor: "text-red-700",
-    dotColor: "bg-red-400",
+    bg: "bg-red-50/60", border: "border-red-100",
+    iconBg: "bg-red-100", titleColor: "text-red-700", dotColor: "bg-red-400",
   },
   {
     key: "constraint analysis",
     title: "Constraint Analysis",
     icon: <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />,
-    bg: "bg-amber-50/60",
-    border: "border-amber-100",
-    iconBg: "bg-amber-100",
-    titleColor: "text-amber-700",
-    dotColor: "bg-amber-400",
+    bg: "bg-amber-50/60", border: "border-amber-100",
+    iconBg: "bg-amber-100", titleColor: "text-amber-700", dotColor: "bg-amber-400",
   },
   {
     key: "quick wins",
     title: "Quick Wins",
     icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />,
-    bg: "bg-emerald-50/60",
-    border: "border-emerald-100",
-    iconBg: "bg-emerald-100",
-    titleColor: "text-emerald-700",
-    dotColor: "bg-emerald-400",
+    bg: "bg-emerald-50/60", border: "border-emerald-100",
+    iconBg: "bg-emerald-100", titleColor: "text-emerald-700", dotColor: "bg-emerald-400",
   },
   {
     key: "recommendations",
     title: "Recommendations",
     icon: <Zap className="w-3.5 h-3.5 text-violet-600" />,
-    bg: "bg-violet-50/60",
-    border: "border-violet-100",
-    iconBg: "bg-violet-100",
-    titleColor: "text-violet-700",
-    dotColor: "bg-violet-400",
+    bg: "bg-violet-50/60", border: "border-violet-100",
+    iconBg: "bg-violet-100", titleColor: "text-violet-700", dotColor: "bg-violet-400",
   },
 ];
 
@@ -125,14 +178,10 @@ function getSectionConfig(title: string): SectionConfig {
   const key = title.toLowerCase().trim();
   return (
     SECTION_CONFIGS.find(s => key.includes(s.key)) ?? {
-      key,
-      title,
+      key, title,
       icon: <Info className="w-3.5 h-3.5 text-slate-500" />,
-      bg: "bg-slate-50/60",
-      border: "border-slate-100",
-      iconBg: "bg-slate-100",
-      titleColor: "text-slate-700",
-      dotColor: "bg-slate-400",
+      bg: "bg-slate-50/60", border: "border-slate-100",
+      iconBg: "bg-slate-100", titleColor: "text-slate-700", dotColor: "bg-slate-400",
     }
   );
 }
@@ -153,8 +202,8 @@ function parseAnalysis(text: string): ParsedSection[] {
   const flush = () => {
     if (currentTitle && currentItems.length > 0) {
       sections.push({
-        title:  currentTitle,
-        items:  currentItems.filter(i => i.trim()),
+        title: currentTitle,
+        items: currentItems.filter(i => i.trim()),
         config: getSectionConfig(currentTitle),
       });
     }
@@ -163,20 +212,12 @@ function parseAnalysis(text: string): ParsedSection[] {
 
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    if (line.startsWith("## ")) {
-      flush();
-      currentTitle = line.slice(3).trim();
-    } else if (line.startsWith("- ") || line.startsWith("• ")) {
-      currentItems.push(line.slice(2).trim());
-    } else if (/^\d+\.\s/.test(line)) {
-      currentItems.push(line.replace(/^\d+\.\s/, "").trim());
-    } else if (line && !line.startsWith("#")) {
-      // Non-header, non-bullet paragraph — add as item if we have a section
-      if (currentTitle) currentItems.push(line);
-    }
+    if (line.startsWith("## ")) { flush(); currentTitle = line.slice(3).trim(); }
+    else if (line.startsWith("- ") || line.startsWith("• ")) currentItems.push(line.slice(2).trim());
+    else if (/^\d+\.\s/.test(line)) currentItems.push(line.replace(/^\d+\.\s/, "").trim());
+    else if (line && !line.startsWith("#") && currentTitle) currentItems.push(line);
   }
   flush();
-
   return sections;
 }
 
@@ -184,62 +225,160 @@ function parseAnalysis(text: string): ParsedSection[] {
 
 function useRelativeTime(timestamp: number | null | undefined) {
   const [label, setLabel] = useState("");
-
   useEffect(() => {
     if (!timestamp) { setLabel(""); return; }
     const update = () => {
       const secs = Math.floor((Date.now() - timestamp) / 1000);
-      if (secs < 60)          setLabel(`${secs}s ago`);
-      else if (secs < 3600)   setLabel(`${Math.floor(secs / 60)}m ago`);
-      else                    setLabel(`${Math.floor(secs / 3600)}h ago`);
+      if (secs < 60)        setLabel(`${secs}s ago`);
+      else if (secs < 3600) setLabel(`${Math.floor(secs / 60)}m ago`);
+      else                  setLabel(`${Math.floor(secs / 3600)}h ago`);
     };
     update();
     const t = setInterval(update, 15_000);
     return () => clearInterval(t);
   }, [timestamp]);
-
   return label;
 }
 
 // ─── Action helpers ───────────────────────────────────────────────────────────
 
 const ACTION_LABEL: Record<string, string> = {
-  remove:   "Remove",
-  automate: "Automate",
-  merge:    "Merge",
+  remove: "Remove", automate: "Automate", merge: "Merge",
 };
 const ACTION_DONE_LABEL: Record<string, string> = {
-  remove:   "Removed",
-  automate: "Automated",
-  merge:    "Merged",
+  remove: "Removed", automate: "Automated", merge: "Merged",
 };
 const ACTION_COLOR: Record<string, string> = {
   remove:   "bg-red-50 text-red-600 border-red-200 hover:bg-red-100",
   automate: "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100",
   merge:    "bg-violet-50 text-violet-600 border-violet-200 hover:bg-violet-100",
 };
+const ACTION_ICON: Record<string, React.ReactNode> = {
+  remove:   <Trash2 className="w-3 h-3" />,
+  automate: <UserCog className="w-3 h-3" />,
+  merge:    <Merge className="w-3 h-3" />,
+};
+
+function cascadeBadgeClass(type: CascadeEffect["type"]) {
+  switch (type) {
+    case "orphan":        return "bg-red-50 text-red-600";
+    case "bottleneck":    return "bg-amber-50 text-amber-600";
+    case "redundant-edge":return "bg-orange-50 text-orange-600";
+    default:              return "bg-emerald-50 text-emerald-600";
+  }
+}
+function cascadeIcon(type: CascadeEffect["type"]) {
+  switch (type) {
+    case "orphan":         return <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />;
+    case "bottleneck":     return <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />;
+    case "redundant-edge": return <Link2Off className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" />;
+    default:               return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />;
+  }
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function AIAnalysisModal({
-  isOpen, isLoading, analysis, suggestedConnections = [], suggestedRemovals = [],
-  error, onClose, onAddConnection, onRemoveEntity, onReAnalyze, analysisTimestamp,
+  isOpen, isLoading, analysis,
+  suggestedConnections = [], suggestedEdgeRemovals = [],
+  suggestedRemovals = [], suggestedNewNodes = [], suggestedTaskUpdates = [],
+  suggestedGroupUpdates = [],
+  suggestionPlan,
+  error, onClose,
+  onAddConnection, onRemoveEdge, onRemoveEntity, onAddNewNode, onUpdateTasks, onApplyGroupUpdate,
+  onReAnalyze, analysisTimestamp,
+  appliedConnectionKeys, appliedRemovalIds,
 }: AIAnalysisModalProps) {
-  const timeLabel = useRelativeTime(analysisTimestamp);
-  const [appliedConnections, setAppliedConnections] = useState<Set<number>>(new Set());
-  const [appliedRemovals,    setAppliedRemovals]    = useState<Set<number>>(new Set());
-  
-  const modalRef = useFocusTrap(isOpen);
+  const timeLabel   = useRelativeTime(analysisTimestamp);
+  const modalRef    = useFocusTrap(isOpen);
+  const [activeTab, setActiveTab] = useState<"findings" | "plan">("findings");
+
+  // Local applied state (by array index) for types not tracked by parent
+  const [appliedConnIdx,  setAppliedConnIdx]  = useState<Set<number>>(new Set());
+  const [appliedEdgeIdx,  setAppliedEdgeIdx]  = useState<Set<number>>(new Set());
+  const [appliedRemIdx,   setAppliedRemIdx]   = useState<Set<number>>(new Set());
+  const [appliedNodeIdx,  setAppliedNodeIdx]  = useState<Set<number>>(new Set());
+  const [appliedTaskIdx,  setAppliedTaskIdx]  = useState<Set<number>>(new Set());
+  const [appliedGroupIdx, setAppliedGroupIdx] = useState<Set<number>>(new Set());
+
+  // Phase completion tracking (phaseIndex -> bool)
+  const [completedPhases, setCompletedPhases] = useState<Set<number>>(new Set());
+
+  // Refs for scrolling to suggestion cards when fishbone bone is clicked
+  const connRefs    = useRef<(HTMLDivElement | null)[]>([]);
+  const edgeRefs    = useRef<(HTMLDivElement | null)[]>([]);
+  const remRefs     = useRef<(HTMLDivElement | null)[]>([]);
+  const nodeRefs    = useRef<(HTMLDivElement | null)[]>([]);
+  const taskRefs    = useRef<(HTMLDivElement | null)[]>([]);
+  const groupRefs   = useRef<(HTMLDivElement | null)[]>([]);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Reset tab when modal reopens with fresh data
+  useEffect(() => {
+    if (!isLoading && analysis) setActiveTab("findings");
+  }, [analysis, isLoading]);
 
   if (!isOpen) return null;
 
-  const sections         = analysis ? parseAnalysis(analysis) : [];
-  const hasSuggestions   = (suggestedConnections.length > 0 || suggestedRemovals.length > 0) && !isLoading && !error;
-  const isCachedResult   = !!analysis && !isLoading && !!analysisTimestamp;
+  const sections       = analysis ? parseAnalysis(analysis) : [];
+  const hasSuggestions = (
+    suggestedConnections.length > 0 || suggestedEdgeRemovals.length > 0 ||
+    suggestedRemovals.length > 0 || suggestedNewNodes.length > 0 || suggestedTaskUpdates.length > 0 ||
+    suggestedGroupUpdates.length > 0
+  ) && !isLoading && !error;
+  const hasPlan        = !!suggestionPlan?.phases?.length && !isLoading && !error;
+  const isCachedResult = !!analysis && !isLoading && !!analysisTimestamp;
+
+  // ── Fishbone scroll helper ──────────────────────────────────────────────────
+  function scrollToBone(resolvedBy: FishboneBone["resolvedBy"]) {
+    if (!resolvedBy) return;
+    setActiveTab("findings");
+    let el: HTMLDivElement | null = null;
+    const { type, refId } = resolvedBy;
+    if (type === "connection") {
+      const idx = suggestedConnections.findIndex(c => `${c.sourceId}-${c.targetId}` === refId);
+      el = connRefs.current[idx] ?? null;
+    } else if (type === "edgeRemoval") {
+      const idx = suggestedEdgeRemovals.findIndex(e => e.edgeId === refId);
+      el = edgeRefs.current[idx] ?? null;
+    } else if (type === "removal") {
+      const idx = suggestedRemovals.findIndex(r => r.id === refId);
+      el = remRefs.current[idx] ?? null;
+    } else if (type === "newNode") {
+      const idx = suggestedNewNodes.findIndex(n => n.tempId === refId);
+      el = nodeRefs.current[idx] ?? null;
+    } else if (type === "taskUpdate") {
+      const idx = suggestedTaskUpdates.findIndex(t => t.nodeId === refId);
+      el = taskRefs.current[idx] ?? null;
+    } else if (type === "groupUpdate") {
+      const idx = suggestedGroupUpdates.findIndex(g =>
+        g.action === 'create' ? g.tempId === refId : g.groupId === refId
+      );
+      el = groupRefs.current[idx] ?? null;
+    }
+    if (el) {
+      setTimeout(() => {
+        el!.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightId(refId);
+        setTimeout(() => setHighlightId(null), 1800);
+      }, 50);
+    }
+  }
+
+  // ── Check if a phase is unlocked ───────────────────────────────────────────
+  function isPhaseUnlocked(phase: SuggestionPhase) {
+    return phase.prerequisitePhases.every(p => completedPhases.has(p));
+  }
+
+  // ── Mark phase complete (all refs applied) ─────────────────────────────────
+  function markPhaseComplete(phaseIndex: number) {
+    setCompletedPhases(prev => { const next = new Set(prev); next.add(phaseIndex); return next; });
+  }
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-analysis-title" className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col relative border border-slate-100">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-analysis-title"
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col relative border border-slate-100">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 flex-shrink-0">
@@ -252,23 +391,16 @@ export function AIAnalysisModal({
               <div className="flex items-center gap-2">
                 <p className="text-xs text-slate-500">Powered by AI · click suggestions to apply</p>
                 {isCachedResult && timeLabel && (
-                  <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full font-medium">
-                    {timeLabel}
-                  </span>
+                  <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full font-medium">{timeLabel}</span>
                 )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Re-analyze button — only shown when a cached result exists */}
             {isCachedResult && onReAnalyze && (
-              <button
-                onClick={onReAnalyze}
-                title="Run a fresh analysis"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-semibold transition-colors"
-              >
-                <RefreshCw className="w-3 h-3" />
-                Re-analyze
+              <button onClick={onReAnalyze} title="Run a fresh analysis"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-semibold transition-colors">
+                <RefreshCw className="w-3 h-3" /> Re-analyze
               </button>
             )}
             <button onClick={onClose}
@@ -277,6 +409,24 @@ export function AIAnalysisModal({
             </button>
           </div>
         </div>
+
+        {/* ── Tabs (only when there is a plan) ── */}
+        {hasPlan && !isLoading && (
+          <div className="flex gap-1 px-8 pt-3 pb-0 flex-shrink-0">
+            <button
+              onClick={() => setActiveTab("findings")}
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${activeTab === "findings" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              🔍 Findings
+            </button>
+            <button
+              onClick={() => setActiveTab("plan")}
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${activeTab === "plan" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              📋 Suggested Plan
+            </button>
+          </div>
+        )}
 
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4">
@@ -298,10 +448,8 @@ export function AIAnalysisModal({
                 <p className="text-sm font-semibold text-red-700 mb-0.5">Analysis failed</p>
                 <p className="text-sm text-red-600">{error}</p>
                 {onReAnalyze && (
-                  <button
-                    onClick={onReAnalyze}
-                    className="mt-2 flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 underline"
-                  >
+                  <button onClick={onReAnalyze}
+                    className="mt-2 flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 underline">
                     <RefreshCw className="w-3 h-3" /> Try again
                   </button>
                 )}
@@ -309,212 +457,530 @@ export function AIAnalysisModal({
             </div>
           )}
 
-          {/* ── Section cards ── */}
-          {!isLoading && sections.length > 0 && (
+          {/* ═══════════ PLAN TAB ═══════════ */}
+          {activeTab === "plan" && hasPlan && (
             <div className="space-y-3">
-              {sections.map((section) => (
-                <div
-                  key={section.title}
-                  className={`rounded-2xl border p-5 ${section.config.bg} ${section.config.border}`}
-                >
-                  {/* Section header */}
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${section.config.iconBg}`}>
-                      {section.config.icon}
+              {suggestionPlan!.phases.map(phase => {
+                const unlocked   = isPhaseUnlocked(phase);
+                const completed  = completedPhases.has(phase.phaseIndex);
+                return (
+                  <div key={phase.phaseIndex}
+                    className={`rounded-2xl border p-5 transition-opacity ${completed ? "bg-slate-50/60 border-slate-100 opacity-60" : unlocked ? "bg-white border-indigo-100" : "bg-slate-50/40 border-slate-100 opacity-50"}`}>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${completed ? "bg-emerald-100 text-emerald-700" : unlocked ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-400"}`}>
+                          {completed ? "✓" : phase.phaseIndex}
+                        </span>
+                        <div>
+                          <h4 className={`text-sm font-bold ${unlocked ? "text-slate-800" : "text-slate-400"}`}>{phase.label}</h4>
+                          <p className="text-xs text-slate-500">{phase.description}</p>
+                        </div>
+                      </div>
+                      {!completed && unlocked && (
+                        <button onClick={() => markPhaseComplete(phase.phaseIndex)}
+                          className="flex-shrink-0 text-[10px] font-semibold text-emerald-600 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-full transition-colors">
+                          Mark done
+                        </button>
+                      )}
                     </div>
-                    <h3 className={`text-sm font-bold ${section.config.titleColor}`}>
-                      {section.title}
-                    </h3>
+                    {!unlocked && phase.prerequisitePhases.length > 0 && (
+                      <p className="text-[10px] text-slate-400 mt-1 pl-8">
+                        Complete Phase {phase.prerequisitePhases.join(", ")} first
+                      </p>
+                    )}
+                    {phase.suggestionRefs.length > 0 && (
+                      <ul className="mt-2 pl-8 space-y-1">
+                        {phase.suggestionRefs.map((ref, ri) => (
+                          <li key={ri}
+                            onClick={() => scrollToBone({ type: ref.type as FishboneBone["resolvedBy"] extends undefined ? never : NonNullable<FishboneBone["resolvedBy"]>["type"], refId: ref.refId })}
+                            className={`flex items-center gap-1.5 text-xs cursor-pointer ${unlocked ? "text-indigo-600 hover:text-indigo-800" : "text-slate-400 pointer-events-none"}`}
+                          >
+                            <span className="text-slate-400 text-[10px] font-mono uppercase">[{ref.type}]</span>
+                            <span className="underline underline-offset-2">{ref.refId}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-
-                  {/* Bullet points */}
-                  <ul className="space-y-2">
-                    {section.items.map((item, idx) => (
-                      <li key={idx} className="flex items-start gap-2.5">
-                        <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${section.config.dotColor}`} />
-                        <span className="text-sm text-slate-700 leading-relaxed">{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
-          {/* Fallback: raw text if no sections parsed */}
-          {!isLoading && analysis && sections.length === 0 && (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-5">
-              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{analysis}</p>
-            </div>
-          )}
-
-          {/* ── Suggested Connections ── */}
-          {hasSuggestions && suggestedConnections.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3 mt-2">
-                <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                  <Plus className="w-3 h-3 text-emerald-600" />
+          {/* ═══════════ FINDINGS TAB (default) ═══════════ */}
+          {activeTab === "findings" && (
+            <>
+              {/* Section cards */}
+              {!isLoading && sections.length > 0 && (
+                <div className="space-y-3">
+                  {sections.map((section) => (
+                    <div key={section.title}
+                      className={`rounded-2xl border p-5 ${section.config.bg} ${section.config.border}`}>
+                      <div className="flex items-center gap-2.5 mb-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${section.config.iconBg}`}>
+                          {section.config.icon}
+                        </div>
+                        <h3 className={`text-sm font-bold ${section.config.titleColor}`}>{section.title}</h3>
+                      </div>
+                      <ul className="space-y-2">
+                        {section.items.map((item, idx) => (
+                          <li key={idx} className="flex items-start gap-2.5">
+                            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${section.config.dotColor}`} />
+                            <span className="text-sm text-slate-700 leading-relaxed">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
-                <h3 className="text-sm font-bold text-slate-800">Suggested Connections</h3>
-                <span className="text-xs text-slate-400">— new routes to add</span>
-              </div>
-              <div className="space-y-2">
-                {suggestedConnections.map((conn, i) => {
-                  const isApplied = appliedConnections.has(i);
-                  return (
-                  <div key={i}
-                    className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-colors ${
-                      isApplied ? "border-slate-200 bg-slate-50/60" : "border-emerald-100 bg-emerald-50/40"
-                    }`}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1 flex-wrap">
-                        <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-emerald-600"}`}>{conn.sourceName}</span>
-                        <span className="text-slate-400 text-xs flex-shrink-0">→</span>
-                        <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-emerald-600"}`}>{conn.targetName}</span>
-                        {conn.connectionName && (
-                          <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full flex-shrink-0 ml-1">
-                            {conn.connectionName}
-                          </span>
+              )}
+
+              {/* Fallback raw text */}
+              {!isLoading && analysis && sections.length === 0 && (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-5">
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{analysis}</p>
+                </div>
+              )}
+
+              {/* ── Suggested Connections ── */}
+              {hasSuggestions && suggestedConnections.length > 0 && (
+                <SuggestionSection title="Suggested Connections" subtitle="new routes to add"
+                  icon={<Plus className="w-3 h-3 text-emerald-600" />}
+                  iconBg="bg-emerald-100">
+                  {suggestedConnections.map((conn, i) => {
+                    const connKey   = `${conn.sourceId}-${conn.targetId}`;
+                    const isApplied = appliedConnIdx.has(i) || appliedConnectionKeys?.has(connKey);
+                    const isHighlit = highlightId === connKey;
+                    return (
+                      <div key={i} ref={el => { connRefs.current[i] = el; }}
+                        className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-all ${
+                          isHighlit ? "ring-2 ring-indigo-400 border-indigo-200 bg-indigo-50/30" :
+                          isApplied ? "border-slate-200 bg-slate-50/60" :
+                          "border-emerald-100 bg-emerald-50/40"
+                        }`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-1 flex-wrap">
+                            <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-emerald-600"}`}>{conn.sourceName}</span>
+                            <span className="text-slate-400 text-xs flex-shrink-0">→</span>
+                            <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-emerald-600"}`}>{conn.targetName}</span>
+                            {conn.connectionName && (
+                              <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded-full flex-shrink-0 ml-1">{conn.connectionName}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed">{conn.reason}</p>
+                          {conn.cascadeEffects && conn.cascadeEffects.length > 0 && (
+                            <CascadeList effects={conn.cascadeEffects} />
+                          )}
+                        </div>
+                        {onAddConnection && (
+                          isApplied ? (
+                            <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
+                              <Check className="w-3 h-3" /> Added
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => { onAddConnection(conn); setAppliedConnIdx(s => new Set([...s, i])); }}
+                              className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors">
+                              <Plus className="w-3 h-3" /> Add
+                            </button>
+                          )
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 leading-relaxed">{conn.reason}</p>
-                      {conn.cascadeEffects && conn.cascadeEffects.length > 0 && (
-                        <div className="mt-3 pl-3 border-l-2 border-emerald-200/50 space-y-2">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cascading Impact</p>
-                          {conn.cascadeEffects.map(effect => (
-                            <div key={effect.id} className="flex items-start gap-2">
-                              {effect.type === 'orphan' ? <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" /> : 
-                               effect.type === 'bottleneck' ? <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" /> :
-                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />}
-                              <div>
-                                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 ${
-                                  effect.type === 'orphan' ? "bg-red-50 text-red-600" :
-                                  effect.type === 'bottleneck' ? "bg-amber-50 text-amber-600" :
-                                  "bg-emerald-50 text-emerald-600"
-                                }`}>{effect.type}</span>
-                                <span className="text-xs text-slate-600">{effect.description}</span>
+                    );
+                  })}
+                </SuggestionSection>
+              )}
+
+              {/* ── Redundant Edge Removals ── */}
+              {hasSuggestions && suggestedEdgeRemovals.length > 0 && (
+                <SuggestionSection title="Redundant Connections" subtitle="edges to remove"
+                  icon={<Link2Off className="w-3 h-3 text-orange-500" />}
+                  iconBg="bg-orange-100">
+                  {suggestedEdgeRemovals.map((rem, i) => {
+                    const isApplied = appliedEdgeIdx.has(i);
+                    const isHighlit = highlightId === rem.edgeId;
+                    // Find if there's a prerequisite connection not yet applied
+                    const prereqKey  = rem.prerequisiteConnectionId ?? null;
+                    const prereqDone = !prereqKey || (appliedConnectionKeys?.has(prereqKey) || [...appliedConnIdx].some(idx => {
+                      const c = suggestedConnections[idx];
+                      return c && `${c.sourceId}-${c.targetId}` === prereqKey;
+                    }));
+                    return (
+                      <div key={i} ref={el => { edgeRefs.current[i] = el; }}
+                        className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-all ${
+                          isHighlit ? "ring-2 ring-orange-400 border-orange-200 bg-orange-50/30" :
+                          isApplied ? "border-slate-200 bg-slate-50/60 opacity-60" :
+                          "border-orange-100 bg-orange-50/30"
+                        }`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-sm font-semibold mb-1 flex-wrap">
+                            <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-orange-600"}`}>{rem.sourceName}</span>
+                            <span className="text-slate-400 text-xs flex-shrink-0">→</span>
+                            <span className={`truncate max-w-[130px] ${isApplied ? "text-slate-400" : "text-orange-600"}`}>{rem.targetName}</span>
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed">{rem.reason}</p>
+                          {!prereqDone && prereqKey && (
+                            <p className="text-[10px] text-amber-600 mt-1.5 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Apply the bypass connection first
+                            </p>
+                          )}
+                        </div>
+                        {onRemoveEdge && (
+                          isApplied ? (
+                            <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default border border-slate-200">
+                              <Check className="w-3 h-3" /> Removed
+                            </span>
+                          ) : (
+                            <button
+                              disabled={!prereqDone}
+                              onClick={() => { onRemoveEdge(rem); setAppliedEdgeIdx(s => new Set([...s, i])); }}
+                              title={!prereqDone ? "Apply the prerequisite connection first" : undefined}
+                              className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                                !prereqDone
+                                  ? "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
+                                  : "bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100"
+                              }`}>
+                              <MinusCircle className="w-3 h-3" /> Remove
+                            </button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+                </SuggestionSection>
+              )}
+
+              {/* ── Suggested New Nodes ── */}
+              {hasSuggestions && suggestedNewNodes.length > 0 && (
+                <SuggestionSection title="New Nodes" subtitle="nodes to add"
+                  icon={<Zap className="w-3 h-3 text-violet-600" />}
+                  iconBg="bg-violet-100">
+                  {suggestedNewNodes.map((node, i) => {
+                    const isApplied = appliedNodeIdx.has(i);
+                    const isHighlit = highlightId === node.tempId;
+                    return (
+                      <div key={i} ref={el => { nodeRefs.current[i] = el; }}
+                        className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-all ${
+                          isHighlit ? "ring-2 ring-violet-400 border-violet-200 bg-violet-50/30" :
+                          isApplied ? "border-slate-200 bg-slate-50/60 opacity-60" :
+                          "border-violet-100 bg-violet-50/30"
+                        }`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className={`text-sm font-semibold ${isApplied ? "text-slate-400" : "text-violet-700"}`}>{node.label}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-violet-200 bg-violet-50 text-violet-500">{node.role}</span>
+                            {node.replacesNodeId && (
+                              <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">replaces node</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-1.5">{node.summary}</p>
+                          {(node.connectFrom.length > 0 || node.connectTo.length > 0) && (
+                            <div className="text-[10px] text-slate-400 space-y-0.5">
+                              {node.connectFrom.length > 0 && <div>← From: {node.connectFrom.join(", ")}</div>}
+                              {node.connectTo.length > 0   && <div>→ To: {node.connectTo.join(", ")}</div>}
+                            </div>
+                          )}
+                        </div>
+                        {onAddNewNode && (
+                          isApplied ? (
+                            <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
+                              <Check className="w-3 h-3" /> Added
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => { onAddNewNode(node); setAppliedNodeIdx(s => new Set([...s, i])); }}
+                              className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-600 text-white text-xs font-semibold transition-colors">
+                              <Plus className="w-3 h-3" /> Add
+                            </button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+                </SuggestionSection>
+              )}
+
+              {/* ── Suggested Removals ── */}
+              {hasSuggestions && suggestedRemovals.length > 0 && (
+                <SuggestionSection title="Suggested Changes" subtitle="entities to remove or automate"
+                  icon={<AlertTriangle className="w-3 h-3 text-red-500" />}
+                  iconBg="bg-red-100">
+                  {suggestedRemovals.map((rem, i) => {
+                    const isApplied = appliedRemIdx.has(i) || (rem.type === "node" && appliedRemovalIds?.has(rem.id));
+                    const isHighlit = highlightId === rem.id;
+                    return (
+                      <div key={i} ref={el => { remRefs.current[i] = el; }}
+                        className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-all ${
+                          isHighlit ? "ring-2 ring-red-300 border-red-200 bg-red-50/30" :
+                          isApplied ? "border-slate-200 bg-slate-50/40 opacity-60" :
+                          "border-slate-200 bg-slate-50/60"
+                        }`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className={`text-sm font-semibold truncate ${isApplied ? "text-slate-400 line-through" : "text-slate-700"}`}>{rem.name}</span>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
+                              isApplied ? "bg-slate-100 text-slate-400 border-slate-200" :
+                              rem.action === "remove"   ? "bg-red-50 text-red-500 border-red-200" :
+                              rem.action === "automate" ? "bg-amber-50 text-amber-600 border-amber-200" :
+                                                          "bg-violet-50 text-violet-600 border-violet-200"
+                            }`}>
+                              {isApplied ? (ACTION_DONE_LABEL[rem.action] ?? rem.action) : (ACTION_LABEL[rem.action] ?? rem.action)}
+                            </span>
+                            {rem.action === "merge" && rem.mergeTargetId && !isApplied && (
+                              <span className="text-[10px] text-slate-400">→ into {rem.mergeTargetId}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed">{rem.reason}</p>
+                          {rem.fishboneBones && rem.fishboneBones.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Root Cause Analysis</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {rem.fishboneBones.map((bone, idx) => (
+                                  <div key={idx}
+                                    className={`bg-white/60 rounded-lg p-2.5 border border-slate-100/50 shadow-sm ${bone.resolvedBy ? "cursor-pointer hover:border-indigo-200 hover:bg-indigo-50/20 transition-colors" : ""}`}
+                                    onClick={() => bone.resolvedBy && scrollToBone(bone.resolvedBy)}
+                                    title={bone.resolvedBy ? "Click to jump to the suggested fix" : undefined}
+                                  >
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                      {bone.category}
+                                    </div>
+                                    <div className="text-xs text-slate-600 leading-snug">{bone.cause}</div>
+                                    {bone.resolvedBy && (
+                                      <div className="mt-1.5 flex items-center gap-1 text-[10px] text-indigo-500 font-semibold">
+                                        <span>→ See suggested fix</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          ))}
+                          )}
                         </div>
-                      )}
-                    </div>
-                    {onAddConnection && (
-                      isApplied ? (
-                        <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
-                          <Check className="w-3 h-3" /> Added
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => { onAddConnection(conn); setAppliedConnections(s => new Set([...s, i])); }}
-                          className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
-                        >
-                          <Plus className="w-3 h-3" /> Add
-                        </button>
-                      )
-                    )}
-                  </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ── Suggested Removals ── */}
-          {hasSuggestions && suggestedRemovals.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                  <AlertTriangle className="w-3 h-3 text-red-500" />
-                </div>
-                <h3 className="text-sm font-bold text-slate-800">Suggested Changes</h3>
-                <span className="text-xs text-slate-400">— entities to remove or automate</span>
-              </div>
-              <div className="space-y-2">
-                {suggestedRemovals.map((rem, i) => {
-                  const isApplied = appliedRemovals.has(i);
-                  return (
-                  <div key={i}
-                    className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-colors ${
-                      isApplied ? "border-slate-200 bg-slate-50/40 opacity-60" : "border-slate-200 bg-slate-50/60"
-                    }`}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={`text-sm font-semibold truncate ${isApplied ? "text-slate-400 line-through" : "text-slate-700"}`}>{rem.name}</span>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
-                          isApplied ? "bg-slate-100 text-slate-400 border-slate-200" :
-                          rem.action === "remove"   ? "bg-red-50 text-red-500 border-red-200" :
-                          rem.action === "automate" ? "bg-amber-50 text-amber-600 border-amber-200" :
-                                                      "bg-violet-50 text-violet-600 border-violet-200"
-                        }`}>
-                          {isApplied
-                            ? (ACTION_DONE_LABEL[rem.action] ?? rem.action)
-                            : (ACTION_LABEL[rem.action] ?? rem.action)}
-                        </span>
+                        {onRemoveEntity && (
+                          isApplied ? (
+                            <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default border border-slate-200">
+                              <Check className="w-3 h-3" /> {ACTION_DONE_LABEL[rem.action] ?? "Applied"}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => { onRemoveEntity(rem); setAppliedRemIdx(s => new Set([...s, i])); }}
+                              className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${ACTION_COLOR[rem.action] ?? "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"}`}>
+                              {ACTION_ICON[rem.action] ?? <Trash2 className="w-3 h-3" />}
+                              {ACTION_LABEL[rem.action] ?? "Apply"}
+                            </button>
+                          )
+                        )}
                       </div>
-                      <p className="text-xs text-slate-500 leading-relaxed">{rem.reason}</p>
-                      {rem.fishboneBones && rem.fishboneBones.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Root Cause Analysis</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {rem.fishboneBones.map((bone, idx) => (
-                              <div key={idx} className="bg-white/60 rounded-lg p-2.5 border border-slate-100/50 shadow-sm">
-                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                  {bone.category}
+                    );
+                  })}
+                </SuggestionSection>
+              )}
+
+              {/* ── Task Updates ── */}
+              {hasSuggestions && suggestedTaskUpdates.length > 0 && (
+                <SuggestionSection title="Task Redistribution" subtitle="workload rebalancing"
+                  icon={<ClipboardList className="w-3 h-3 text-sky-500" />}
+                  iconBg="bg-sky-100">
+                  {suggestedTaskUpdates.map((upd, i) => {
+                    const isApplied = appliedTaskIdx.has(i);
+                    const isHighlit = highlightId === upd.nodeId;
+                    return (
+                      <div key={i} ref={el => { taskRefs.current[i] = el; }}
+                        className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-all ${
+                          isHighlit ? "ring-2 ring-sky-400 border-sky-200 bg-sky-50/30" :
+                          isApplied ? "border-slate-200 bg-slate-50/60 opacity-60" :
+                          "border-sky-100 bg-sky-50/30"
+                        }`}>
+                        <div className="min-w-0 flex-1">
+                          <span className={`text-sm font-semibold ${isApplied ? "text-slate-400" : "text-sky-700"}`}>{upd.nodeName}</span>
+                          <p className="text-xs text-slate-500 leading-relaxed mt-0.5 mb-2">{upd.reason}</p>
+                          {upd.addTasks.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Add tasks</p>
+                              {upd.addTasks.map(t => (
+                                <div key={t.id} className="flex items-center gap-1.5 text-xs text-slate-600">
+                                  <Plus className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                                  <span>{t.title}</span>
+                                  <span className="text-[10px] text-slate-400">[{t.priority}]</span>
                                 </div>
-                                <div className="text-xs text-slate-600 leading-snug">{bone.cause}</div>
-                              </div>
-                            ))}
-                          </div>
+                              ))}
+                            </div>
+                          )}
+                          {upd.removeTasks.length > 0 && (
+                            <div className="mt-1.5 space-y-1">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Remove task IDs</p>
+                              {upd.removeTasks.map(id => (
+                                <div key={id} className="flex items-center gap-1.5 text-xs text-slate-400">
+                                  <MinusCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                                  <span className="font-mono">{id}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    {onRemoveEntity && (
-                      isApplied ? (
-                        <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default border border-slate-200">
-                          <Check className="w-3 h-3" />
-                          {ACTION_DONE_LABEL[rem.action] ?? "Applied"}
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => { onRemoveEntity(rem); setAppliedRemovals(s => new Set([...s, i])); }}
-                          className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-                            ACTION_COLOR[rem.action] ?? "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
-                          }`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          {ACTION_LABEL[rem.action] ?? "Apply"}
-                        </button>
-                      )
-                    )}
-                  </div>
-                  );
-                })}
-              </div>
-            </div>
+                        {onUpdateTasks && (
+                          isApplied ? (
+                            <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
+                              <Check className="w-3 h-3" /> Applied
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => { onUpdateTasks(upd); setAppliedTaskIdx(s => new Set([...s, i])); }}
+                              className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold transition-colors">
+                              <ClipboardList className="w-3 h-3" /> Apply
+                            </button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+                </SuggestionSection>
+              )}
+
+              {/* ── Group Updates ── */}
+              {hasSuggestions && suggestedGroupUpdates.length > 0 && (
+                <SuggestionSection title="Group Reorganisation" subtitle="group structure changes"
+                  icon={<Layers className="w-3 h-3 text-teal-500" />}
+                  iconBg="bg-teal-100">
+                  {suggestedGroupUpdates.map((upd, i) => {
+                    const isApplied   = appliedGroupIdx.has(i);
+                    const refId       = upd.action === 'create' ? upd.tempId : upd.groupId;
+                    const isHighlit   = highlightId === (refId ?? '');
+                    const displayName = upd.action === 'create' ? upd.name : (upd.currentName ?? upd.groupId ?? '');
+                    return (
+                      <div key={i} ref={el => { groupRefs.current[i] = el; }}
+                        className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-all ${
+                          isHighlit ? "ring-2 ring-teal-400 border-teal-200 bg-teal-50/30" :
+                          isApplied ? "border-slate-200 bg-slate-50/60 opacity-60" :
+                          "border-teal-100 bg-teal-50/30"
+                        }`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            {upd.color && !isApplied && (
+                              <span className="w-3 h-3 rounded-full flex-shrink-0 border border-white/50 shadow-sm"
+                                style={{ backgroundColor: upd.color }} />
+                            )}
+                            <span className={`text-sm font-semibold truncate ${isApplied ? "text-slate-400" : "text-teal-700"}`}>
+                              {displayName ?? "(unnamed group)"}
+                            </span>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
+                              isApplied ? "bg-slate-100 text-slate-400 border-slate-200" :
+                              upd.action === 'create' ? "bg-emerald-50 text-emerald-600 border-emerald-200" :
+                              upd.action === 'delete' ? "bg-red-50 text-red-500 border-red-200" :
+                              "bg-teal-50 text-teal-600 border-teal-200"
+                            }`}>
+                              {isApplied
+                                ? (upd.action === 'create' ? "Created" : upd.action === 'delete' ? "Deleted" : "Updated")
+                                : (upd.action === 'create' ? "Create" : upd.action === 'delete' ? "Delete" : "Update")}
+                            </span>
+                            {upd.action === 'update' && upd.name && upd.name !== upd.currentName && !isApplied && (
+                              <span className="text-[10px] text-slate-400">→ &ldquo;{upd.name}&rdquo;</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-1.5">{upd.reason}</p>
+                          {!isApplied && upd.action !== 'delete' && (
+                            <div className="text-[10px] text-slate-400 space-y-0.5">
+                              {upd.action === 'create' && upd.nodeIds && upd.nodeIds.length > 0 && (
+                                <div>Members: {upd.nodeIds.join(", ")}</div>
+                              )}
+                              {upd.action === 'update' && (upd.addNodeIds?.length ?? 0) > 0 && (
+                                <div className="text-emerald-600">+ Add: {upd.addNodeIds!.join(", ")}</div>
+                              )}
+                              {upd.action === 'update' && (upd.removeNodeIds?.length ?? 0) > 0 && (
+                                <div className="text-red-500">− Remove: {upd.removeNodeIds!.join(", ")}</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {onApplyGroupUpdate && (
+                          isApplied ? (
+                            <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
+                              <Check className="w-3 h-3" /> Applied
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => { onApplyGroupUpdate(upd); setAppliedGroupIdx(s => new Set([...s, i])); }}
+                              className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                                upd.action === 'delete'
+                                  ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                                  : "bg-teal-50 text-teal-600 border-teal-200 hover:bg-teal-100"
+                              }`}>
+                              {upd.action === 'delete'
+                                ? <><Trash2 className="w-3 h-3" /> Delete</>
+                                : upd.action === 'create'
+                                  ? <><Plus className="w-3 h-3" /> Create</>
+                                  : <><RefreshCw className="w-3 h-3" /> Update</>
+                              }
+                            </button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+                </SuggestionSection>
+              )}
+            </>
           )}
         </div>
 
         {/* ── Footer ── */}
         <div className="px-8 pb-6 pt-3 border-t border-slate-100 flex-shrink-0 flex items-center justify-between gap-3">
           {onReAnalyze && !isLoading && !isCachedResult && (
-            <button
-              onClick={onReAnalyze}
-              className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
-            >
+            <button onClick={onReAnalyze}
+              className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-semibold">
               <RefreshCw className="w-3 h-3" /> Run analysis
             </button>
           )}
           <div className="flex-1" />
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
-          >
+          <button onClick={onClose}
+            className="px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">
             Close
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Helper sub-components ────────────────────────────────────────────────────
+
+function SuggestionSection({ title, subtitle, icon, iconBg, children }: {
+  title: string; subtitle: string;
+  icon: React.ReactNode; iconBg: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3 mt-2">
+        <div className={`w-5 h-5 rounded-full ${iconBg} flex items-center justify-center flex-shrink-0`}>
+          {icon}
+        </div>
+        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        <span className="text-xs text-slate-400">— {subtitle}</span>
+      </div>
+      <div className="space-y-2">{children}</div>
+    </div>
+  );
+}
+
+function CascadeList({ effects }: { effects: CascadeEffect[] }) {
+  return (
+    <div className="mt-3 pl-3 border-l-2 border-emerald-200/50 space-y-2">
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cascading Impact</p>
+      {effects.map(effect => (
+        <div key={effect.id} className="flex items-start gap-2">
+          {cascadeIcon(effect.type)}
+          <div>
+            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1.5 ${cascadeBadgeClass(effect.type)}`}>
+              {effect.type}
+            </span>
+            <span className="text-[10px] text-slate-400 mr-1.5">depth {effect.depth}</span>
+            <span className="text-xs text-slate-600">{effect.description}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

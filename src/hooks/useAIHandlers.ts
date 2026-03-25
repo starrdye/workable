@@ -8,7 +8,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { loadAIConfig, type AIConfig, AI_CONFIG_KEY } from '@/components/AISettingsModal';
 import { PROVIDERS, type AIProvider } from '@/lib/aiClient';
 import type { ServerGraphState } from '@/lib/serverState';
-import type { SuggestedConnection, SuggestedRemoval } from '@/components/AIAnalysisModal';
+import type { SuggestedConnection, SuggestedRemoval, SuggestedEdgeRemoval, SuggestedNewNode, SuggestedTaskUpdate, SuggestedGroupUpdate, SuggestionPhase } from '@/components/AIAnalysisModal';
 import type { AIUpdateResult } from '@/components/AIUpdateModal';
 import type { AIDebugLog } from '@/components/StartScreen';
 
@@ -27,6 +27,7 @@ export function useAIHandlers(
   setSelectedId: Dispatch<SetStateAction<string | null>>,
   setSelectedType: Dispatch<SetStateAction<'node' | 'edge' | null>>,
   pushSnapshot: (state: ServerGraphState) => void,
+  onCanvasMutation?: () => void,
 ) {
   // ── AI Config ──────────────────────────────────────────────────────────────
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => ({
@@ -57,10 +58,16 @@ export function useAIHandlers(
   const [aiSuggestedConnections,setAiSuggestedConnections] = useState<SuggestedConnection[]>([]);
   const [aiSuggestedRemovals,   setAiSuggestedRemovals]   = useState<SuggestedRemoval[]>([]);
   const [aiAnalysisTimestamp,   setAiAnalysisTimestamp]   = useState<number | null>(null);
+  const [aiSuggestedEdgeRemovals,  setAiSuggestedEdgeRemovals]  = useState<SuggestedEdgeRemoval[]>([]);
+  const [aiSuggestedNewNodes,      setAiSuggestedNewNodes]      = useState<SuggestedNewNode[]>([]);
+  const [aiSuggestedTaskUpdates,   setAiSuggestedTaskUpdates]   = useState<SuggestedTaskUpdate[]>([]);
+  const [aiSuggestionPlan,         setAiSuggestionPlan]         = useState<{ phases: SuggestionPhase[] } | null>(null);
+  const [aiSuggestedGroupUpdates,  setAiSuggestedGroupUpdates]  = useState<SuggestedGroupUpdate[]>([]);
 
   // Track which suggestions have already been applied so canvas can remove highlights
   const [appliedRemovalIds,     setAppliedRemovalIds]     = useState<Set<string>>(() => new Set());
   const [appliedConnectionKeys, setAppliedConnectionKeys] = useState<Set<string>>(() => new Set());
+  const [appliedEdgeRemovalIds, setAppliedEdgeRemovalIds] = useState<Set<string>>(() => new Set());
 
   // ── AI Update state ────────────────────────────────────────────────────────
   const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
@@ -95,6 +102,11 @@ export function useAIHandlers(
         setAiAnalysis(data.analysis);
         setAiSuggestedConnections(data.suggestedConnections ?? []);
         setAiSuggestedRemovals(data.suggestedRemovals ?? []);
+        setAiSuggestedEdgeRemovals(data.suggestedEdgeRemovals ?? []);
+        setAiSuggestedNewNodes(data.suggestedNewNodes ?? []);
+        setAiSuggestedTaskUpdates(data.suggestedTaskUpdates ?? []);
+        setAiSuggestedGroupUpdates(data.suggestedGroupUpdates ?? []);
+        setAiSuggestionPlan(data.suggestionPlan ?? null);
         setAiAnalysisTimestamp(Date.now());
       }
     } catch {
@@ -121,6 +133,12 @@ export function useAIHandlers(
     setAiAnalysisTimestamp(null);
     setAppliedRemovalIds(new Set());
     setAppliedConnectionKeys(new Set());
+    setAppliedEdgeRemovalIds(new Set());
+    setAiSuggestedEdgeRemovals([]);
+    setAiSuggestedNewNodes([]);
+    setAiSuggestedTaskUpdates([]);
+    setAiSuggestedGroupUpdates([]);
+    setAiSuggestionPlan(null);
     await runAnalyze();
   };
 
@@ -251,21 +269,21 @@ export function useAIHandlers(
     setAiUpdateResult(null);
   };
 
-  const handleAddConnection = (conn: SuggestedConnection) => {
+  const handleAddConnection = async (conn: SuggestedConnection) => {
     if (fullServerState) pushSnapshot(fullServerState);
     const edgeId = `${conn.sourceId}-${conn.targetId}-opt`;
-    // improvement-only: visible in Optimised Workflow mode, faded in Current Workflow
+    // concrete edge: visible in both Current and Optimised Workflow modes
     const newEdge = {
       id: edgeId, source: conn.sourceId, target: conn.targetId,
-      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: false,
     };
-    put({ action: 'addEdge', edge: newEdge });
-    
+    await put({ action: 'addEdge', edge: newEdge });
+
     // Process cascading automated actions (e.g. orphans)
     const orphanedIds = conn.cascadeEffects
       ?.filter(e => e.type === 'orphan' && e.id !== 'none' && !e.id.includes('effect'))
       .map(e => e.id) || [];
-      
+
     orphanedIds.forEach(nodeId => {
       put({ action: 'deleteNode', nodeId });
     });
@@ -281,20 +299,246 @@ export function useAIHandlers(
     // Mark as applied so canvas removes the suggested-arc highlight
     const key = `${conn.sourceId}-${conn.targetId}`;
     setAppliedConnectionKeys(prev => { const next = new Set(prev); next.add(key); return next; });
+    onCanvasMutation?.();
   };
 
-  const handleRemoveEntity = (removal: SuggestedRemoval) => {
-    if (removal.type === 'node') {
-      if (fullServerState) pushSnapshot(fullServerState);
+  const handleRemoveEdge = async (removal: SuggestedEdgeRemoval) => {
+    if (fullServerState) pushSnapshot(fullServerState);
+    await put({ action: 'deleteEdge', edgeId: removal.edgeId });
+    setFullServerState(prev => prev ? {
+      ...prev,
+      customEdges: (prev.customEdges ?? []).filter(e => e.id !== removal.edgeId),
+    } : prev);
+    setAppliedEdgeRemovalIds(prev => { const next = new Set(prev); next.add(removal.edgeId); return next; });
+    onCanvasMutation?.();
+  };
+
+  const resetAppliedSuggestions = () => {
+    setAppliedRemovalIds(new Set());
+    setAppliedConnectionKeys(new Set());
+    setAppliedEdgeRemovalIds(new Set());
+  };
+
+  const handleAddNewNode = async (node: SuggestedNewNode) => {
+    if (fullServerState) pushSnapshot(fullServerState);
+    const nodeId = `${node.tempId}_${Date.now()}`;
+    await put({ action: 'addNode', node: {
+      id: nodeId,
+      labelInitials: node.label.slice(0, 2).toUpperCase(),
+      label: node.label,
+      nodeType: 'neural',
+      role: node.role as 'person' | 'tool' | 'external' | 'output',
+      source: 'ai-generated',
+      position: { x: 0, y: 0 },
+    }});
+    await put({ action: 'updateMetadata', id: nodeId, metadata: {
+      name: node.label, role: node.role, summary: node.summary,
+    }});
+    // Wire edges
+    for (const srcId of node.connectFrom) {
+      await put({ action: 'addEdge', edge: {
+        id: `${srcId}-${nodeId}`, source: srcId, target: nodeId,
+        sequence: 1, weight: 1, isCustom: true,
+      }});
+    }
+    for (const tgtId of node.connectTo) {
+      await put({ action: 'addEdge', edge: {
+        id: `${nodeId}-${tgtId}`, source: nodeId, target: tgtId,
+        sequence: 1, weight: 1, isCustom: true,
+      }});
+    }
+    // If this replaces an existing node, remove it
+    if (node.replacesNodeId) {
+      await put({ action: 'deleteNode', nodeId: node.replacesNodeId });
+    }
+    // Re-run incremental layout for the new node
+    await put({ action: 'incrementalLayout', nodeIds: [nodeId] });
+    setFullServerState(prev => prev ? {
+      ...prev,
+      customNodes: [
+        ...(prev.customNodes ?? []).filter(n => n.id !== node.replacesNodeId),
+        { id: nodeId, labelInitials: node.label.slice(0, 2).toUpperCase(), label: node.label, nodeType: 'neural', role: node.role as 'person' | 'tool' | 'external' | 'output', source: 'ai-generated', position: { x: 0, y: 0 } },
+      ],
+    } : prev);
+  };
+
+  const handleUpdateTasks = async (update: SuggestedTaskUpdate) => {
+    if (fullServerState) pushSnapshot(fullServerState);
+    // Get current tasks for this node
+    const currentMeta = fullServerState?.settings?.metadataOverrides?.[update.nodeId];
+    const currentTasks: Array<{ id: string; title: string; status: string; priority: string }> = (currentMeta as any)?.tasks ?? [];
+    // Remove specified task IDs
+    const remaining = currentTasks.filter(t => !update.removeTasks.includes(t.id));
+    // Add new tasks
+    const merged = [...remaining, ...update.addTasks];
+    await put({ action: 'updateMetadata', id: update.nodeId, metadata: { tasks: merged } });
+    setFullServerState(prev => {
+      if (!prev) return prev;
+      const overrides = { ...(prev.settings?.metadataOverrides ?? {}) };
+      overrides[update.nodeId] = { ...(overrides[update.nodeId] ?? {}), tasks: merged } as any;
+      return { ...prev, settings: { ...prev.settings!, metadataOverrides: overrides } };
+    });
+  };
+
+  const handleRemoveEntity = async (removal: SuggestedRemoval) => {
+    if (removal.type !== 'node') return;
+    if (fullServerState) pushSnapshot(fullServerState);
+
+    if (removal.action === 'merge' && removal.mergeTargetId) {
+      // Re-route all custom edges from the removed node to the merge target
+      const edgesToReroute = (fullServerState?.customEdges ?? []).filter(
+        e => e.source === removal.id || e.target === removal.id
+      );
+      for (const edge of edgesToReroute) {
+        await put({ action: 'deleteEdge', edgeId: edge.id });
+        const newSource = edge.source === removal.id ? removal.mergeTargetId! : edge.source;
+        const newTarget = edge.target === removal.id ? removal.mergeTargetId! : edge.target;
+        // Skip self-loops created by the merge
+        if (newSource !== newTarget) {
+          await put({ action: 'addEdge', edge: {
+            id: `${newSource}-${newTarget}-merged`,
+            source: newSource, target: newTarget,
+            sequence: 1, weight: 1, isCustom: true,
+          }});
+        }
+      }
+      await put({ action: 'deleteNode', nodeId: removal.id });
+      setFullServerState(prev => prev ? {
+        ...prev,
+        customNodes: (prev.customNodes ?? []).filter(n => n.id !== removal.id),
+        customEdges: [
+          ...(prev.customEdges ?? []).filter(
+            e => e.source !== removal.id && e.target !== removal.id
+          ),
+          ...edgesToReroute
+            .map(edge => {
+              const newSource = edge.source === removal.id ? removal.mergeTargetId! : edge.source;
+              const newTarget = edge.target === removal.id ? removal.mergeTargetId! : edge.target;
+              if (newSource === newTarget) return null;
+              return { ...edge, id: `${newSource}-${newTarget}-merged`, source: newSource, target: newTarget };
+            })
+            .filter((e): e is NonNullable<typeof e> => e !== null),
+        ],
+      } : prev);
+
+    } else if (removal.action === 'automate') {
+      // Create a replacement tool node then remove the original
+      const toolNodeId = `${removal.id}_auto_${Date.now()}`;
+      const toolLabel  = `${removal.name} (Auto)`;
+      await put({ action: 'addNode', node: {
+        id: toolNodeId,
+        labelInitials: '⚙',
+        label: toolLabel,
+        nodeType: 'neural',
+        role: 'tool',
+        source: 'ai-generated',
+        position: { x: 0, y: 0 },
+      }});
+      await put({ action: 'updateMetadata', id: toolNodeId, metadata: {
+        name: toolLabel,
+        role: 'tool',
+        summary: `Automated replacement for ${removal.name}. ${removal.reason}`,
+      }});
+      // Re-route custom edges from original node to the new tool node
+      const edgesToReroute = (fullServerState?.customEdges ?? []).filter(
+        e => e.source === removal.id || e.target === removal.id
+      );
+      for (const edge of edgesToReroute) {
+        await put({ action: 'deleteEdge', edgeId: edge.id });
+        const newSource = edge.source === removal.id ? toolNodeId : edge.source;
+        const newTarget = edge.target === removal.id ? toolNodeId : edge.target;
+        await put({ action: 'addEdge', edge: {
+          id: `${newSource}-${newTarget}`,
+          source: newSource, target: newTarget,
+          sequence: 1, weight: 1, isCustom: true,
+        }});
+      }
+      await put({ action: 'deleteNode', nodeId: removal.id });
+      await put({ action: 'incrementalLayout', nodeIds: [toolNodeId] });
+      setFullServerState(prev => prev ? {
+        ...prev,
+        customNodes: [
+          ...(prev.customNodes ?? []).filter(n => n.id !== removal.id),
+          { id: toolNodeId, labelInitials: '⚙', label: toolLabel, nodeType: 'neural' as const, role: 'tool' as const, source: 'ai-generated' as const, position: { x: 0, y: 0 } },
+        ],
+        customEdges: [
+          ...(prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
+          ...edgesToReroute.map(edge => ({
+            ...edge,
+            id: `${edge.source === removal.id ? toolNodeId : edge.source}-${edge.target === removal.id ? toolNodeId : edge.target}`,
+            source: edge.source === removal.id ? toolNodeId : edge.source,
+            target: edge.target === removal.id ? toolNodeId : edge.target,
+          })),
+        ],
+      } : prev);
+
+    } else {
+      // Default: remove entirely
       put({ action: 'deleteNode', nodeId: removal.id });
       setFullServerState(prev => prev ? {
         ...prev,
         customNodes: (prev.customNodes ?? []).filter(n => n.id !== removal.id),
         customEdges: (prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
       } : prev);
-      if (selectedId === removal.id) { setSelectedId(null); setSelectedType(null); }
-      // Mark as applied so canvas removes the amber-glow highlight
-      setAppliedRemovalIds(prev => { const next = new Set(prev); next.add(removal.id); return next; });
+    }
+
+    if (selectedId === removal.id) { setSelectedId(null); setSelectedType(null); }
+    setAppliedRemovalIds(prev => { const next = new Set(prev); next.add(removal.id); return next; });
+  };
+
+  const handleApplyGroupUpdate = (upd: SuggestedGroupUpdate) => {
+    if (fullServerState) pushSnapshot(fullServerState);
+
+    if (upd.action === 'create') {
+      const groupId = `group-ai-${Date.now()}`;
+      const newGroup = {
+        id:      groupId,
+        name:    upd.name ?? 'AI Group',
+        color:   upd.color ?? '#6366F1',
+        nodeIds: upd.nodeIds ?? [],
+      };
+      put({ action: 'upsertWorkflowGroup', group: newGroup });
+      setFullServerState(prev => prev ? {
+        ...prev,
+        settings: {
+          ...prev.settings!,
+          workflowGroups: [...(prev.settings?.workflowGroups ?? []), newGroup],
+        },
+      } : prev);
+
+    } else if (upd.action === 'update' && upd.groupId) {
+      const existing = fullServerState?.settings?.workflowGroups?.find(g => g.id === upd.groupId);
+      if (!existing) return;
+      const updatedNodeIds = [
+        ...(existing.nodeIds ?? []).filter(id => !(upd.removeNodeIds ?? []).includes(id)),
+        ...(upd.addNodeIds ?? []).filter(id => !(existing.nodeIds ?? []).includes(id)),
+      ];
+      const updated = {
+        ...existing,
+        ...(upd.name  ? { name:    upd.name  } : {}),
+        ...(upd.color ? { color:   upd.color } : {}),
+        nodeIds: upd.nodeIds !== undefined ? upd.nodeIds : updatedNodeIds,
+      };
+      put({ action: 'upsertWorkflowGroup', group: updated });
+      setFullServerState(prev => prev ? {
+        ...prev,
+        settings: {
+          ...prev.settings!,
+          workflowGroups: (prev.settings?.workflowGroups ?? []).map(g =>
+            g.id === upd.groupId ? updated : g
+          ),
+        },
+      } : prev);
+
+    } else if (upd.action === 'delete' && upd.groupId) {
+      put({ action: 'deleteWorkflowGroup', groupId: upd.groupId });
+      setFullServerState(prev => prev ? {
+        ...prev,
+        settings: {
+          ...prev.settings!,
+          workflowGroups: (prev.settings?.workflowGroups ?? []).filter(g => g.id !== upd.groupId),
+        },
+      } : prev);
     }
   };
 
@@ -316,7 +560,12 @@ export function useAIHandlers(
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     // analysis actions
     handleAddConnection, handleRemoveEntity,
-    appliedRemovalIds, appliedConnectionKeys,
+    appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds,
+    resetAppliedSuggestions,
+    // new suggestion types
+    aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,
+    // handlers
+    handleRemoveEdge, handleAddNewNode, handleUpdateTasks, handleApplyGroupUpdate,
     // debug
     aiDebugLog, setAiDebugLog,
   };

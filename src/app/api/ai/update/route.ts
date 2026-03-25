@@ -95,8 +95,8 @@ export interface AIUpdateResult {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const ALLOWED_COLORS = new Set(['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']);
-const COLOR_CYCLE    = ['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#EF4444'];
+const ALLOWED_COLORS = new Set(['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6']);
+const COLOR_CYCLE    = ['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#14B8A6', '#EF4444'];
 const CORE_ID_SET    = new Set<string>(CORE_NODE_IDS);
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ STRICT RULES:
 - remove.nodeIds / remove.edgeIds: ONLY reference IDs from the snapshot
 - remove.groupIds: ONLY reference group IDs from the snapshot — removing a group does NOT remove its member nodes
 - Edge source/target: must exist in the snapshot OR in add.nodes of this same patch
-- Group colors: ONLY from #6366F1, #0EA5E9, #10B981, #F59E0B, #EF4444, #8B5CF6, #EC4899
+- Group colors: ONLY from #6366F1, #0EA5E9, #10B981, #F59E0B, #EF4444, #8B5CF6, #EC4899, #14B8A6
 - When removing a node, also list ALL its connected edges in remove.edgeIds
 - Role types: "person" (human), "tool" (software/system), "external" (external source/trigger), "output" (final artifact)
 - Only populate sections relevant to the instruction — use [] for unchanged sections
@@ -203,31 +203,48 @@ function buildSnapshot(state: ServerGraphState): string {
   const totalNodes   = coreNodes.length + customNodes.length;
   lines.push(`NODES (${totalNodes})`);
 
+  const formatTasks = (tasks?: { id: string; title: string; status: string; priority: string; note?: string }[]) => {
+    if (!tasks?.length) return;
+    lines.push(`         Tasks (${tasks.length}):`);
+    tasks.forEach(t => {
+      const note = t.note ? `  — ${t.note}` : '';
+      lines.push(`           [${t.id}] ${t.title}  status:${t.status}  priority:${t.priority}${note}`);
+    });
+  };
+
   coreNodes.forEach(([id, n]) => {
-    const meta    = overrides[id];
-    const name    = meta?.name    ?? n.name;
-    const role    = meta?.role    ?? n.role;
-    const summary = meta?.summary ?? n.summary;
-    const conns   = meta?.connections ?? n.connections;
-    const grpNames = nodeGroups[id] ?? [];
+    const meta        = overrides[id];
+    const name        = meta?.name        ?? n.name;
+    const role        = meta?.role        ?? n.role;
+    const summary     = meta?.summary     ?? n.summary;
+    const conns       = meta?.connections ?? n.connections;
+    const constraints = meta?.constraints;
+    const tasks       = meta?.tasks;
+    const grpNames    = nodeGroups[id] ?? [];
     lines.push(`  [${id}]  ${name}  (${role})`);
-    if (summary) lines.push(`         ${summary}`);
-    if (conns.length)    lines.push(`         Connections: ${conns.join(', ')}`);
+    if (summary)          lines.push(`         ${summary}`);
+    if (constraints)      lines.push(`         Constraints: ${constraints}`);
+    if (conns.length)     lines.push(`         Connections: ${conns.join(', ')}`);
     lines.push(`         Groups: ${grpNames.length ? grpNames.join(', ') : '–'}`);
+    formatTasks(tasks);
     lines.push('');
   });
 
   customNodes.forEach(n => {
-    const meta    = overrides[n.id];
-    const name    = meta?.name    ?? n.label;
-    const role    = meta?.role    ?? n.role;
-    const summary = meta?.summary ?? '';
-    const conns   = meta?.connections ?? [];
-    const grpNames = nodeGroups[n.id] ?? [];
+    const meta        = overrides[n.id];
+    const name        = meta?.name        ?? n.label;
+    const role        = meta?.role        ?? n.role;
+    const summary     = meta?.summary     ?? '';
+    const conns       = meta?.connections ?? [];
+    const constraints = meta?.constraints;
+    const tasks       = meta?.tasks;
+    const grpNames    = nodeGroups[n.id] ?? [];
     lines.push(`  [${n.id}]  ${name}  (${role})`);
-    if (summary) lines.push(`         ${summary}`);
-    if (conns.length)    lines.push(`         Connections: ${conns.join(', ')}`);
+    if (summary)          lines.push(`         ${summary}`);
+    if (constraints)      lines.push(`         Constraints: ${constraints}`);
+    if (conns.length)     lines.push(`         Connections: ${conns.join(', ')}`);
     lines.push(`         Groups: ${grpNames.length ? grpNames.join(', ') : '–'}`);
+    formatTasks(tasks);
     lines.push('');
   });
 
@@ -267,7 +284,8 @@ function buildSnapshot(state: ServerGraphState): string {
     groups.forEach(g => {
       const memberNames = g.nodeIds.map(id => nameLookup[id] ?? id).join(', ');
       const parent = g.parentGroupId ? `  ⊂ ${g.parentGroupId}` : '';
-      lines.push(`  [${g.id}]  ${g.name}${parent}  →  ${memberNames || '(empty)'}`);
+      const color  = g.color ?? '#6366F1';
+      lines.push(`  [${g.id}]  ${g.name}  color:${color}${parent}  →  ${memberNames || '(empty)'}`);
     });
   }
 

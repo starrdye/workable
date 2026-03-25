@@ -50,6 +50,7 @@ export default function Home() {
   const importInput = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const workflowCache = useRef<Record<string, any> | null>(null);
+  const resetAppliedSuggestionsRef = useRef<() => void>(() => {});
 
   // ── Composed hooks ─────────────────────────────────────────────────────────
   const { fullServerState, setFullServerState } = useGraphState();
@@ -83,6 +84,7 @@ export default function Home() {
     if (!cur) return;
     const prev = popUndo(cur);
     if (prev) await applyHistoryState(prev);
+    resetAppliedSuggestionsRef.current();
   }, [popUndo, applyHistoryState]);
 
   const handleRedo = useCallback(async () => {
@@ -90,6 +92,7 @@ export default function Home() {
     if (!cur) return;
     const next = popRedo(cur);
     if (next) await applyHistoryState(next);
+    resetAppliedSuggestionsRef.current();
   }, [popRedo, applyHistoryState]);
 
   // Track 9: Keyboard shortcuts (Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo, Cmd+E = export, Cmd+K = search, ? = help)
@@ -135,9 +138,16 @@ export default function Home() {
     aiUpdateLoading, aiUpdateResult, aiUpdateError,
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     handleAddConnection, handleRemoveEntity,
-    appliedRemovalIds, appliedConnectionKeys,
+    appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds,
+    resetAppliedSuggestions,
+    aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,
+    handleRemoveEdge, handleAddNewNode, handleUpdateTasks, handleApplyGroupUpdate,
     aiDebugLog, setAiDebugLog,
-  } = useAIHandlers(fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType, pushSnapshot);
+  } = useAIHandlers(
+    fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType, pushSnapshot,
+    () => { canvasRef.current?.triggerRefresh(); },
+  );
+  resetAppliedSuggestionsRef.current = resetAppliedSuggestions;
 
   // ── AI analysis canvas highlights ─────────────────────────────────────────
   // Nodes from AI suggestions that are pending removal (not yet applied) → amber glow
@@ -148,6 +158,10 @@ export default function Home() {
   const pendingSuggestedConnectionPairs = aiSuggestedConnections
     .filter(c => !appliedConnectionKeys.has(`${c.sourceId}-${c.targetId}`))
     .map(c => ({ sourceId: c.sourceId, targetId: c.targetId }));
+  // Edge IDs from AI suggestions flagged for removal (not yet applied) → amber/yellow highlight
+  const pendingRedundantEdgeIds = aiSuggestedEdgeRemovals
+    .filter(r => !appliedEdgeRemovalIds.has(r.edgeId))
+    .map(r => r.edgeId);
 
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
 
@@ -829,6 +843,7 @@ export default function Home() {
             activeFilters={{ roles: roleFilters, groupIds: groupFilters }}
             bottleneckNodeIds={pendingBottleneckNodeIds}
             suggestedConnectionPairs={pendingSuggestedConnectionPairs}
+            redundantEdgeIds={pendingRedundantEdgeIds}
           />
 
           {/* Active filter badge */}
@@ -898,13 +913,24 @@ export default function Home() {
         isLoading={aiAnalysisLoading}
         analysis={aiAnalysis}
         suggestedConnections={aiSuggestedConnections}
+        suggestedEdgeRemovals={aiSuggestedEdgeRemovals}
         suggestedRemovals={aiSuggestedRemovals}
+        suggestedNewNodes={aiSuggestedNewNodes}
+        suggestedTaskUpdates={aiSuggestedTaskUpdates}
+        suggestedGroupUpdates={aiSuggestedGroupUpdates}
+        suggestionPlan={aiSuggestionPlan}
         error={aiAnalysisError}
         onClose={() => setShowAIAnalysis(false)}
         onAddConnection={handleAddConnection}
+        onRemoveEdge={handleRemoveEdge}
         onRemoveEntity={handleRemoveEntity}
+        onAddNewNode={handleAddNewNode}
+        onUpdateTasks={handleUpdateTasks}
+        onApplyGroupUpdate={handleApplyGroupUpdate}
         onReAnalyze={handleReAnalyze}
         analysisTimestamp={aiAnalysisTimestamp}
+        appliedConnectionKeys={appliedConnectionKeys}
+        appliedRemovalIds={appliedRemovalIds}
       />
       <AIUpdateModal
         isOpen={showAIUpdate}

@@ -66,7 +66,7 @@ The client was polling `GET /api/graph-state?since=<ts>` every 3 seconds. On an 
 ## Track 4 — AI Quality & Reliability (High) ✅ IMPLEMENTED (`0.5-personal`)
 
 ### 4a — Streaming Responses
-Not yet implemented. Currently all three AI routes buffer the full response before returning.
+Not yet implemented. Currently all three AI routes buffer the full response before returning. See **Track 14d** for the full streaming proposal, which also addresses the large-graph token-truncation issue.
 
 ### 4b — Retry + Exponential Backoff ✅
 `aiClient.ts` now wraps all provider calls in a `withRetry(fn, 3)` helper using 1 s / 2 s / 4 s backoff. Non-retryable errors (401, 400, 422, auth failures) are detected and rethrown immediately without retrying.
@@ -332,204 +332,345 @@ After running AI Analyze, the bottleneck nodes and suggested connections were no
 
 ---
 
-## Track 12 — AI Analysis: Cascading Impact & Fishbone Reasoning
+## Track 12 — AI Analysis: Full-Spectrum Suggestions & Cascading Impact ✅ IMPLEMENTED (`0.47-personal`)
 
-### The Core Gap
+### Audit: What the Current Implementation Actually Does
 
-The current AI Analyze loop treats every suggestion as an isolated, independent action:
-- "Add a direct connection from **Mary** to **Dashboard**" — no mention of what that does to the **Edward** bottleneck or the **mary-ed** / **ed-cy** edges.
-- "Remove **Edward** (bottleneck)" — no guidance on what replaces his function, where his incoming connections should now point, or what new automation should close the gap.
+A full read of `src/app/api/ai/optimize/route.ts`, `AIAnalysisModal.tsx`, and `useAIHandlers.ts` reveals the following hard boundaries — much narrower than the feature appears to promise:
 
-This is a shallow analysis. Real workflow optimisation is a chain of causes and effects. A single change ripples — adding a bypass edge makes a bottleneck redundant, removing a node orphans its dependencies, merging two steps changes who owns what. Treating each suggestion independently forces the user to figure out the cascade themselves, which is exactly the cognitive load the AI feature is meant to remove.
+| Suggestion type | Supported? | Notes |
+|---|---|---|
+| Add a new edge between existing nodes | ✅ Yes | `suggestedConnections[]` |
+| Remove a node | ✅ Yes | `suggestedRemovals[]` with `action: "remove"` |
+| Remove an existing edge | ❌ No | No `suggestedEdgeRemovals[]` type exists at all |
+| Add a new node (automation, gateway, replacement) | ❌ No | Prompt explicitly says "only reference node IDs that actually exist" |
+| Automate a node (replace with a tool node) | ⚠️ Schema only | `action: "automate"` is in the prompt schema but `handleRemoveEntity` treats it identically to "remove" — no replacement node is created |
+| Merge two nodes | ⚠️ Schema only | `action: "merge"` exists in the prompt but nothing in the handlers executes it |
+| Suggest task updates for a node | ❌ No | `NodeTask[]` exists in state and is sent to the AI, but the response schema has no `suggestedTaskUpdates[]` |
+| Cascading edge removals after a bypass is added | ❌ No | The `cascadeEffects[]` field only has `stable / orphan / bottleneck` — never `redundant-edge` |
+| Ordered multi-step plan | ❌ No | All suggestions are flat independent lists |
 
-The user insight that prompted this track: *"when new connections are added, we didn't consider what connections could be updated or removed as a result of that — same applies to bottleneck nodes. Sometimes we can't or shouldn't remove all connections. When we remove something, what should be added? Cascading thinking — like Miro's fishbone."*
+**There is also an active bug on line 269 of the route:**
+```typescript
+// BROKEN — calls targetName as a function when it is a string property:
+`Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName()}'.`
+// CORRECT:
+`Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName}'.`
+```
+This throws `TypeError: conn.targetName is not a function` on every Pass 2 invocation. The error is caught silently, so **every single connection's cascade analysis defaults to "stable, could not evaluate cascade"** — Pass 2 has never actually executed in production.
+
+The practical result: the only thing the AI currently does is (1) suggest adding 1–3 edges between existing nodes, (2) suggest removing 0–3 nodes (remove/automate/merge all treated identically as deletion). Everything else — edge removals, new nodes, task changes, ordered plans, real cascade analysis — is either missing from the schema, unimplemented in the handlers, or silently broken.
 
 ---
 
-### 12a — Fishbone Root Cause Decomposition
+### 12a — Immediate Fixes (Five Bugs & Schema Gaps)
 
-**What it is:** When the AI identifies a bottleneck node, it should structure its reasoning as an Ishikawa (fishbone) diagram — the same mental model Miro uses in its diagramming templates. The bottleneck is the "fish head" (the effect). The incoming connections are the "bones" (the contributing causes). Each bone can have sub-bones (root causes one level deeper).
+These are production bugs that must be resolved before any new suggestion types are added.
 
-**Why it matters:** Today the AI says "Edward is a bottleneck". The fishbone structure would say:
-- **Head:** Edward holds up report publishing (avg 2+ day queue)
-- **Bone 1 — Handoff dependency:** Mary always escalates to Edward; she has no publish authority
-  - Sub-bone: No direct-to-dashboard role assigned to Mary
-  - Sub-bone: Approval policy requires senior sign-off even for routine NAV reports
-- **Bone 2 — Volume mismatch:** Edward receives 100% of publish requests but works at 60% bandwidth
-  - Sub-bone: No parallel review path; single-threaded by design
-- **Bone 3 — No automation gate:** The ed→cy edge requires manual action; no rules-based trigger exists
-
-**Proposed AI schema extension:**
+**Fix 1 — `targetName()` TypeError in Pass 2 (line 269 of `optimize/route.ts`)**
 
 ```typescript
-interface FishboneNode {
-  nodeId:      string;            // the bottleneck
-  effectLabel: string;            // "holds up X by avg Y"
-  bones: Array<{
-    causeLabel:   string;         // "Handoff dependency"
-    connectionId: string | null;  // edge causing this bone, if identifiable
-    subBones:     string[];       // root causes
-    proposedFix:  string;         // what to change to address this bone
-  }>;
+// BROKEN:
+userMessage: `Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName()}'.`
+// FIXED (remove the parentheses — targetName is a string, not a function):
+userMessage: `Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName}'.`
+```
+
+This single character fix restores Pass 2 cascade validation entirely. Until this is fixed, every cascade analysis silently falls back to "stable, could not evaluate cascade".
+
+**Fix 2 — Add `redundant-edge` cascade effect type**
+
+The current `PASS2_PROMPT` only allows `"orphan" | "bottleneck" | "stable"`. Adding a bypass edge creates *redundant* edges, not orphaned nodes — a distinct and more common scenario. Extend the type:
+
+```typescript
+type CascadeEffectType = 'stable' | 'orphan' | 'bottleneck' | 'redundant-edge';
+```
+
+Update the `PASS2_PROMPT` system prompt to describe `redundant-edge` as: "an existing edge that becomes unnecessary because the new connection provides a shorter or equivalent path".
+
+**Fix 3 — Implement `automate` action in `handleRemoveEntity`**
+
+Currently `automate` is treated identically to `remove` — the node disappears with no replacement. The correct behaviour: when `removal.action === 'automate'`, call the AI Update API to generate and insert a replacement automation node, then remove the original. Stub implementation:
+
+```typescript
+if (removal.action === 'automate') {
+  // Call /api/ai/update with prompt:
+  // "Replace node ${removal.name} with an automation tool node that performs the same function"
+  // Then remove the original node after the replacement is inserted
 }
 ```
 
-**UI proposal:** In the AI Analysis modal, each bottleneck section shows a collapsible fishbone card. Clicking a bone highlights the corresponding edge on the canvas (amber pulse). The "Fix this bone" button triggers the specific cascading action for that branch.
+**Fix 4 — Implement `merge` action in `handleRemoveEntity`**
 
----
-
-**What it is:** Every suggested connection addition or removal should trigger a recursive cascade analysis. The AI doesn't stop at the immediate next step; it evaluates the *secondary* effects of its own primary suggestions, and the *tertiary* effects of those, iterating until it determines the graph has reached a completely stable, fully-resolved state (i.e., no hanging nodes, no orphaned sub-workflows, and no new bottlenecks created by the patch).
-
-**The problem today:** Adding the **mary→dashboard** bypass edge makes the **mary→edward→dashboard** path partially redundant, yet the AI Analysis lists them independently. The user adds the bypass, but the old path remains — creating two parallel routes where one should be deprecated, the old bottleneck node becomes stranded (still receives flow but its output is no longer the only path), and the graph becomes misleading rather than improved.
-
-**Proposed AI schema extension:**
+When `removal.action === 'merge'`, the current handler deletes the node silently with no merge target. The `SuggestedRemoval` type needs a `mergeTargetId?: string` field so the AI can specify which node absorbs the removed one. Handler stub:
 
 ```typescript
-interface SuggestedConnection {
-  sourceId:       string;
-  targetId:       string;
-  reason:         string;
-  cascadeEffects: Array<{
-    depth:        number;           // 1 = immediate, 2 = secondary, etc.
-    type:         'deprecate-edge' | 'reduce-edge-weight' | 'reassign-node-role'
-                | 'suggest-remove-node' | 'update-group';
-    targetId:     string;           // which edge or node is affected
-    reason:       string;           // why this secondary change follows
-    severity:     'required' | 'recommended' | 'optional';
-    triggersEffects: string[];      // IDs of deeper cascade effects caused by this one
-  }>;
+if (removal.action === 'merge' && removal.mergeTargetId) {
+  // Re-route all edges from removal.id to removal.mergeTargetId
+  // Update mergeTargetId node metadata to reflect the combined role
+  // Then delete the original node
 }
 ```
 
-**UI proposal:** In the suggestion row, a "▶ 4 follow-on changes" expandable section lists the deep cascade as a nested tree. Applying the primary suggestion auto-prompts: *"This addition makes the mary→edward edge redundant, which in turn orphans the edward node. Handle entire cascade?"* with Yes/Skip buttons. Required cascade effects are shown with a warning badge.
+**Fix 5 — Add Zod schema validation for the `/api/ai/optimize` response**
 
-**Example recursive cascade chain:**
-1. ✅ **Depth 0 (Primary): Add** mary → dashboard (direct publish bypass)
-2. ↳ ⚠️ **Depth 1: Recommend deprecating** mary → edward (now redundant for routine reports)
-3.   ↳ ⚠️ **Depth 2: Recommend deprecating** edward → dashboard (now orphaned from input)
-4.     ↳ 💡 **Depth 3: Suggest** edward's role changes from "Final approver" to "Exception reviewer"
-5.       ↳ 💡 **Depth 4: Suggest** adding automation rule node between mary and dashboard to gate the exceptions
+The route currently parses the AI response with a bare `JSON.parse` into `any[]`. Unlike the `/api/ai/update` route which uses `aiSchemas.ts`, the optimize route has no type guards. Any malformed AI response silently produces undefined behaviour. A minimal Zod schema:
+
+```typescript
+const CascadeEffectSchema = z.object({
+  id: z.string(), type: z.enum(['stable','orphan','bottleneck','redundant-edge']),
+  description: z.string(), depth: z.number().int().min(1),
+});
+const SuggestedConnectionSchema = z.object({
+  sourceId: z.string(), sourceName: z.string(),
+  targetId: z.string(), targetName: z.string(),
+  connectionName: z.string(), connectionType: z.string(),
+  reason: z.string(), cascadeEffects: z.array(CascadeEffectSchema).optional(),
+});
+const SuggestedRemovalSchema = z.object({
+  type: z.enum(['node']), id: z.string(), name: z.string(),
+  action: z.enum(['remove','automate','merge']),
+  reason: z.string(),
+  mergeTargetId: z.string().optional(),
+  fishboneBones: z.array(z.object({ category: z.string(), cause: z.string() })).optional(),
+});
+const OptimizeResponseSchema = z.object({
+  analysis: z.string(),
+  suggestedConnections: z.array(SuggestedConnectionSchema).default([]),
+  suggestedRemovals: z.array(SuggestedRemovalSchema).default([]),
+});
+```
 
 ---
 
-### 12c — Bottleneck Resolution Planner (Recursive)
+### 12b — Add `suggestedEdgeRemovals[]` (Missing Critical Type)
 
-**What it is:** Removing a bottleneck without a replacement plan simply breaks the workflow. The AI should generate a **deep resolution plan** — thinking past the immediate removal to ask "what breaks next?". It must structure a sequence of: what stays, what changes role, what new node/automation fills the gap, and what happens to the downstream nodes that relied on the removed element, iterating until the workflow is fully connected again.
+The most glaring gap: the AI can suggest adding a bypass edge (mary→dashboard) but has no mechanism to simultaneously suggest removing the edge it makes redundant (mary→edward). The result is a graph with contradictory paths after "optimisation".
 
-**The problem today:** The "Remove" button on a bottleneck node in the Analysis modal removes the node and its edges, leaving the graph with orphaned endpoints and no guidance on what fills the function.
+**Prompt addition** — extend `SYSTEM_PROMPT` with a new top-level array:
 
-**Proposed AI schema extension:**
+```
+"suggestedEdgeRemovals": [
+  {
+    "edgeId": "existing_edge_id",
+    "sourceName": "Source Node Name",
+    "targetName": "Target Node Name",
+    "reason": "One sentence explaining why this edge should be removed.",
+    "prerequisiteConnectionId": "the suggestedConnection that must be applied first, if any"
+  }
+]
+```
+
+**TypeScript type:**
 
 ```typescript
-interface SuggestedRemoval {
-  id:               string;
-  type:             'node' | 'edge';
-  reason:           string;
-  resolutionPlan:   {
-    description:    string;         // prose summary
-    orderedSteps:   Array<{
-      stepIndex:    number;
-      action:       'add-node' | 'add-edge' | 'reassign-role' | 'remove-edge'
-                  | 'add-automation' | 'update-metadata';
-      targetId:     string;
-      detail:       string;         // what exactly to do
-      isPrerequisite: boolean;      // must happen before the removal
-      isFollowUp:   boolean;        // must happen after the removal
-    }>;
-    cannotRemoveIf: string[];       // conditions under which removal is inadvisable
-    alternativeToFullRemoval?: string; // "if full removal is not possible, consider…"
+interface SuggestedEdgeRemoval {
+  edgeId:                    string;
+  sourceName:                string;
+  targetName:                string;
+  reason:                    string;
+  prerequisiteConnectionId?: string; // apply this connection first
+}
+```
+
+**Handler addition in `useAIHandlers.ts`:**
+
+```typescript
+const handleRemoveEdge = (removal: SuggestedEdgeRemoval) => {
+  if (fullServerState) pushSnapshot(fullServerState);
+  put({ action: 'deleteEdge', edgeId: removal.edgeId });
+  setFullServerState(prev => prev ? {
+    ...prev,
+    customEdges: (prev.customEdges ?? []).filter(e => e.id !== removal.edgeId),
+  } : prev);
+};
+```
+
+**UI:** Rendered as a third collapsible section "Redundant Connections" in `AIAnalysisModal`. If `prerequisiteConnectionId` is set, the Remove button is disabled until that connection is applied, with tooltip "Apply the bypass connection first".
+
+---
+
+### 12c — Add `suggestedNewNodes[]` (Automation & Gateway Nodes)
+
+When the AI recommends automating a node, it currently just deletes it. What it should do is propose a *replacement* — a rule-based gateway, an automation script node, or a reduced-scope role. This requires a new suggestion type that creates a node and wires it in.
+
+**Prompt addition:**
+
+```
+"suggestedNewNodes": [
+  {
+    "tempId": "new_node_1",
+    "label": "Auto-Publish Gate",
+    "role": "Automation",
+    "summary": "Rule-based trigger: publishes report when Mary approves + no discrepancy flag",
+    "connectFrom": ["existing_node_id"],
+    "connectTo":   ["existing_node_id"],
+    "replacesNodeId": "existing_node_id_optional"
+  }
+]
+```
+
+**TypeScript type:**
+
+```typescript
+interface SuggestedNewNode {
+  tempId:          string;
+  label:           string;
+  role:            string;
+  summary:         string;
+  connectFrom:     string[];   // existing node IDs that should point to this node
+  connectTo:       string[];   // existing node IDs this node should point to
+  replacesNodeId?: string;     // if set, remove this node after inserting the new one
+}
+```
+
+**Handler:** Calls `PUT addNode` + `PUT addEdge` for each connection, then optionally `PUT deleteNode` if `replacesNodeId` is set. Uses the same incremental layout path as `handleApplyUpdate`.
+
+**Canvas preview:** New node rendered as a pulsing dashed outline on the canvas before the user accepts (similar to the dashed arc for suggested connections).
+
+---
+
+### 12d — Add `suggestedTaskUpdates[]` (Node Task Changes)
+
+Node task lists (`NodeTask[]`) are already sent to the AI in the workflow snapshot but the AI response schema has no way to propose updates to them. This means the AI cannot suggest redistributing tasks, splitting an overloaded node's task list, or adding tasks to an underutilised node.
+
+**Prompt addition:**
+
+```
+"suggestedTaskUpdates": [
+  {
+    "nodeId": "existing_node_id",
+    "nodeName": "Node Display Name",
+    "addTasks":    [{ "id": "t_new_1", "label": "New task description", "done": false }],
+    "removeTasks": ["existing_task_id"],
+    "reason": "One sentence explaining the redistribution."
+  }
+]
+```
+
+**TypeScript type:**
+
+```typescript
+interface SuggestedTaskUpdate {
+  nodeId:      string;
+  nodeName:    string;
+  addTasks:    Array<{ id: string; label: string; done: boolean }>;
+  removeTasks: string[];   // task IDs to remove
+  reason:      string;
+}
+```
+
+**Handler:** Calls `PUT updateMetadata` with the merged task list. Takes a snapshot before applying so the change is undoable.
+
+---
+
+### 12e — Interactive Fishbone (Link Bones to Actions)
+
+The `fishboneBones` field already exists in `SuggestedRemoval` and is rendered in `AIAnalysisModal` as a static display-only grid. The upgrade: each bone becomes a clickable link that jumps to the specific suggestion that addresses it.
+
+**Extended `FishboneBone` interface:**
+
+```typescript
+interface FishboneBone {
+  category:             'People' | 'Process' | 'Technology' | 'Environment';
+  cause:                string;
+  // NEW: link to the suggestion that resolves this root cause
+  resolvedBy?: {
+    type:   'connection' | 'edgeRemoval' | 'newNode' | 'taskUpdate';
+    refId:  string;   // sourceId-targetId for connections, edgeId for removals, tempId for new nodes
   };
 }
 ```
 
-**Example resolution plan for removing Edward:**
+**UI behaviour:** When `resolvedBy` is set, the bone renders with a subtle arrow icon and the text "→ See suggested fix". Clicking it scrolls the modal to the relevant suggestion card and highlights it with a brief pulse animation. This creates the Miro-style causal link between *why* (fishbone cause) and *what to do* (the specific suggestion).
 
-> **Cannot remove if:** Any report requires regulatory sign-off (check compliance policy).
-> **Alternative if not removable:** Change Edward's role to Exception Reviewer — only escalate non-routine NAV discrepancies.
->
-> **Pre-requisite steps (before removal):**
-> 1. Add automation node "Auto-Publish Gate" (rule-based, triggers on Mary approval + no-discrepancy flag)
-> 2. Add edge mary → Auto-Publish Gate
-> 3. Add edge Auto-Publish Gate → Dashboard
->
-> **Post-removal steps:**
-> 4. Remove edge mary → edward (now orphaned)
-> 5. Remove edge edward → dashboard (now orphaned)
-> 6. Update Dashboard metadata: note new publish path
+**Cascading chain display:** Each suggested connection's expanded cascade panel renders depth-indented entries:
 
-**UI proposal:** The removal suggestion row expands to show the resolution plan as a numbered checklist with checkboxes. Each step has its own "Apply" button. Steps marked `isPrerequisite: true` must be checked before the "Remove node" button activates. Steps marked `isFollowUp: true` appear after removal, surfaced as "Recommended clean-up actions."
+```
+Depth 1 (immediate):   → edward→dashboard now redundant   [Remove edge]
+  Depth 2 (secondary): → edward node loses all inbound    [Remove node / reassign role]
+    Depth 3 (tertiary): → edward's task list has no owner [Redistribute 3 tasks to mary]
+```
+
+Required actions (type `orphan`) show a red ⚠ badge. Optional follow-ups (type `redundant-edge`, `bottleneck`) show a yellow 💡 badge. Applying a connection with `cascadeEffects` shows a confirm dialog listing the chain before committing.
 
 ---
 
-### 12d — Suggestion Dependency Graph & Ordered Apply
+### 12f — Ordered Multi-Step Plan Tab
 
-**What it is:** Suggestions are not always independent. Adding connection A before removing node B matters. The AI should return an explicit **dependency graph** on its suggestions so the UI can enforce an order and prevent the user from applying suggestions in an invalid sequence.
+All suggestion lists today are flat and independent. Suggestions have ordering constraints: add the bypass edge *before* removing the bottleneck node; redistribute tasks *after* the merge. The AI should return an explicit phased plan, and the UI should enforce the ordering.
 
-**Proposed schema:**
+**Prompt addition** — new top-level `suggestionPlan` key:
 
-```typescript
-interface AnalysisResult {
-  analysis:             string;
-  suggestedConnections: SuggestedConnection[];
-  suggestedRemovals:    SuggestedRemoval[];
-  suggestionPlan: {
-    phases: Array<{
-      phaseIndex:   number;
-      label:        string;    // "Phase 1 — Bypass routing"
-      description:  string;
-      suggestionIds: string[]; // IDs referencing connections/removals in this phase
-      prerequisitePhases: number[];
-    }>;
-  };
+```
+"suggestionPlan": {
+  "phases": [
+    {
+      "phaseIndex": 1,
+      "label": "Bypass Routing",
+      "description": "Add direct connections to reduce load on the bottleneck",
+      "suggestionRefs": [
+        { "type": "connection", "refId": "mary-dashboard" }
+      ]
+    },
+    {
+      "phaseIndex": 2,
+      "label": "Clean Up Redundant Paths",
+      "description": "Remove edges and nodes made redundant by Phase 1",
+      "prerequisitePhases": [1],
+      "suggestionRefs": [
+        { "type": "edgeRemoval", "refId": "mary-edward" },
+        { "type": "removal",     "refId": "edward" }
+      ]
+    },
+    {
+      "phaseIndex": 3,
+      "label": "Task Redistribution",
+      "description": "Move Edward's tasks to remaining team members",
+      "prerequisitePhases": [2],
+      "suggestionRefs": [
+        { "type": "taskUpdate", "refId": "mary" }
+      ]
+    }
+  ]
 }
 ```
 
-**UI proposal:** The Analysis modal gains a "Step-by-step plan" tab alongside the current "Findings" tab. Each phase renders as a card with all its actions listed. Phases are gated: Phase 2's "Apply" buttons are disabled until all Phase 1 actions are applied. A "Apply all in order" master button walks through all phases sequentially with confirmations.
+**TypeScript type:**
+
+```typescript
+interface SuggestionPhase {
+  phaseIndex:         number;
+  label:              string;
+  description:        string;
+  prerequisitePhases: number[];
+  suggestionRefs:     Array<{ type: 'connection' | 'edgeRemoval' | 'removal' | 'newNode' | 'taskUpdate'; refId: string }>;
+}
+```
+
+**UI:** `AIAnalysisModal` gains a second tab "📋 Suggested Plan" alongside the existing "🔍 Findings" tab. Each phase renders as a card. If `prerequisitePhases` are not fully applied, the phase card is greyed out with "Complete Phase N first". An "Apply All in Order" button walks through all phases with a confirmation at each step. The entire multi-phase apply is wrapped in a single `pushSnapshot` call so `Cmd+Z` rolls back the entire plan atomically.
 
 ---
 
-### 12e — Impact Preview Before Apply
+### Implementation Priority
 
-**What it is:** Before the user clicks "Add" or "Remove" on any suggestion, a hover/click preview shows exactly what the graph will look like — not just the direct change, but also all `cascadeEffects` that would be triggered in the same apply.
-
-**UI proposal:**
-- Hovering the "Add" button for a suggested connection draws the new edge on the canvas as a solid (not dashed) emerald arc + dims all cascade-affected edges simultaneously.
-- The tooltip reads: *"Adds 1 edge · marks 2 edges deprecated · updates 1 node role"*
-- Clicking "Apply cascade" applies everything in the correct order as a single undo-able snapshot.
-
----
-
-### Implementation Approach: Iterative/Recursive Agentic Loop
-
-Generating a deep cascading analysis in a single prompt is fragile — the AI tends to surface only the most obvious Depth-1 cascade steps and hallucinate the rest if asked to predict the entire chain at once. An iterative approach is much more robust:
-
-**Pass 1 — Structural Discovery**
-Send the workflow graph and ask for:
-1. Bottlenecks and their fishbone causes.
-2. Initial primary suggestions (additions/removals) to fix the root causes.
-
-**Pass N — Recursive Evaluation (The "Does it break?" Loop)**
-For each primary suggestion from Pass 1, spin up an evaluation loop:
-1. Apply the primary suggestion to an in-memory graph shadow copy.
-2. Send the *modified* graph back to the AI with the prompt:
-> *"Given this workflow graph, we just [applied change]. Does this change leave any nodes orphaned? Does it create a new bottleneck? Are any existing edges now redundant? If yes, propose the required fixes. If no, reply 'STABLE'."*
-3. If the AI proposes fixes, apply them to the shadow copy and repeat step 2.
-4. The loop terminates when the AI replies "STABLE" (or hits a depth limit of 5 to prevent infinite loops). 
-5. The accumulated changes are flattened into the final `resolutionPlan` or `cascadeEffects` tree returned to the frontend.
-
-This iterative evaluation mimics true human "cascading thinking" — walking the graph step-by-step and reacting to the consequences of each action before planning the next.
+| Sub-track | Effort | Impact | Target |
+|---|---|---|---|
+| 12a Fix 1 — `targetName()` bug | 1 min | Unblocks Pass 2 entirely | ✅ 0.47 |
+| 12a Fix 5 — Zod schema | 1 hr | Prevents silent parse failures | ✅ 0.47 |
+| 12a Fix 2 — `redundant-edge` type | 30 min | Accurate cascade labels | ✅ 0.47 |
+| 12b — `suggestedEdgeRemovals` | 3 hr | Closes the biggest analysis gap | ✅ 0.47 |
+| 12a Fix 3 — `automate` handler | 2 hr | Makes schema promise real | ✅ 0.47 |
+| 12a Fix 4 — `merge` handler | 2 hr | Makes schema promise real | ✅ 0.47 |
+| 12c — `suggestedNewNodes` | 4 hr | Enables true automation recommendations | ✅ 0.47 |
+| 12d — `suggestedTaskUpdates` | 2 hr | Task-level insights | ✅ 0.47 |
+| 12e — Interactive fishbone | 3 hr | Causal traceability | ✅ 0.47 |
+| 12f — Ordered plan tab | 4 hr | Safe sequential apply | ✅ 0.47 |
+| 12g — `suggestedGroupUpdates` | 3 hr | AI-driven workflow group reorganisation | ✅ 0.48 |
 
 ---
 
-### 12f — Execution Architecture & State Validation
-
-**Backend Validation:** The AI-generated `resolutionPlan` specifies `isPrerequisite` and `isFollowUp` actions. The server route processing the `PUT /api/graph-state` apply command must enforce that prerequisite actions (e.g. adding a new bypass edge) succeed before the primary removal (e.g. deleting the bottleneck) executes. If it detects orphaned edges the client didn't specify in the resolution, the server rejects the patch to prevent the graph from breaking.
-
-**Frontend Transaction Stack:** The `useUndoRedo` hook currently saves a single snapshot per action. A cascading apply triggers multiple sequential graph mutations (add edge 1, remove edge 2, update node 3). The UI must batch these into a single transaction so that `Cmd+Z` reverts the entire cascade chain perfectly, rather than unwinding it operation by operation.
-
----
-
-### Priority: P1 — this is the feature gap that makes AI Analyze feel shallow rather than genuinely insightful
+### Priority: P1 — ✅ Fully implemented (12a–12f in `0.47-personal`, 12g in `0.48-personal`)
 
 ---
 
@@ -700,6 +841,195 @@ These tests assure the multi-step cascading logic introduced in Track 12 resolve
 
 ---
 
+## Track 14 — AI Scalability for Large Graphs
+
+### Problem
+
+All three AI routes (`parse-workflow`, `optimize`, `update`) send a full JSON snapshot of the workflow as input and expect a complete structured JSON response as output. For small workflows (8–15 nodes, 10–20 edges) this fits comfortably within any model's context window. As workflows scale to 30–100+ nodes the snapshot crosses the input token threshold; the response grows proportionally and regularly hits `maxTokens`, truncating the JSON mid-object. The `optimize` route already exhibited this in production: the AI returned a truncated response, `JSON.parse` threw, and the entire `analysis` field fell back to the raw broken JSON string displayed verbatim to the user.
+
+**A partial fix has been applied (`0.50-personal`):** `maxTokens` raised from 2 000 → 5 000 on the optimize route and `jsonrepair` added to patch truncated responses. However this is a palliative measure — a workflow with 50+ nodes and rich metadata will overflow 5 000 output tokens regardless, and the input snapshot will eventually overflow the model's context window too.
+
+---
+
+### 14a — Token Budget Estimation Before Dispatch ✅ PARTIAL (`0.50-personal`)
+
+Before sending any AI request, estimate the combined input token count (snapshot + system prompt) and the expected output size. If the estimate exceeds a configurable safe threshold (e.g. 80 % of the model's context window), switch to a compressed snapshot automatically.
+
+**Implementation:**
+- Add a `estimateTokens(text: string): number` utility using the `tiktoken` or `gpt-tokenizer` library (both are < 15 KB, browser-compatible)
+- In each route's handler, call `estimateTokens(systemPrompt + workflowSnapshot)` before `generateText`
+- If `estimated > SAFE_INPUT_THRESHOLD`, invoke the context compression pipeline (Track 14b) before sending
+
+**`maxTokens` audit and fixes already applied:**
+
+| Route | Old `maxTokens` | New `maxTokens` | Fix |
+|---|---|---|---|
+| `/api/ai/optimize` (Pass 1) | 2 000 | 5 000 | ✅ `0.50-personal` |
+| `/api/ai/optimize` (Pass 2) | 1 000 | 1 000 | No change needed |
+| `/api/ai/update` | 4 000 | 4 000 | No change needed |
+| `/api/ai/parse-workflow` | 8 000 | 8 000 | Already generous |
+
+**`jsonrepair` added to optimize route:** ✅ `0.50-personal` — `JSON.parse(jsonrepair(stripFences(rawText)))` replaces bare `JSON.parse`, recovering responses truncated by a few tokens.
+
+---
+
+### 14b — Context Compression (Smart Snapshot Trimming)
+
+When the full snapshot exceeds the safe input budget, produce a compressed representation that keeps the semantically critical information and drops low-signal noise.
+
+**Compression layers (applied in order until budget is met):**
+
+1. **Strip position data** — `baselinePositions` and `ecosystemPositions` are never used by any AI route; ensure they are not serialised into any snapshot (already done in optimize/update, but verify parse-workflow)
+2. **Summarise node metadata** — For nodes that are not referenced by any group or edge in the current analysis scope, replace the full metadata object with a compact `{ id, name, role }` triple. Estimated saving: 60–80 % per trimmed node
+3. **Deduplicate edge labels** — Edges where `name` is empty or matches a generic pattern (e.g. `"Data Transfer"`) can be represented as `{ id, source, target }` without the name/summary fields
+4. **Group-level summaries** — Replace the per-node `groups: [...]` array (repeated for every node) with a single top-level `groups` block that maps `groupId → memberIds` — this halves the representation of group membership
+5. **Task truncation** — If a node has > 5 tasks, send only the first 5 with a note `"+ N more tasks omitted"`. The AI cannot meaningfully reason about 20-task lists anyway
+6. **Core node omission** — When all core nodes are hidden (AI-generated workflows using `hiddenCoreNodes`), strip all `EDGE_DATA` and `NODE_DATA` entries from the snapshot entirely — they are structural noise for custom workflows
+
+**API surface:**
+```typescript
+function compressSnapshot(
+  snapshot: WorkflowSnapshot,
+  budgetTokens: number,
+): { compressed: WorkflowSnapshot; omissions: string[] }
+```
+The `omissions` array is logged to the AI Debug Log so users can understand what was dropped.
+
+---
+
+### 14c — Scoped / Focused Analysis
+
+Instead of always analysing the entire workflow, let users constrain the analysis to a specific workflow group or hand-selected nodes. This keeps the snapshot small by design and produces more actionable, focused suggestions.
+
+**UI entry points:**
+- **Group context menu** — Right-click a workflow group region → "AI: Analyse this group". Sends only the nodes in that group + their direct neighbours + the edges between them
+- **Multi-select** — After shift-selecting nodes, the toolbar gains an "AI: Analyse selection" button (requires Track 6e multi-select first)
+- **Bottleneck focus** — If the current analysis has identified bottleneck nodes, a "Deep-dive: [node name]" button appears that re-runs analysis with a 2-hop subgraph centred on that node
+
+**Route change:** Add an optional `scope?: { nodeIds: string[] }` field to the optimize and update request bodies. When present, the snapshot builder filters nodes/edges to only the scoped set.
+
+**Snapshot size impact:** A 50-node workflow with 6 groups averages ~8 nodes per group. A focused 8-node + 2-hop subgraph analysis uses ~15 % of the tokens of the full graph — comfortably within any model's budget.
+
+---
+
+### 14d — Streaming Responses (Progressive Output)
+
+All three AI routes currently buffer the entire model response, then parse and return it. For large workflows this means:
+- **Latency:** User sees nothing for 10–30 seconds, then the full UI updates at once
+- **Token truncation:** A buffered response that exceeds `maxTokens` mid-JSON is unrecoverable without `jsonrepair`; streamed partial chunks can be yielded as they arrive and the UI can render them incrementally
+
+**Implementation:**
+- Switch `generateText` to `streamText` (Vercel AI SDK or Anthropic SDK streaming)
+- Change each route to return `new Response(stream)` with `Content-Type: text/event-stream`
+- On the client, use `ReadableStream` to accumulate chunks and progressively populate state:
+  - For `optimize`: stream the `analysis` markdown text first (render it as it arrives), then buffer the structured suggestion arrays until the JSON stream closes
+  - For `parse-workflow`: stream nodes as each JSON array element is completed — nodes appear on the canvas one by one
+  - For `update`: buffer the full patch (it must be applied atomically), but stream a `status` field ("Parsing update...", "Validating changes...", "Finalising...")
+
+**Impact on large graphs:** Streaming turns a 30-second wait into a visually active 30-second experience. Combined with Track 15 (immediate canvas transition), the user is on the canvas watching their workflow being built in real time rather than staring at a spinning button on the start page.
+
+---
+
+### 14e — Chunked Multi-Turn Analysis
+
+For very large workflows (100+ nodes) where even a compressed scoped snapshot might overflow, introduce a multi-turn conversation approach:
+
+**Round 1 — Structure scan:** Send only node IDs + roles (no metadata, no tasks). Ask the AI to identify the top 5 most critical nodes to analyse.
+
+**Round 2 — Deep analysis:** Send the full metadata for only those 5 nodes + their 2-hop neighbourhood. Ask for specific suggestions.
+
+**Round 3 — Plan synthesis:** Send the suggestions from Round 2 plus a summary of the rest of the graph. Ask for the ordered suggestion plan.
+
+This requires storing intermediate results server-side (in-memory per-request is fine) and three sequential API calls instead of one. Total tokens per call stays small regardless of graph size. The Debug Log should show all three call/response pairs.
+
+**Trigger condition:** Activate automatically when `estimateTokens(fullSnapshot) > CHUNKED_THRESHOLD` (e.g. 12 000 tokens). Otherwise use the single-pass flow.
+
+---
+
+### Priority: P1 for 14a/14b (token safety), P2 for 14c/14d (UX quality), P3 for 14e (large enterprise scale)
+
+---
+
+## Track 15 — Start-Page Generation UX: Immediate Canvas Transition
+
+### Problem
+
+When a user submits a workflow description on the start screen, they are left staring at a spinning "Generating workflow with AI…" button on the static start page for the entire duration of the AI call — typically 10–30 seconds. There is no progress feedback beyond the spinning icon, no ability to cancel, and no sense of what stage the generation is at. Users are effectively frozen.
+
+The root cause: `isAppStarted` is only set to `true` inside `importStateAndStart`, which runs **after** both the AI call and the server round-trips complete. The canvas never appears until everything is done.
+
+---
+
+### 15a — Optimistic Canvas Entry (Immediate Transition) ✅ PROPOSED
+
+Transition to the canvas shell the moment the user clicks "Generate with AI" — before any AI response arrives. Show the empty canvas with a full-screen loading overlay that provides progressive stage feedback.
+
+**State changes needed in `page.tsx`:**
+```typescript
+const [isGeneratingWorkflow, setIsGeneratingWorkflow] = useState(false);
+```
+
+**Flow:**
+1. User clicks "Generate with AI"
+2. `setIsAppStarted(true)` immediately — canvas shell renders
+3. `setIsGeneratingWorkflow(true)` — overlay appears over canvas
+4. AI call proceeds in background
+5. On success: `importStateAndStart(result)` runs → `setIsGeneratingWorkflow(false)` → overlay fades, workflow appears
+6. On error: `setIsGeneratingWorkflow(false)` → error toast on canvas (not a full revert to start screen) + "Try again" button
+
+**Overlay design (canvas loading state):**
+```
+┌──────────────────────────────────────────┐
+│  ✦  Building your workflow…              │
+│                                          │
+│  ● Analysing workflow description        │  ← stage 1 (active, pulsing)
+│  ○ Identifying nodes and connections     │  ← stage 2 (pending)
+│  ○ Calculating layout                    │  ← stage 3 (pending)
+│  ○ Finalising                            │  ← stage 4 (pending)
+│                                          │
+│  [Cancel]                                │
+└──────────────────────────────────────────┘
+```
+
+Stage progression is time-based (estimated durations from typical API call timing):
+- Stage 1: 0–60 % of elapsed time
+- Stage 2: 60–80 %
+- Stage 3: 80–95 %
+- Stage 4: 95–100 % (server round-trips)
+
+**Cancel behaviour:** Clicking Cancel aborts the in-flight fetch (using `AbortController`) and returns to the start screen. No state is corrupted because `importStateAndStart` has not yet been called.
+
+---
+
+### 15b — Real-Time Progress from Streaming (Future)
+
+Once Track 14d (streaming) is implemented, replace the time-estimated stage progression with actual signal-driven stages:
+
+| Stream event | Stage shown |
+|---|---|
+| First token received | "Reading your description…" |
+| First `customNodes` array element complete | "Identified [N] team members / systems…" |
+| All nodes complete | "Mapping [M] connections…" |
+| All edges complete | "Calculating layout…" |
+| `PUT importState` response | "Finalising…" |
+| `PUT resetLayout` response | Done — overlay fades out |
+
+This requires the streaming parse-workflow route to emit structured Server-Sent Events with stage metadata alongside the partial JSON. The client reads these events and updates the overlay in real time.
+
+---
+
+### 15c — Skeleton Canvas During Generation
+
+While the loading overlay is shown, render a faded "skeleton" canvas behind it: placeholder node circles at random (or templated) positions with grey fill and no labels. This gives a strong spatial affordance that a graph is being built, rather than a blank white canvas with an overlay.
+
+The skeleton can use the current template's default positions as placeholder coordinates if the user chose a template as the basis, or generate 8–12 random positions in the canvas bounds otherwise.
+
+---
+
+### Priority: P1 for 15a (direct user pain), P2 for 15b (requires streaming infrastructure), P3 for 15c (polish)
+
+---
+
 ## Suggested Release Cadence
 
 | Release | Key deliverables | Status |
@@ -710,10 +1040,16 @@ These tests assure the multi-step cascading logic introduced in Track 12 resolve
 | **0.43-personal** | Incremental layout (5b), layout web worker scaffold (5c), parallelised sidebar saves (5d), Vitest suite 23 tests (8a), page.tsx refactor into 4 hooks (8b), GraphAction discriminated union (8c), Zod AI response validation (8d) | ✅ Merged |
 | **0.44-personal** | AI Analyze real workflow data (hiddenCoreNodes, metadataOverrides, groups, constraints); section cards UI; cached result + Re-analyze + relative timestamp; hover tooltip data correctness; remove hardcoded bottleneck text; core edge hidden-endpoint filtering; generic AI Update examples | ✅ Merged |
 | **0.45-personal** | Always-on data flow mode (all edges lit + animated toggle); vivid improvements mode (upgraded edges always glow green at opacity 0.90, deprecated fade to 0.06); analysis action buttons grey out after apply (Add → Added ✓, Automate → Automated ✓, etc.) | ✅ Merged |
-| **0.46-personal** | Reset Layout fix — immediate re-fetch + viewport reset via `triggerResetLayout()` imperative ref; AI analysis canvas highlights — amber bottleneck glow on suggested-removal nodes, dashed emerald arcs for suggested connections, applied-state lifted to `useAIHandlers` | In Progress |
-| **0.47** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
-| **0.48** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e), cycle detection on parse (4d) | Planned |
-| **0.50** | API key encryption, server-side session option, full security audit | Planned |
+| **0.46-personal** | Reset Layout fix — immediate re-fetch + viewport reset via `triggerResetLayout()` imperative ref; AI analysis canvas highlights — amber bottleneck glow on suggested-removal nodes, dashed emerald arcs for suggested connections, applied-state lifted to `useAIHandlers`; undo/redo port from `0.42-personal`; improvements toggle bug fix | ✅ Merged |
+| **0.47-personal** | Track 12 — Full-spectrum AI suggestions: `suggestedEdgeRemovals`, `suggestedNewNodes`, `suggestedTaskUpdates`, `suggestionPlan` phases; `automate` handler (creates replacement tool node + re-routes edges); `merge` handler (re-routes edges → target + deletes source); interactive fishbone with scroll-to-fix links; Findings/Plan tab UI; Zod validation on optimize response; `redundant-edge` cascade type; `targetName()` Pass 2 bug fix | ✅ Merged |
+| **0.48-personal** | Track 12g — AI-suggested workflow group reorganisation: `suggestedGroupUpdates` (create/update/delete); `handleApplyGroupUpdate` integrated with undo/redo stack; group color swatch + member diff UI in modal; `FishboneBone.resolvedBy` supports `groupUpdate` refs; `groupUpdate` as valid `suggestionPlan` phase ref; group `id`/`color` exposed in AI snapshot so model can reference existing groups | ✅ Merged |
+| **0.49-personal** | AI Update feature-parity audit: `buildSnapshot` now includes per-node `constraints` and full `tasks` list (id/title/status/priority/note) so `update.nodeTasks` is informed replacement not blind overwrite; group snapshot now includes `color` so recolor patches use correct current state; `#14B8A6` (teal) added to `ALLOWED_COLORS`, `COLOR_CYCLE`, and SYSTEM_PROMPT palette list | ✅ Merged |
+| **0.50-personal** | Visual & UX polish: output node color changed from green → orange (#F97316) to free green exclusively for AI-proposed elements; redundant-edge yellow highlight on canvas (`redundantEdgeIds` prop + amber glow); applied connections now concrete edges (not improvement-only); canvas immediate refresh after AI actions (triggerRefresh + await put); undo/redo clears AI applied-suggestion state; AI analyze token fix (maxTokens 2000→5000, jsonrepair added to optimize route) | ✅ Merged |
+| **0.51** | Track 14a/14b — token budget estimation + context compression for large graphs; Track 15a — optimistic canvas transition (immediate canvas entry on AI generation) | Planned |
+| **0.52** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
+| **0.52** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e) | Planned |
+| **0.53** | Track 14d — streaming AI responses; Track 15b — stream-driven progress overlay | Planned |
+| **0.54** | API key encryption, server-side session option, full security audit (Track 7) | Planned |
 
 ---
 
@@ -742,7 +1078,14 @@ These tests assure the multi-step cascading logic introduced in Track 12 resolve
 | Security — key encryption, sanitisation (7a/7b) | P2 | Low | Trust and safety | Planned |
 | Tests + refactor (8a–8d) | P3 | High | Long-term maintainability | ✅ `0.43-personal` |
 | Accessibility + keyboard nav (Track 9) | P3 | Medium | Inclusivity, power-user speed | ✅ `0.47-personal` |
-| Cascading AI Analysis & Fishbone Reasoning (Track 12) | P1 | High | Deep, context-aware optimizations | ✅ `0.47-personal` |
+| Full-spectrum AI Analysis: edge removals, new nodes, task updates, automate/merge, interactive fishbone, plan tab (Track 12a–f) | P1 | High | Deep, context-aware optimizations | ✅ `0.47-personal` |
+| AI-suggested workflow group reorganisation: create/update/delete groups via AI Analyze (Track 12g) | P1 | Medium | Structural clarity; phase/dept separation | ✅ `0.48-personal` |
+| AI Update feature-parity audit — snapshot completeness (tasks, constraints, group colors), teal color allowlist | P1 | Low | Correct informed patches; no silent data loss | ✅ `0.49-personal` |
+| Visual & UX polish — output node orange; redundant edges yellow; concrete applied connections; canvas refresh fix; undo syncs AI state; optimize token fix | P1 | Low | Correct visual feedback; no raw-JSON display bug | ✅ `0.50-personal` |
+| AI scalability — token estimation, context compression, scoped analysis (Track 14a–14c) | P1 | Medium | Supports 30–100+ node workflows without truncation | Planned `0.51` |
+| Immediate canvas transition on AI generation — optimistic entry + stage overlay (Track 15a) | P1 | Low | Eliminates 10–30 s frozen start-page wait | Planned `0.51` |
+| Streaming AI responses — progressive canvas population, stream-driven progress (Track 14d, 15b) | P2 | High | Real-time feedback; eliminates latency cliff | Planned `0.53` |
+| Chunked multi-turn analysis for 100+ node graphs (Track 14e) | P3 | High | Enterprise-scale workflows | Planned |
 | Edge ID robustness + AI response validation (8e, 7c) | P3 | Low | Data integrity | Planned |
 
 The biggest single improvement with the least effort is **Track 1 Tier 1** — client-side auto-save. It costs one `localStorage.setItem` call per mutation and eliminates the most common user frustration (refresh = lost work) in an afternoon.
