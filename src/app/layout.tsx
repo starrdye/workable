@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { DevErrorFilter } from "@/components/DevErrorFilter";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -22,6 +23,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased`}>
+        {/* Suppress chrome-extension errors in dev only — never ships to production */}
+        {process.env.NODE_ENV === "development" && <DevErrorFilter />}
         {children}
       </body>
     </html>
