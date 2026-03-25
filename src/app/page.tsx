@@ -11,7 +11,7 @@ import { KeyboardHelpModal } from "@/components/KeyboardHelpModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
-  Undo2, Redo2, BookOpen, Keyboard,
+  Undo2, Redo2, BookOpen, Keyboard, Clock,
 } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
 
@@ -508,7 +508,8 @@ export default function Home() {
                 }`}
                 onClick={() => setShowImprovements(false)}
               >
-                <span className={`font-bold text-sm block mb-0.5 ${!showImprovements ? "text-indigo-600" : "text-slate-600 group-hover:text-indigo-500"}`}>
+                <span className={`flex items-center gap-1.5 font-bold text-sm mb-0.5 ${!showImprovements ? "text-indigo-600" : "text-slate-600 group-hover:text-indigo-500"}`}>
+                  <Clock size={13} className="flex-shrink-0" />
                   Current Workflow
                 </span>
                 <p className="text-xs text-slate-500">Every step and handoff as it is today.</p>
@@ -519,7 +520,8 @@ export default function Home() {
                 }`}
                 onClick={() => setShowImprovements(true)}
               >
-                <span className={`font-bold text-sm block mb-0.5 ${showImprovements ? "text-emerald-600" : "text-slate-600 group-hover:text-emerald-500"}`}>
+                <span className={`flex items-center gap-1.5 font-bold text-sm mb-0.5 ${showImprovements ? "text-emerald-600" : "text-slate-600 group-hover:text-emerald-500"}`}>
+                  <Zap size={13} className="flex-shrink-0" />
                   Optimised Workflow
                 </span>
                 <p className="text-xs text-slate-500">AI-suggested improvements overlaid.</p>

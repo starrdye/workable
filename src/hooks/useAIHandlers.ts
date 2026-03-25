@@ -272,10 +272,10 @@ export function useAIHandlers(
   const handleAddConnection = async (conn: SuggestedConnection) => {
     if (fullServerState) pushSnapshot(fullServerState);
     const edgeId = `${conn.sourceId}-${conn.targetId}-opt`;
-    // concrete edge: visible in both Current and Optimised Workflow modes
+    // improvement-only edge: hidden in Current Workflow, emerald-highlighted in Optimised Workflow
     const newEdge = {
       id: edgeId, source: conn.sourceId, target: conn.targetId,
-      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: false,
+      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
     };
     await put({ action: 'addEdge', edge: newEdge });
 

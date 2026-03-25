@@ -5,6 +5,7 @@ import { NODE_DATA, EDGE_DATA, CORE_NODE_IDS } from '@/lib/constants';
 import { jsonrepair } from 'jsonrepair';
 import type { ServerGraphState } from '@/lib/serverState';
 import { AIUpdatePatchResponse } from '@/lib/aiSchemas';
+import { buildUpdateSnapshot } from '@/lib/snapshotBuilder';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -175,122 +176,8 @@ STRICT RULES:
 - Output ONLY the JSON object — no markdown fences, no explanation text`;
 
 // ── Snapshot builder ──────────────────────────────────────────────────────────
-
-function buildSnapshot(state: ServerGraphState): string {
-  const lines: string[] = ['CURRENT WORKFLOW SNAPSHOT', '=========================', ''];
-
-  const overrides = state.settings?.metadataOverrides ?? {};
-  const hiddenCore = new Set(state.settings?.hiddenCoreNodes ?? []);
-  const groups     = state.settings?.workflowGroups ?? [];
-
-  // Build lookup: nodeId → group names
-  const nodeGroups: Record<string, string[]> = {};
-  groups.forEach(g => {
-    g.nodeIds.forEach(nid => {
-      if (!nodeGroups[nid]) nodeGroups[nid] = [];
-      nodeGroups[nid].push(g.name);
-    });
-  });
-
-  // Build all-node name lookup (for edge labels)
-  const nameLookup: Record<string, string> = {};
-  Object.entries(NODE_DATA).forEach(([id, n]) => { nameLookup[id] = overrides[id]?.name || n.name; });
-  state.customNodes.forEach(n => { nameLookup[n.id] = overrides[n.id]?.name || n.label; });
-
-  // --- NODES ---
-  const coreNodes    = Object.entries(NODE_DATA).filter(([id]) => !hiddenCore.has(id));
-  const customNodes  = state.customNodes;
-  const totalNodes   = coreNodes.length + customNodes.length;
-  lines.push(`NODES (${totalNodes})`);
-
-  const formatTasks = (tasks?: { id: string; title: string; status: string; priority: string; note?: string }[]) => {
-    if (!tasks?.length) return;
-    lines.push(`         Tasks (${tasks.length}):`);
-    tasks.forEach(t => {
-      const note = t.note ? `  — ${t.note}` : '';
-      lines.push(`           [${t.id}] ${t.title}  status:${t.status}  priority:${t.priority}${note}`);
-    });
-  };
-
-  coreNodes.forEach(([id, n]) => {
-    const meta        = overrides[id];
-    const name        = meta?.name        ?? n.name;
-    const role        = meta?.role        ?? n.role;
-    const summary     = meta?.summary     ?? n.summary;
-    const conns       = meta?.connections ?? n.connections;
-    const constraints = meta?.constraints;
-    const tasks       = meta?.tasks;
-    const grpNames    = nodeGroups[id] ?? [];
-    lines.push(`  [${id}]  ${name}  (${role})`);
-    if (summary)          lines.push(`         ${summary}`);
-    if (constraints)      lines.push(`         Constraints: ${constraints}`);
-    if (conns.length)     lines.push(`         Connections: ${conns.join(', ')}`);
-    lines.push(`         Groups: ${grpNames.length ? grpNames.join(', ') : '–'}`);
-    formatTasks(tasks);
-    lines.push('');
-  });
-
-  customNodes.forEach(n => {
-    const meta        = overrides[n.id];
-    const name        = meta?.name        ?? n.label;
-    const role        = meta?.role        ?? n.role;
-    const summary     = meta?.summary     ?? '';
-    const conns       = meta?.connections ?? [];
-    const constraints = meta?.constraints;
-    const tasks       = meta?.tasks;
-    const grpNames    = nodeGroups[n.id] ?? [];
-    lines.push(`  [${n.id}]  ${name}  (${role})`);
-    if (summary)          lines.push(`         ${summary}`);
-    if (constraints)      lines.push(`         Constraints: ${constraints}`);
-    if (conns.length)     lines.push(`         Connections: ${conns.join(', ')}`);
-    lines.push(`         Groups: ${grpNames.length ? grpNames.join(', ') : '–'}`);
-    formatTasks(tasks);
-    lines.push('');
-  });
-
-  // --- EDGES ---
-  const allEdgeEntries = Object.entries(EDGE_DATA);
-  const customEdges    = state.customEdges;
-  lines.push(`EDGES (${allEdgeEntries.length + customEdges.length})`);
-
-  allEdgeEntries.forEach(([id, e]) => {
-    const meta = overrides[id];
-    const name = meta?.name ?? e.name;
-    // EDGE_DATA keys use hyphens: "nav-xy", "xy-script", etc.
-    // Split on the first hyphen to get source and target node IDs.
-    const hyphenIdx = id.indexOf('-');
-    const src = hyphenIdx !== -1 ? id.slice(0, hyphenIdx) : id;
-    const tgt = hyphenIdx !== -1 ? id.slice(hyphenIdx + 1) : '';
-    const srcName = nameLookup[src] ?? src;
-    const tgtName = tgt ? (nameLookup[tgt] ?? tgt) : '?';
-    lines.push(`  [${id}]  ${srcName} → ${tgtName}  "${name}"`);
-  });
-
-  customEdges.forEach(e => {
-    const meta    = overrides[e.id];
-    const name    = meta?.name ?? e.name ?? '';
-    const srcName = nameLookup[e.source] ?? e.source;
-    const tgtName = nameLookup[e.target] ?? e.target;
-    lines.push(`  [${e.id}]  ${srcName} → ${tgtName}  ${name ? `"${name}"` : ''}`);
-  });
-
-  lines.push('');
-
-  // --- GROUPS ---
-  lines.push(`GROUPS (${groups.length})`);
-  if (groups.length === 0) {
-    lines.push('  (none)');
-  } else {
-    groups.forEach(g => {
-      const memberNames = g.nodeIds.map(id => nameLookup[id] ?? id).join(', ');
-      const parent = g.parentGroupId ? `  ⊂ ${g.parentGroupId}` : '';
-      const color  = g.color ?? '#6366F1';
-      lines.push(`  [${g.id}]  ${g.name}  color:${color}${parent}  →  ${memberNames || '(empty)'}`);
-    });
-  }
-
-  return lines.join('\n');
-}
+// Delegated to src/lib/snapshotBuilder.ts (Track 14b-i: hierarchical group summaries).
+// buildUpdateSnapshot is imported above and used directly in the route handler.
 
 // ── JSON extraction (same as parse-workflow) ──────────────────────────────────
 
@@ -466,7 +353,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const snapshot = buildSnapshot(currentState);
+    const snapshot = buildUpdateSnapshot(currentState);
 
     const genResult = await generateText({
       provider,

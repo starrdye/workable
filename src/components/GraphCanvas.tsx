@@ -111,7 +111,7 @@ const BASE_STYLE: Record<string, { border: string; text: string }> = {
   xy: { border: "#4F46E5", text: "#4F46E5" },
   mary: { border: "#CBD5E1", text: "#475569" },
   ed: { border: "#F59E0B", text: "#F59E0B" },
-  cy: { border: "#CBD5E1", text: "#475569" },
+  cy: { border: "#0EA5E9", text: "#0EA5E9" },
 };
 const BASE_LABELS: Record<string, { initials: string; label: string }> = {
   nav: { initials: "NB", label: "NAV Back Office" },
@@ -161,20 +161,22 @@ function buildNodes(
     const p = pos[id] || { x: 100, y: 100 };
     const s = BASE_STYLE[id];
     const isBottleneck = id === "ed";
-    const isDep = isBottleneck && showImprovements;
+    // The bottleneck node is never visually deprecated — only its edges fade in optimised mode
+    // (handled by isDeprecated flags in buildEdges). The node itself always keeps white fill
+    // with amber border + text so the glow reads clearly when showImprovements is on.
     const isUpgr = id === "cy" && showImprovements;
-    const border = isDep ? "#E2E8F0" : isUpgr ? "#10B981" : s.border;
-    const text = isDep ? "#94A3B8" : isUpgr ? "#10B981" : s.text;
+    const border = isUpgr ? "#10B981" : s.border;
+    const text   = isUpgr ? "#10B981" : s.text;
     return {
       id, x: p.x, y: p.y,
       initials: BASE_LABELS[id].initials,
       label: BASE_LABELS[id].label,
       subcategory: ECO_SUB[id],
       bottleneck: isBottleneck, bottleneckText: undefined,
-      isDeprecated: isDep, isUpgraded: isUpgr,
+      isDeprecated: false, isUpgraded: isUpgr,
       borderColor: border, textColor: text,
-      labelBg: "rgba(255,255,255,0.95)", labelBorderColor: isDep ? "#F1F5F9" : "#E2E8F0",
-      labelTextColor: isDep ? "#94A3B8" : "#334155",
+      labelBg: "rgba(255,255,255,0.95)", labelBorderColor: "#E2E8F0",
+      labelTextColor: "#334155",
       role: BASE_ROLE[id] ?? "tool",
     };
   });
@@ -209,11 +211,14 @@ function buildEdges(showImprovements: boolean, customEdges: WorkflowApiState["cu
   customEdges.forEach((ce) => {
     if (!existing.has(ce.id)) {
       const isOnlyWhenImproved = !!ce.isImprovementOnly;
+      // Improvement-only edges are completely hidden in Current Workflow mode —
+      // they only exist in the Optimised view where they render as upgraded (emerald + glow).
+      if (isOnlyWhenImproved && !showImprovements) return;
       base.push({
         id: ce.id, source: ce.source, target: ce.target,
         sequence: ce.sequence || 1, weight: ce.weight || 1,
-        isDeprecated: isOnlyWhenImproved ? !showImprovements : false,
-        isUpgraded: isOnlyWhenImproved,
+        isDeprecated: false,
+        isUpgraded: isOnlyWhenImproved,  // emerald + glow in Optimised mode
         isCustom: true,
       });
     }
@@ -1237,8 +1242,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           {/* ── Node layer ────────────────────────────────────────── */}
           {nodes.map((node) => {
             const isDep = node.isDeprecated;
-            // Show amber glow if: (a) hardcoded bottleneck OR (b) in AI-suggested removals pending list
-            const isBotl = (node.bottleneck || bottleneckNodeIds.includes(node.id)) && !isDep;
+            // Amber bottleneck highlight — only active in Optimised Workflow view (showImprovements).
+            // In Current Workflow view the glow is suppressed so the canvas reads as neutral.
+            const isBotl = showImprovements && (node.bottleneck || bottleneckNodeIds.includes(node.id)) && !isDep;
             const isSelected = selectedId === node.id && selectedType === "node";
             const isConnSrc = connectFrom === node.id;
             const nodeMeta = NODE_META[node.id];

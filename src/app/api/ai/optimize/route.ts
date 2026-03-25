@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, type AIProvider } from '@/lib/aiClient';
 import { classifyAIError } from '@/lib/aiErrors';
-import { NODE_DATA, EDGE_DATA } from '@/lib/constants';
 import { OptimizeResponseSchema } from '@/lib/aiSchemas';
+import { buildOptimizeSnapshot } from '@/lib/snapshotBuilder';
 import { jsonrepair } from 'jsonrepair';
 
 const SYSTEM_PROMPT = `You are a workflow optimization expert specializing in business process improvement and operational efficiency.
@@ -237,108 +237,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const settings = (workflowData.settings ?? {}) as {
-      metadataOverrides?: Record<string, { name?: string; role?: string; summary?: string; constraints?: string; connections?: string[]; processes?: string[] }>;
-      hiddenCoreNodes?: string[];
-      workflowGroups?: Array<{ id: string; name: string; color?: string; nodeIds: string[] }>;
-    };
-    const metadataOverrides = settings.metadataOverrides ?? {};
-    const hiddenCoreSet     = new Set<string>(settings.hiddenCoreNodes ?? []);
-    const groups            = settings.workflowGroups ?? [];
-
-    // Build a per-node group-membership lookup (by display name)
-    const nodeGroupNames: Record<string, string[]> = {};
-    groups.forEach(g => {
-      g.nodeIds.forEach(nid => {
-        if (!nodeGroupNames[nid]) nodeGroupNames[nid] = [];
-        nodeGroupNames[nid].push(g.name);
-      });
-    });
-
-    // Core nodes (excluding hidden ones)
-    const coreNodes = Object.entries(NODE_DATA)
-      .filter(([id]) => !hiddenCoreSet.has(id))
-      .map(([id, n]) => {
-        const meta = metadataOverrides[id] ?? {};
-        return {
-          id,
-          name:        meta.name        ?? n.name,
-          role:        meta.role        ?? n.role,
-          summary:     meta.summary     ?? n.summary,
-          ...(meta.constraints              ? { constraints: meta.constraints }          : {}),
-          ...(meta.connections?.length      ? { connections: meta.connections }          : { connections: n.connections }),
-          ...(nodeGroupNames[id]?.length    ? { groups: nodeGroupNames[id] }             : {}),
-        };
-      });
-
-    // Custom nodes (AI-generated / user-added)
-    const customNodes = ((workflowData.customNodes ?? []) as Array<{ id: string; label: string; role: string }>)
-      .map(n => {
-        const meta = metadataOverrides[n.id] ?? {};
-        return {
-          id:      n.id,
-          name:    meta.name    ?? n.label,
-          role:    meta.role    ?? n.role,
-          summary: meta.summary ?? '',
-          ...(meta.constraints           ? { constraints: meta.constraints }       : {}),
-          ...(meta.connections?.length   ? { connections: meta.connections }       : {}),
-          ...(nodeGroupNames[n.id]?.length ? { groups: nodeGroupNames[n.id] }     : {}),
-        };
-      });
-
-    // Build name lookup for edge labelling
-    const nameLookup: Record<string, string> = {};
-    [...coreNodes, ...customNodes].forEach(n => { nameLookup[n.id] = n.name; });
-
-    // Core edges (exclude edges where both endpoints are hidden)
-    const coreEdges = Object.entries(EDGE_DATA)
-      .filter(([id]) => {
-        const hyphen = id.indexOf('-');
-        if (hyphen === -1) return true;
-        const src = id.slice(0, hyphen);
-        const tgt = id.slice(hyphen + 1);
-        return !(hiddenCoreSet.has(src) && hiddenCoreSet.has(tgt));
-      })
-      .map(([id, e]) => {
-        const meta = metadataOverrides[id] ?? {};
-        const hyphen = id.indexOf('-');
-        const src = hyphen !== -1 ? id.slice(0, hyphen) : id;
-        const tgt = hyphen !== -1 ? id.slice(hyphen + 1) : '';
-        return {
-          id,
-          name:       meta.name ?? e.name,
-          sourceName: nameLookup[src] ?? src,
-          targetName: nameLookup[tgt] ?? tgt,
-          summary:    e.summary,
-        };
-      });
-
-    // Custom edges (skip improvement-only ones — they are already optimisations)
-    const customEdges = ((workflowData.customEdges ?? []) as Array<{ id: string; source: string; target: string; isImprovementOnly?: boolean; name?: string }>)
-      .filter(e => !e.isImprovementOnly)
-      .map(e => {
-        const meta = metadataOverrides[e.id] ?? {};
-        return {
-          id:         e.id,
-          name:       meta.name ?? e.name ?? '',
-          sourceName: nameLookup[e.source] ?? e.source,
-          targetName: nameLookup[e.target] ?? e.target,
-        };
-      });
-
-    // Group summary — expose id and color so the AI can reference and modify existing groups
-    const groupSummary = groups.map(g => ({
-      id:      g.id,
-      name:    g.name,
-      color:   g.color ?? '#6366F1',
-      nodeIds: g.nodeIds,
-      members: g.nodeIds.map(id => nameLookup[id] ?? id),
-    }));
-
-    const workflowSnapshot = JSON.stringify(
-      { coreNodes, coreEdges, customNodes, customEdges, groups: groupSummary },
-      null, 2
-    );
+    // Build enriched snapshot (Track 14b-i: hierarchical group summaries)
+    const { coreNodes, customNodes, coreEdges, customEdges, groupSummary, nameLookup, workflowSnapshot } =
+      buildOptimizeSnapshot(workflowData);
 
     const pass1Result = await generateText({
       provider,

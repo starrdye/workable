@@ -897,6 +897,107 @@ The `omissions` array is logged to the AI Debug Log so users can understand what
 
 ---
 
+### 14b-i — Hierarchical Group Summaries ✅ IMPLEMENTED (`0.51-personal`)
+
+#### Problem
+
+Both snapshot builders (optimize route inline + update route `buildSnapshot`) represent group membership by **name strings** — the display name of every group a node belongs to. This has two compounding costs:
+
+1. **Token waste** — every node entry repeats long group names that are already fully described in the `GROUPS` block. A workflow with 10 nodes each in a "Morning Compliance Review" group spends ~300 tokens just on group name repetition per-node.
+2. **Rename fragility** — if a group is renamed, the per-node strings diverge from the group block until the next snapshot rebuild, confusing the AI into treating them as separate groups.
+
+Additionally, the `GROUPS` block itself carried no semantic summary — just a flat member list. The AI had to infer role distribution and constraint density per group by scanning all nodes, wasting reasoning capacity.
+
+#### Proposed Solution: Group ID References + Enriched Group Block
+
+Replace the per-node name arrays with group **ID** references, and enrich the top-level groups block with pre-computed summaries.
+
+**Before (per-node, optimize route):**
+```json
+{ "id": "mary", "name": "Mary", "role": "Collaborator",
+  "groups": ["Morning Compliance Review", "Pre-Approval Team"] }
+```
+
+**After:**
+```json
+{ "id": "mary", "name": "Mary", "role": "Collaborator",
+  "groupIds": ["grp_compliance", "grp_preapproval"] }
+```
+
+**Before (GROUPS block, update route text snapshot):**
+```
+  [grp_compliance]  Morning Compliance Review  color:#6366F1  →  Mary, Edward
+```
+
+**After:**
+```
+  [grp_compliance]  Morning Compliance Review  color:#6366F1  →  Mary, Edward
+         Nodes: 2 | Roles: 1 person, 1 manager | Constraints: 1
+```
+
+**Before (groupSummary, optimize route JSON):**
+```json
+{ "id": "grp_compliance", "name": "Morning Compliance Review",
+  "color": "#6366F1", "nodeIds": ["mary", "ed"],
+  "members": ["Mary", "Edward"] }
+```
+
+**After:**
+```json
+{ "id": "grp_compliance", "name": "Morning Compliance Review",
+  "color": "#6366F1", "nodeIds": ["mary", "ed"],
+  "members": ["Mary", "Edward"],
+  "nodeCount": 2,
+  "roleSummary": "1 collaborator, 1 manager",
+  "constraintCount": 1 }
+```
+
+#### Token Savings Estimate
+
+| Workflow size | Groups | Members/group avg | Saving per node | Total saving |
+|---|---|---|---|---|
+| 10 nodes, 2 groups | 2 | 5 | ~15 tokens (name→ID) | ~150 tokens |
+| 30 nodes, 5 groups | 5 | 6 | ~20 tokens | ~600 tokens |
+| 80 nodes, 10 groups | 10 | 8 | ~25 tokens | ~2 000 tokens |
+
+At 80 nodes, hierarchical group summaries alone save ~2 000 input tokens — equivalent to 4–5 full node descriptions — reducing the risk of hitting the context window.
+
+#### Implementation
+
+The snapshot logic is extracted from both routes into a shared library:
+
+```
+src/lib/snapshotBuilder.ts  (NEW)
+  ├── buildOptimizeSnapshot(workflowData) → OptimizeSnapshot
+  │     • nodes: groupIds: string[]  (IDs, not names)
+  │     • groupSummary: + nodeCount, roleSummary, constraintCount
+  └── buildUpdateSnapshot(state: ServerGraphState) → string
+        • nodes: Groups: grp_id1, grp_id2  (IDs, not names)
+        • GROUPS section: + "Nodes: N | Roles: ... | Constraints: N"
+```
+
+Both routes import from this lib, removing ~80 lines of duplicated snapshot-building code.
+
+#### SYSTEM_PROMPT updates
+
+**optimize route:** The `suggestedGroupUpdates` rule block already references `groupId` from the snapshot — no change needed. The AI will see `groupIds` on nodes and use the group `id` field naturally.
+
+**update route:** The `GROUPS` section now shows group IDs as the primary reference (already the case — `[grp_compliance]` bracket format is unchanged). The new `Nodes/Roles/Constraints` summary line is informational only; no prompt rule changes needed.
+
+#### Regression test coverage
+
+New test file `src/__tests__/snapshot.test.ts` verifies both builders:
+- Group ID output (not names) on per-node entries
+- `roleSummary` accuracy for single/mixed/empty groups
+- `constraintCount` counts only nodes with non-empty constraints string
+- Hidden nodes excluded from core node list and from group membership
+- Improvement-only edges excluded from optimize snapshot
+- Tasks formatted correctly in update snapshot
+- Empty groups handled without crash
+- `nodeCount` matches `nodeIds.length`
+
+---
+
 ### 14c — Scoped / Focused Analysis
 
 Instead of always analysing the entire workflow, let users constrain the analysis to a specific workflow group or hand-selected nodes. This keeps the snapshot small by design and produces more actionable, focused suggestions.

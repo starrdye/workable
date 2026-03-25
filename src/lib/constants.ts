@@ -9,7 +9,7 @@ export const ROLE_COLOR: Record<string, string> = {
   person: "#4F46E5",
   tool: "#64748B",
   external: "#475569",
-  output: "#F97316",
+  output: "#0EA5E9",
 };
 
 export const NODE_DATA: Record<string, {
