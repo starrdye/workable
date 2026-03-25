@@ -484,15 +484,19 @@ export function resetLayout() {
   // (stagger, overlap resolution, group-aware layout) rather than restoring stale
   // CSV-imported positions.
   if (state.customNodes.length > 0) {
-    const nodeCount  = state.customNodes.length;
-    const estLayers  = Math.max(3, Math.ceil(nodeCount / 3));
+    const nodeCount = state.customNodes.length;
     // Scale canvas proportionally to node count — avoids tiny graphs spreading
     // across a huge 1200px canvas where layer spacing becomes enormous.
-    const canvasW    = Math.max(900, nodeCount * 140);
-    const canvasH    = Math.max(720,  Math.min(nodeCount, 6) * 150);
+    const canvasW = Math.max(900, nodeCount * 140);
+    const canvasH = Math.max(720, Math.min(nodeCount, 6) * 150);
 
     const layoutNodes = state.customNodes.map(n => ({ id: n.id }));
-    const layoutEdges = state.customEdges.map(e => ({ source: e.source, target: e.target }));
+    const nodeIdSet   = new Set(layoutNodes.map(n => n.id));
+    // Filter out orphaned edges (source or target was deleted) so they don't
+    // distort the hierarchical layout pass.
+    const layoutEdges = state.customEdges
+      .filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
+      .map(e => ({ source: e.source, target: e.target }));
 
     let freshPositions = hierarchicalLayout(layoutNodes, layoutEdges, canvasW, canvasH);
 

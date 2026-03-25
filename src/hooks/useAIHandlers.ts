@@ -364,18 +364,35 @@ export function useAIHandlers(
 
   const handleUpdateTasks = async (update: SuggestedTaskUpdate) => {
     if (fullServerState) pushSnapshot(fullServerState);
-    // Get current tasks for this node
-    const currentMeta = fullServerState?.settings?.metadataOverrides?.[update.nodeId];
-    const currentTasks: Array<{ id: string; title: string; status: string; priority: string }> = (currentMeta as any)?.tasks ?? [];
-    // Remove specified task IDs
+
+    // currentMeta is already typed as { tasks?: NodeTask[]; ... } — no cast needed
+    const currentMeta  = fullServerState?.settings?.metadataOverrides?.[update.nodeId];
+    const currentTasks = currentMeta?.tasks ?? [];
+
+    // Remove specified task IDs, then append new ones
     const remaining = currentTasks.filter(t => !update.removeTasks.includes(t.id));
-    // Add new tasks
-    const merged = [...remaining, ...update.addTasks];
+
+    // Coerce addTasks status/priority strings to the NodeTask union literals so
+    // the merged array satisfies NodeTask[] without `as any`.
+    const VALID_STATUS   = ['todo','in-progress','done','blocked','review'] as const;
+    const VALID_PRIORITY = ['low','medium','high'] as const;
+    type S = typeof VALID_STATUS[number];
+    type P = typeof VALID_PRIORITY[number];
+
+    const coerced = update.addTasks.map(t => ({
+      id:       t.id,
+      title:    t.title,
+      status:   (VALID_STATUS.includes(t.status as S)     ? t.status   : 'todo')   as S,
+      priority: (VALID_PRIORITY.includes(t.priority as P) ? t.priority : 'medium') as P,
+    }));
+
+    const merged = [...remaining, ...coerced];
+
     await put({ action: 'updateMetadata', id: update.nodeId, metadata: { tasks: merged } });
     setFullServerState(prev => {
       if (!prev) return prev;
       const overrides = { ...(prev.settings?.metadataOverrides ?? {}) };
-      overrides[update.nodeId] = { ...(overrides[update.nodeId] ?? {}), tasks: merged } as any;
+      overrides[update.nodeId] = { ...(overrides[update.nodeId] ?? {}), tasks: merged };
       return { ...prev, settings: { ...prev.settings!, metadataOverrides: overrides } };
     });
   };

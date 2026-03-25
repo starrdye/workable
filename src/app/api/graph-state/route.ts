@@ -34,7 +34,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const body = await request.json() as GraphAction;
+  let body: GraphAction;
+  try {
+    body = await request.json() as GraphAction;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON in request body.' }, { status: 400 });
+  }
 
   switch (body.action) {
     case 'updatePosition':
