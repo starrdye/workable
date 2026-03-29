@@ -347,6 +347,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       analysis,
+      tokenUsage: pass1Result.usage ?? null,
       suggestedConnections,
       suggestedEdgeRemovals,
       suggestedRemovals,
