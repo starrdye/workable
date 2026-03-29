@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { X, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { PROVIDERS, type AIProvider, type ProviderMeta } from "@/lib/aiClient";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useAIEngineMode } from "@/contexts/AIEngineContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
   const [config, setConfig] = useState<AIConfig>(currentConfig);
   const [showKey, setShowKey] = useState<Record<AIProvider, boolean>>({ anthropic: false, gemini: false, doubao: false });
   const [saved, setSaved] = useState(false);
+  const { mode: engineMode, setMode: setEngineMode } = useAIEngineMode();
   
   const modalRef = useFocusTrap(isOpen);
 
@@ -322,6 +324,64 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                 );
               })}
             </div>
+          </section>
+
+          {/* ── Section 4: AI Engine Mode ─────────────────────────────────── */}
+          <section>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+              AI Engine Mode
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                {
+                  value: 'monolithic' as const,
+                  label: 'Monolithic',
+                  badge: 'Stable',
+                  badgeColor: 'bg-indigo-100 text-indigo-700',
+                  activeRing: 'ring-indigo-500',
+                  activeBg: 'bg-indigo-50 border-indigo-400 text-indigo-800',
+                  desc: 'Single AI call — fast, reliable, works for most workflows.',
+                },
+                {
+                  value: 'distributed' as const,
+                  label: 'Distributed',
+                  badge: 'Experimental',
+                  badgeColor: 'bg-emerald-100 text-emerald-700',
+                  activeRing: 'ring-emerald-500',
+                  activeBg: 'bg-emerald-50 border-emerald-400 text-emerald-800',
+                  desc: 'Parallel node agents — deeper analysis, higher token cost.',
+                },
+              ] as const).map((opt) => {
+                const isActive = engineMode === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setEngineMode(opt.value)}
+                    className={`relative flex flex-col items-start gap-1.5 p-4 rounded-2xl border-2 transition-all text-left ${
+                      isActive
+                        ? `${opt.activeBg} ring-2 ${opt.activeRing} ring-offset-1`
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="font-bold text-sm">{opt.label}</span>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ml-auto ${opt.badgeColor}`}>
+                        {opt.badge}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">{opt.desc}</p>
+                    {isActive && (
+                      <span className="absolute top-2 right-2">
+                        <CheckCircle className="w-3.5 h-3.5 text-current" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+              Preference saved automatically. Toggle anytime from the toolbar pill next to AI Settings.
+            </p>
           </section>
         </div>
 
