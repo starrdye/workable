@@ -430,7 +430,7 @@ export default function Home() {
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <Zap className="w-7 h-7 text-indigo-600" />
+          <img src="/workable-logo.svg" alt="Workable" className="w-7 h-7" />
           <h1 className="text-xl font-bold tracking-tight">
             <span className="text-indigo-600">Workable</span>
           </h1>
@@ -539,8 +539,6 @@ export default function Home() {
           </button>
           <input ref={importInput} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
 
-          <div className="h-6 w-px bg-slate-300" />
-          <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center font-bold text-indigo-600 border border-indigo-100">XY</div>
         </div>
       </header>
 

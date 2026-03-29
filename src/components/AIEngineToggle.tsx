@@ -3,8 +3,7 @@
 /**
  * components/AIEngineToggle.tsx — Pill toggle for switching AI engine mode.
  *
- * Renders a compact pill with two segments: "Mono" | "Distributed".
- * Shows a warning toast when toggling while a request may be in flight.
+ * Renders a compact pill with two segments: "Mono" | "Dist".
  * Completely self-contained — reads/writes via useAIEngineMode().
  */
 
@@ -27,7 +26,7 @@ export function AIEngineToggle({ compact = false, className = '' }: AIEngineTogg
 
   return (
     <div
-      className={`inline-flex items-center rounded-full bg-gray-800 p-0.5 ${className}`}
+      className={`inline-flex items-center rounded-full border border-slate-200 bg-slate-100 p-0.5 gap-0.5 ${className}`}
       role="radiogroup"
       aria-label="AI Engine Mode"
     >
@@ -39,15 +38,15 @@ export function AIEngineToggle({ compact = false, className = '' }: AIEngineTogg
             role="radio"
             aria-checked={isActive}
             onClick={() => setMode(opt.value)}
+            title={`Switch to ${opt.label} AI engine`}
             className={`
-              px-3 py-1 text-xs font-medium rounded-full transition-all duration-200
+              px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200
               ${isActive
                 ? opt.value === 'monolithic'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'bg-emerald-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200'}
+                  ? 'bg-white text-indigo-600 shadow-sm border border-indigo-100'
+                  : 'bg-white text-emerald-600 shadow-sm border border-emerald-100'
+                : 'text-slate-400 hover:text-slate-600'}
             `}
-            title={`Switch to ${opt.label} AI engine`}
           >
             {compact ? opt.shortLabel : opt.label}
           </button>
