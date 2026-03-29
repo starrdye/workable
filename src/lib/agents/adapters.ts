@@ -148,18 +148,18 @@ export function orchestratorResultToOptimizeResponse(
     analysisLines.push('');
   }
 
-  // Per-node analysis summaries
+  // Per-node analysis summaries — full text, display layer handles expansion
   analysisLines.push('## Per-Node Analysis');
   for (const resp of responses) {
-    analysisLines.push(`- **${resp.nodeName}**: ${resp.analysis.slice(0, 200)}${resp.analysis.length > 200 ? '...' : ''}`);
+    analysisLines.push(`- **${resp.nodeName}**: ${resp.analysis}`);
   }
 
-  // Group analyses
+  // Group analyses — full text
   if (groupAnalyses.length > 0) {
     analysisLines.push('');
     analysisLines.push('## Group Analysis');
     for (const ga of groupAnalyses) {
-      analysisLines.push(`- **${ga.groupName}**: ${ga.analysis.slice(0, 200)}${ga.analysis.length > 200 ? '...' : ''}`);
+      analysisLines.push(`- **${ga.groupName}**: ${ga.analysis}`);
     }
   }
 

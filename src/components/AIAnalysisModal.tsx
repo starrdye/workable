@@ -1031,12 +1031,12 @@ function ExpandableText({ text, className }: { text: string; className?: string 
   return (
     <span className={className}>
       {renderInline(display)}
-      {needsExpand && (
+      {needsExpand && !expanded && (
         <button
-          onClick={() => setExpanded(v => !v)}
+          onClick={() => setExpanded(true)}
           className="ml-1.5 text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 underline underline-offset-2 transition-colors"
         >
-          {expanded ? 'Show less' : 'Read more'}
+          Read more
         </button>
       )}
     </span>
