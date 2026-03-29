@@ -90,7 +90,7 @@ export function useAIHandlers(
     setAiAnalysisError(null);
     setAiAnalysisLoading(true);
     try {
-      const { data, aborted } = await aiEngine.runAnalyze(
+      const { data, aborted, engine } = await aiEngine.runAnalyze(
         fullServerState,
         {
           apiKey:   activeApiKey,
@@ -115,6 +115,12 @@ export function useAIHandlers(
       setAiSuggestedGroupUpdates((data.suggestedGroupUpdates ?? []) as SuggestedGroupUpdate[]);
       setAiSuggestionPlan((data.suggestionPlan ?? null) as { phases: SuggestionPhase[] } | null);
       setAiAnalysisTimestamp(Date.now());
+      setAiDebugLog({
+        prompt: `[AI Analyze — ${engine} engine]`,
+        rawAIResponse: typeof data.analysis === 'string' ? data.analysis : JSON.stringify(data, null, 2),
+        engine,
+        tokenUsage: (data.tokenUsage as { inputTokens: number; outputTokens: number } | null) ?? null,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error. Please try again.';
       setAiAnalysisError(msg);
@@ -132,9 +138,10 @@ export function useAIHandlers(
     }
   };
 
-  // Re-run fresh analysis, clearing the previous result and applied tracking
-  const handleReAnalyze = async () => {
+  // Clear all analysis state without re-running (e.g. when a new workflow/template is loaded)
+  const resetAnalysis = () => {
     setAiAnalysis(null);
+    setAiAnalysisError(null);
     setAiSuggestedConnections([]);
     setAiSuggestedRemovals([]);
     setAiAnalysisTimestamp(null);
@@ -146,6 +153,11 @@ export function useAIHandlers(
     setAiSuggestedTaskUpdates([]);
     setAiSuggestedGroupUpdates([]);
     setAiSuggestionPlan(null);
+  };
+
+  // Re-run fresh analysis, clearing the previous result and applied tracking
+  const handleReAnalyze = async () => {
+    resetAnalysis();
     await runAnalyze();
   };
 
@@ -155,7 +167,7 @@ export function useAIHandlers(
     setAiUpdateError(null);
     setAiUpdateLoading(true);
     try {
-      const { data, aborted } = await aiEngine.runUpdate(
+      const { data, aborted, engine } = await aiEngine.runUpdate(
         prompt,
         fullServerState,
         {
@@ -173,6 +185,12 @@ export function useAIHandlers(
       }
 
       setAiUpdateResult(data as unknown as AIUpdateResult);
+      setAiDebugLog({
+        prompt: `[AI Update — ${engine} engine] ${prompt}`,
+        rawAIResponse: JSON.stringify(data, null, 2),
+        engine,
+        tokenUsage: (data.tokenUsage as { inputTokens: number; outputTokens: number } | null) ?? null,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error. Please try again.';
       setAiUpdateError(msg);
@@ -579,7 +597,7 @@ export function useAIHandlers(
     aiAnalysis, aiAnalysisLoading, aiAnalysisError,
     aiSuggestedConnections, aiSuggestedRemovals,
     aiAnalysisTimestamp,
-    handleAiAnalyze, handleReAnalyze,
+    handleAiAnalyze, handleReAnalyze, resetAnalysis,
     // update
     aiUpdateLoading, aiUpdateResult, aiUpdateError,
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
