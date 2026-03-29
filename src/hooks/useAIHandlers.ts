@@ -72,6 +72,12 @@ export function useAIHandlers(
   const [appliedRemovalIds,     setAppliedRemovalIds]     = useState<Set<string>>(() => new Set());
   const [appliedConnectionKeys, setAppliedConnectionKeys] = useState<Set<string>>(() => new Set());
   const [appliedEdgeRemovalIds, setAppliedEdgeRemovalIds] = useState<Set<string>>(() => new Set());
+  /**
+   * vb0.22: IDs of workflow groups that were created by an AI "create group"
+   * suggestion — used by GraphCanvas to render them with a distinct proposed-group
+   * visual (dashed emerald border + pulse) so they stand out from manually-created groups.
+   */
+  const [appliedAIGroupIds, setAppliedAIGroupIds] = useState<Set<string>>(() => new Set());
 
   // ── AI Update state ────────────────────────────────────────────────────────
   const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
@@ -180,6 +186,7 @@ export function useAIHandlers(
     setAppliedRemovalIds(new Set());
     setAppliedConnectionKeys(new Set());
     setAppliedEdgeRemovalIds(new Set());
+    setAppliedAIGroupIds(new Set());
     setAiSuggestedEdgeRemovals([]);
     setAiSuggestedNewNodes([]);
     setAiSuggestedTaskUpdates([]);
@@ -573,6 +580,7 @@ export function useAIHandlers(
         nodeIds: upd.nodeIds ?? [],
       };
       put({ action: 'upsertWorkflowGroup', group: newGroup });
+      setAppliedAIGroupIds(prev => { const next = new Set(prev); next.add(groupId); return next; });
       setFullServerState(prev => prev ? {
         ...prev,
         settings: {
@@ -636,6 +644,7 @@ export function useAIHandlers(
     // analysis actions
     handleAddConnection, handleRemoveEntity,
     appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds,
+    appliedAIGroupIds,
     resetAppliedSuggestions,
     // new suggestion types
     aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,

@@ -144,6 +144,7 @@ export default function Home() {
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     handleAddConnection, handleRemoveEntity,
     appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds,
+    appliedAIGroupIds,
     resetAppliedSuggestions,
     aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,
     handleRemoveEdge, handleAddNewNode, handleUpdateTasks, handleApplyGroupUpdate,
@@ -167,6 +168,9 @@ export default function Home() {
   const pendingRedundantEdgeIds = aiSuggestedEdgeRemovals
     .filter(r => !appliedEdgeRemovalIds.has(r.edgeId))
     .map(r => r.edgeId);
+  // vb0.22: Group IDs created by AI that haven't been cleared → emerald dashed proposed-group highlight
+  // These are groups present in appliedAIGroupIds (they were just created by the AI suggestion handler)
+  const pendingProposedGroupIds = Array.from(appliedAIGroupIds);
 
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
 
@@ -534,20 +538,6 @@ export default function Home() {
             <Upload className="w-4 h-4" />Import
           </button>
           <input ref={importInput} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
-
-          <div className="h-6 w-px bg-gray-300" />
-
-          {/* Improvements toggle */}
-          <button onClick={() => setShowImprovements((v) => !v)}
-            aria-label={showImprovements ? "Disable Improvements overlay" : "Enable Improvements overlay"}
-            className={`text-sm font-semibold px-4 py-1.5 rounded-full border transition-colors flex items-center gap-2 ${
-              showImprovements
-                ? "border-emerald-500 bg-emerald-50 text-emerald-600"
-                : "border-slate-300 text-slate-600 hover:bg-slate-50"
-            }`}>
-            <span className={`w-2 h-2 rounded-full ${showImprovements ? "bg-emerald-500 shadow-[0_0_8px_#10B981]" : "bg-slate-400"}`} />
-            Improvements: {showImprovements ? "On" : "Off"}
-          </button>
 
           <div className="h-6 w-px bg-slate-300" />
           <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center font-bold text-indigo-600 border border-indigo-100">XY</div>
@@ -919,6 +909,7 @@ export default function Home() {
             bottleneckNodeIds={pendingBottleneckNodeIds}
             suggestedConnectionPairs={pendingSuggestedConnectionPairs}
             redundantEdgeIds={pendingRedundantEdgeIds}
+            proposedGroupIds={pendingProposedGroupIds}
           />
 
           {/* Active filter badge */}

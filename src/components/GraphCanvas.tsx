@@ -40,6 +40,12 @@ export interface GraphCanvasProps {
   suggestedConnectionPairs?: Array<{ sourceId: string; targetId: string }>;
   /** Edge IDs from AI analysis flagged for removal — shown with amber/yellow highlight. */
   redundantEdgeIds?: string[];
+  /**
+   * vb0.22: IDs of groups that were just created by an AI "create group" suggestion.
+   * Rendered with a dashed emerald border + pulsing glow so they are immediately
+   * identifiable as AI-proposed rather than manually-created.
+   */
+  proposedGroupIds?: string[];
 }
 
 interface CanvasNode {
@@ -463,6 +469,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     bottleneckNodeIds = [],
     suggestedConnectionPairs = [],
     redundantEdgeIds = [],
+    proposedGroupIds = [],
   }, ref) {
     const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -915,7 +922,13 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* Blueprint dot background */}
         <div className="absolute inset-0 pointer-events-none opacity-40"
           style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
-        <style dangerouslySetInnerHTML={{ __html: seqStyles.join("\n") }} />
+        <style dangerouslySetInnerHTML={{ __html: [
+          ...seqStyles,
+          `@keyframes proposedGroupPulse {
+            0%,100% { opacity: 1; }
+            50%     { opacity: 0.55; }
+          }`,
+        ].join("\n") }} />
 
         {/* ── Pan/zoom transform container ── */}
         <div style={{
@@ -977,14 +990,21 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 if (!b) return null;
                 const { minX, maxX, minY, maxY, count } = b;
 
-                const fill = isAbstract
-                  ? group.color + (isSubgroup ? "38" : "1E")
-                  : group.color + (isSubgroup ? "20" : "10");
-                const stroke = group.color + (isAbstract
-                  ? (isSubgroup ? "DD" : "99")
-                  : (isSubgroup ? "88" : "55"));
-                const strokeW = isAbstract ? (isSubgroup ? 2.5 : 3) : isLOD ? 2 : 1.5;
-                const dash = isSubgroup ? undefined : (isAbstract ? undefined : "8 4");
+                // vb0.22: AI-proposed groups get an emerald dashed visual treatment
+                const isProposed = showImprovements && proposedGroupIds.includes(group.id);
+
+                const fill = isProposed
+                  ? "#10B98120"
+                  : isAbstract
+                    ? group.color + (isSubgroup ? "38" : "1E")
+                    : group.color + (isSubgroup ? "20" : "10");
+                const stroke = isProposed
+                  ? "#10B981CC"
+                  : group.color + (isAbstract
+                    ? (isSubgroup ? "DD" : "99")
+                    : (isSubgroup ? "88" : "55"));
+                const strokeW = isProposed ? 2 : isAbstract ? (isSubgroup ? 2.5 : 3) : isLOD ? 2 : 1.5;
+                const dash = isProposed ? "6 4" : isSubgroup ? undefined : (isAbstract ? undefined : "8 4");
                 const rx = isSubgroup ? 12 : 18;
 
                 // In abstract mode (nodes hidden) the label moves to the bbox
@@ -1017,11 +1037,18 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 const pillX = isAbstract ? cx - pillW / 2 : labelX - pillPadX;
                 const pillY = isAbstract ? cy - pillH / 2 : labelY - labelSize - pillPadY;
                 const pillRx = pillH / 2;
-                const pillFill = group.color + (isSubgroup ? "30" : "18");
-                const pillStroke = group.color + (isSubgroup ? "BB" : "77");
+                const pillFill = isProposed ? "#10B98130" : group.color + (isSubgroup ? "30" : "18");
+                const pillStroke = isProposed ? "#10B981BB" : group.color + (isSubgroup ? "BB" : "77");
+                const textColor = isProposed ? "#059669" : group.color;
 
                 return (
-                  <g key={group.id} style={{ pointerEvents: "none" }}>
+                  <g
+                    key={group.id}
+                    style={{
+                      pointerEvents: "none",
+                      ...(isProposed ? { animation: "proposedGroupPulse 2s ease-in-out infinite" } : {}),
+                    }}
+                  >
                     {/* Group region rectangle */}
                     <rect
                       x={minX} y={minY} width={maxX - minX} height={maxY - minY}
@@ -1041,8 +1068,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       y={labelY}
                       fontSize={labelSize}
                       fontWeight={700}
-                      fill={group.color}
-                      stroke={group.color}
+                      fill={textColor}
+                      stroke={textColor}
                       strokeWidth={isAbstract ? (isSubgroup ? 0.6 : 0.8) : 0}
                       paintOrder="stroke fill"
                       textAnchor={labelAnchor}
@@ -1050,7 +1077,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       style={{ userSelect: "none" }}
                       opacity={isSubgroup ? 0.9 : 1}
                     >
-                      {labelText}
+                      {isProposed ? `✦ ${labelText}` : labelText}
                     </text>
                   </g>
                 );
