@@ -1131,6 +1131,169 @@ The skeleton can use the current template's default positions as placeholder coo
 
 ---
 
+## Track 16 — Distributed Agent Architecture & AI Engine Toggle ✅ IMPLEMENTED (`vb0.1` + `vb0.2`)
+
+### Problem
+
+All three AI routes (`parse-workflow`, `optimize`, `update`) send a single monolithic snapshot of the entire workflow and expect one large JSON response. For workflows beyond ~20 nodes this creates two hard limits:
+1. **Token ceiling** — the combined input+output token count approaches or exceeds model context windows
+2. **Reasoning quality** — a single AI call must reason about every node simultaneously; a human reviewer would instead focus on one part at a time
+
+A secondary gap: there was no way for users to choose between the original single-call approach and a more powerful multi-agent approach, and there was no visible indicator of which engine ran or how many tokens it used.
+
+---
+
+### 16a — Distributed Agent System (vb0.1) ✅
+
+The distributed system decomposes workflow analysis into a network of specialised agents that reason locally and communicate through a structured message broker.
+
+#### Architecture
+
+```
+Orchestrator
+  ├── NodeAgent × N   (one per workflow node, run in parallel)
+  │     Each agent receives only its ego-centric context:
+  │       • its own metadata, tasks, constraints
+  │       • direct neighbours (1-hop) + their metadata
+  │       • the edges it participates in
+  │     Produces: actions[], bottleneckScore, proposedEdges[], orphanWarning?
+  │
+  ├── GroupAgent       (one per workflow group, boundary-aware)
+  │     Receives: group member IDs + cross-group edge list
+  │     Produces: inter-group negotiation proposals
+  │
+  ├── MessageBroker    (EventEmitter, in-process)
+  │     Enforces: edge validation, cascade depth limit (5), message cap (100)
+  │     System messages bypass edge validation
+  │
+  └── CascadeSimulator (BFS cascade from a CascadeTrigger)
+        Trigger types: remove_edge | add_edge | remove_node | bottleneck_resolve
+        Each depth level: affected agents reason independently on propagation
+```
+
+#### Token budget per run
+
+| Component | Tokens/call | Notes |
+|---|---|---|
+| NodeAgent (ego-centric context) | ~1,000–1,900 | Only local neighbourhood |
+| GroupAgent | ~2,500–5,000 | Boundary + cross-group edges |
+| Monolithic analyze (full graph) | ~11,500–16,000 | Entire snapshot |
+
+For a 20-node workflow: distributed ≈ 20 × 1,400 = 28,000 tokens in parallel calls (each small) vs monolithic ≈ 14,000 in one large call. The distributed approach uses more tokens overall but keeps each individual call well within any model's reasoning-quality sweet spot.
+
+#### Files created (vb0.1)
+
+| File | Purpose |
+|---|---|
+| `src/lib/agents/orchestrator.ts` | Parallel NodeAgent runner with Semaphore concurrency limiter; `runFullOrchestration()`, `runSubsetOrchestration()` |
+| `src/lib/agents/messageBroker.ts` | EventEmitter broker with edge validation, depth limit, message cap |
+| `src/lib/agents/cascadeSimulator.ts` | BFS cascade simulation from typed `CascadeTrigger` |
+| `src/lib/agents/groupAgent.ts` | Group-level governance + `negotiate()` for inter-group proposals |
+| `src/lib/agents/nodeAgent.ts` | Per-node autonomous agent with ego-centric context builder |
+| `src/lib/agents/contextBuilder.ts` | Builds ego-centric context from `ServerGraphState` |
+| `src/lib/spatialIndex.ts` | R-tree spatial index (rbush) for O(log n) viewport queries + LOD system |
+| `src/app/api/ai/agent/route.ts` | POST — single/orchestrate/simulate modes |
+| `src/app/api/ai/cascade/route.ts` | POST — cascade simulation endpoint |
+| `src/app/api/ai/group-agent/route.ts` | POST — single group or all groups |
+| `src/app/api/graph-state/viewport/route.ts` | GET — spatial viewport query with LOD + since params |
+| `src/__tests__/agents.test.ts` | 32 tests: context builder, message broker, spatial index, LOD |
+
+#### LOD system (spatial index)
+
+| Zoom level | Detail level | Node rendering |
+|---|---|---|
+| > 0.7 | `full` | All metadata, tasks, labels |
+| 0.3–0.7 | `simplified` | Name + role only |
+| < 0.3 | `dot` | Circle only |
+
+---
+
+### 16b — Strategy Pattern Engine Toggle (vb0.2) ✅
+
+The distributed system initially only covered analysis. vb0.2 extended it to **all three AI operations** (Analyze, Update, Creation) and added a user-facing control to choose between engines.
+
+#### Architecture
+
+```
+AIEngineProvider (React Context, wraps layout.tsx)
+  └── mode: 'monolithic' | 'distributed'   (persisted to localStorage)
+      generation: number                    (bumped on every mode change)
+
+useAIEngine hook (consumed by useAIHandlers)
+  ├── runAnalyze()  →  /api/ai/optimize  with  { engine: mode }
+  ├── runUpdate()   →  /api/ai/update    with  { engine: mode }
+  └── AbortController per operation type
+        → auto-aborts stale in-flight requests when generation changes
+
+/api/ai/optimize (updated)
+  ├── engine === 'distributed'  →  runDistributedOptimize()
+  └── engine === 'monolithic'   →  original Pass 1 + Pass 2
+
+/api/ai/update (updated)
+  ├── engine === 'distributed'  →  runDistributedUpdate()
+  └── engine === 'monolithic'   →  original validatePatch flow
+```
+
+#### Adapter layer
+
+`src/lib/agents/adapters.ts` converts `OrchestratorResult` → `OptimizeResponse` shape so `AIAnalysisModal` never needs to know which engine ran:
+
+- `proposedEdges` → `suggestedConnections[]`
+- `remove_edge` actions → `suggestedEdgeRemovals[]`
+- `delegate_task` actions → `suggestedTaskUpdates[]` + `suggestedRemovals[]`
+- Markdown analysis synthesised from bottlenecks, orphans, conflicts, per-node summaries
+
+#### Race condition handling
+
+If the user toggles mode while a request is in-flight:
+1. `generation` counter increments in `AIEngineContext`
+2. `useAIEngine` detects the mismatch via `generationRef`
+3. The stale `AbortController` fires; the in-flight fetch is cancelled
+4. `useAIHandlers` receives `{ aborted: true }` and silently discards — no error flash to the user
+
+#### How users set the mode
+
+**Toolbar pill** — `AIEngineToggle` (compact) renders between AI Settings ⚙ and the export buttons. Active mode shown with colour: indigo = Monolithic, emerald = Distributed. Preference persists across page reloads.
+
+**AI Settings modal** — Section 4 "AI Engine Mode" has two radio-style cards:
+- **Monolithic** — `Stable` badge, "Single AI call — fast, reliable, works for most workflows."
+- **Distributed** — `Experimental` badge, "Parallel node agents — deeper analysis, higher token cost."
+
+Selecting a card updates the context immediately. No Save needed — the mode is stored independently of the API key config.
+
+#### Token usage end-to-end
+
+| Layer | Status |
+|---|---|
+| `generateText()` returns `{ text, usage }` | ✅ All three providers (Anthropic, Gemini, Doubao) |
+| `optimize` route includes `tokenUsage` in response | ✅ vb0.2 |
+| `update` route includes `tokenUsage` in response | ✅ vb0.2 |
+| `AIDebugLog` extended with `engine` + `tokenUsage` | ✅ vb0.2 |
+| Debug log panel renders engine pill + token counts | ✅ vb0.2 — shown after every Analyze and Update call |
+| Distributed engine token aggregation | ⚠️ Reports primary call only; per-NodeAgent totals logged server-side but not yet surfaced in UI |
+
+#### Files created / modified (vb0.2)
+
+| File | Change |
+|---|---|
+| `src/contexts/AIEngineContext.tsx` | NEW — Strategy-pattern context: mode, generation, setMode, toggleMode |
+| `src/components/AIEngineToggle.tsx` | NEW — Pill toggle: Mono (indigo) / Dist (emerald); `compact` prop for toolbar |
+| `src/hooks/useAIEngine.ts` | NEW — Routing hook: injects mode, manages AbortControllers, stale detection |
+| `src/lib/agents/adapters.ts` | NEW — `orchestratorResultToOptimizeResponse()` adapter |
+| `src/lib/agents/distributedOptimize.ts` | NEW — Full distributed optimize pipeline |
+| `src/lib/agents/distributedUpdate.ts` | NEW — Coordinator + per-node distributed update pipeline |
+| `src/__tests__/ai-engine-routing.test.ts` | NEW — 26 tests: adapter shape, coordinator, route dispatch, race conditions, abort lifecycle |
+| `src/app/api/ai/optimize/route.ts` | Modified — engine branch + `tokenUsage` in response |
+| `src/app/api/ai/update/route.ts` | Modified — engine branch + `tokenUsage` in response |
+| `src/hooks/useAIHandlers.ts` | Modified — delegates to `useAIEngine`; sets debug log with engine + tokenUsage |
+| `src/components/AISettingsModal.tsx` | Modified — Section 4 "AI Engine Mode" with radio cards |
+| `src/app/page.tsx` | Modified — `AIEngineToggle` in toolbar; engine/token display in debug log panel |
+| `src/app/layout.tsx` | Modified — `AIEngineProvider` wraps children |
+
+### Priority: P1 — Scalability foundation; enables 30–100+ node workflows without context-window overflows
+
+---
+
 ## Suggested Release Cadence
 
 | Release | Key deliverables | Status |
@@ -1146,6 +1309,8 @@ The skeleton can use the current template's default positions as placeholder coo
 | **0.48-personal** | Track 12g — AI-suggested workflow group reorganisation: `suggestedGroupUpdates` (create/update/delete); `handleApplyGroupUpdate` integrated with undo/redo stack; group color swatch + member diff UI in modal; `FishboneBone.resolvedBy` supports `groupUpdate` refs; `groupUpdate` as valid `suggestionPlan` phase ref; group `id`/`color` exposed in AI snapshot so model can reference existing groups | ✅ Merged |
 | **0.49-personal** | AI Update feature-parity audit: `buildSnapshot` now includes per-node `constraints` and full `tasks` list (id/title/status/priority/note) so `update.nodeTasks` is informed replacement not blind overwrite; group snapshot now includes `color` so recolor patches use correct current state; `#14B8A6` (teal) added to `ALLOWED_COLORS`, `COLOR_CYCLE`, and SYSTEM_PROMPT palette list | ✅ Merged |
 | **0.50-personal** | Visual & UX polish: output node color changed from green → orange (#F97316) to free green exclusively for AI-proposed elements; redundant-edge yellow highlight on canvas (`redundantEdgeIds` prop + amber glow); applied connections now concrete edges (not improvement-only); canvas immediate refresh after AI actions (triggerRefresh + await put); undo/redo clears AI applied-suggestion state; AI analyze token fix (maxTokens 2000→5000, jsonrepair added to optimize route) | ✅ Merged |
+| **vb0.1** | Track 16a — Distributed agent system: NodeAgent, GroupAgent, MessageBroker, CascadeSimulator, SpatialIndex, 32 tests | ✅ Merged |
+| **vb0.2** | Track 16b — Strategy pattern engine toggle: AIEngineContext, AIEngineToggle, useAIEngine, adapters, distributedOptimize/Update, 26 tests; token usage end-to-end; engine mode in debug log; AI Settings modal section | ✅ Merged |
 | **0.51** | Track 14a/14b — token budget estimation + context compression for large graphs; Track 15a — optimistic canvas transition (immediate canvas entry on AI generation) | Planned |
 | **0.52** | Multi-select + bulk ops, dark mode, dynamic AI Update examples (6c), jump-to-node search (6d), ecosystem view depth rendering (6g) | Planned |
 | **0.52** | Keyboard shortcuts + ARIA labels (Track 9), edge ID robustness (8e) | Planned |
@@ -1188,5 +1353,7 @@ The skeleton can use the current template's default positions as placeholder coo
 | Streaming AI responses — progressive canvas population, stream-driven progress (Track 14d, 15b) | P2 | High | Real-time feedback; eliminates latency cliff | Planned `0.53` |
 | Chunked multi-turn analysis for 100+ node graphs (Track 14e) | P3 | High | Enterprise-scale workflows | Planned |
 | Edge ID robustness + AI response validation (8e, 7c) | P3 | Low | Data integrity | Planned |
+| Distributed agent system — NodeAgent, GroupAgent, MessageBroker, CascadeSimulator, SpatialIndex (Track 16a) | P1 | High | Per-node ego-centric reasoning; stays within context window at any scale | ✅ `vb0.1` |
+| Strategy pattern engine toggle — AIEngineContext, AIEngineToggle, useAIEngine, adapters, token usage display (Track 16b) | P1 | Medium | User-controlled engine selection; race-condition-safe; token visibility in debug log | ✅ `vb0.2` |
 
 The biggest single improvement with the least effort is **Track 1 Tier 1** — client-side auto-save. It costs one `localStorage.setItem` call per mutation and eliminates the most common user frustration (refresh = lost work) in an afternoon.
