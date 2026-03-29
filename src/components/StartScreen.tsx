@@ -33,6 +33,10 @@ export interface AIDebugLog {
   prompt: string;
   rawAIResponse: string;
   error?: string;
+  /** Which engine produced this result */
+  engine?: 'monolithic' | 'distributed';
+  /** Token usage from the primary AI call */
+  tokenUsage?: { inputTokens: number; outputTokens: number } | null;
 }
 
 interface StartScreenProps {
