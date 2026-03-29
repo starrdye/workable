@@ -399,7 +399,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = validatePatch(parsed, currentState);
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, tokenUsage: genResult.usage ?? null });
 
   } catch (err: unknown) {
     const { userMessage, status } = classifyAIError(err);
