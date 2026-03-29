@@ -24,6 +24,7 @@ import { useUndoRedo }          from "@/hooks/useUndoRedo";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useWorkflowLibrary }   from "@/hooks/useWorkflowLibrary";
 import { AIEngineToggle }       from "@/components/AIEngineToggle";
+import { WorkflowGeneratingOverlay, SkeletonCanvas } from "@/components/WorkflowGeneratingOverlay";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -34,7 +35,10 @@ const ROLE_CHIPS = [
 
 export default function Home() {
   // ── App state ──────────────────────────────────────────────────────────────
-  const [isAppStarted,  setIsAppStarted]  = useState(false);
+  const [isAppStarted,          setIsAppStarted]          = useState(false);
+  /** Track 15a: true while AI is generating a workflow — overlay shown over empty canvas */
+  const [isGeneratingWorkflow,  setIsGeneratingWorkflow]  = useState(false);
+  const [workflowGenerationError, setWorkflowGenerationError] = useState<string | null>(null);
   const [showImprovements, setShowImprovements] = useState(false);
   const [showDataFlow,     setShowDataFlow]     = useState(false);
   const [highContrast,     setHighContrast]     = useState(false);
@@ -132,7 +136,7 @@ export default function Home() {
     showAIAnalysis, setShowAIAnalysis,
     showAIUpdate,   setShowAIUpdate,
     showDebugLog,   setShowDebugLog,
-    aiAnalysis, aiAnalysisLoading, aiAnalysisError,
+    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText,
     aiSuggestedConnections, aiSuggestedRemovals,
     aiAnalysisTimestamp,
     handleAiAnalyze, handleReAnalyze, resetAnalysis,
@@ -213,6 +217,18 @@ export default function Home() {
   }, [selectedId, selectedType, fullServerState]);
 
   // ── Import helpers ─────────────────────────────────────────────────────────
+
+  /**
+   * Track 15a — called by StartScreen the moment the user clicks "Generate with AI".
+   * Immediately transitions to the canvas shell + shows the generating overlay,
+   * so the user is never left staring at the frozen start-screen button.
+   */
+  const handleGenerationStart = () => {
+    setWorkflowGenerationError(null);
+    setIsAppStarted(true);
+    setIsGeneratingWorkflow(true);
+  };
+
   const importStateAndStart = async (result: AIParsedResult) => {
     // Clear any stale AI analysis so the new workflow gets a fresh run
     resetAnalysis();
@@ -237,7 +253,21 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "resetLayout" }),
     }).catch(console.error);
+    // Clear the generating overlay — workflow is ready
+    setIsGeneratingWorkflow(false);
     setIsAppStarted(true);
+  };
+
+  /** Called by StartScreen when AI generation fails (error propagated up) */
+  const handleGenerationError = (errorMessage: string) => {
+    setIsGeneratingWorkflow(false);
+    setWorkflowGenerationError(errorMessage);
+  };
+
+  /** "Back to start" from the error overlay */
+  const handleDismissGenerationError = () => {
+    setWorkflowGenerationError(null);
+    setIsAppStarted(false);
   };
 
   const handleAiParsed     = importStateAndStart;
@@ -375,6 +405,8 @@ export default function Home() {
           aiConfig={aiConfig}
           onSaveConfig={handleSaveAiConfig}
           onOpenSettings={() => setShowAISettings(true)}
+          onGenerationStart={handleGenerationStart}
+          onGenerationError={handleGenerationError}
         />
         <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
           onSave={handleSaveAiConfig} currentConfig={aiConfig} />
@@ -859,6 +891,17 @@ export default function Home() {
 
         {/* ── Main canvas ── */}
         <main className="flex-1 relative bg-[#F8FAFC] overflow-hidden">
+
+          {/* Track 15a — Skeleton placeholder nodes while AI is generating */}
+          {isGeneratingWorkflow && <SkeletonCanvas />}
+
+          {/* Track 15a — Overlay shown over empty canvas during AI generation */}
+          <WorkflowGeneratingOverlay
+            isVisible={isGeneratingWorkflow || !!workflowGenerationError}
+            error={workflowGenerationError}
+            onDismissError={handleDismissGenerationError}
+          />
+
           <GraphCanvas
             ref={canvasRef}
             showImprovements={showImprovements}
@@ -944,6 +987,7 @@ export default function Home() {
         isOpen={showAIAnalysis}
         isLoading={aiAnalysisLoading}
         analysis={aiAnalysis}
+        streamText={aiAnalysisStreamText}
         suggestedConnections={aiSuggestedConnections}
         suggestedEdgeRemovals={aiSuggestedEdgeRemovals}
         suggestedRemovals={aiSuggestedRemovals}

@@ -98,6 +98,8 @@ interface AIAnalysisModalProps {
   isOpen: boolean;
   isLoading: boolean;
   analysis: string | null;
+  /** Track 14d: partial text being streamed in — shown live before analysis finalises */
+  streamText?: string;
   suggestedConnections?: SuggestedConnection[];
   suggestedEdgeRemovals?: SuggestedEdgeRemoval[];
   suggestedRemovals?: SuggestedRemoval[];
@@ -279,7 +281,7 @@ function cascadeIcon(type: CascadeEffect["type"]) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function AIAnalysisModal({
-  isOpen, isLoading, analysis,
+  isOpen, isLoading, analysis, streamText = '',
   suggestedConnections = [], suggestedEdgeRemovals = [],
   suggestedRemovals = [], suggestedNewNodes = [], suggestedTaskUpdates = [],
   suggestedGroupUpdates = [],
@@ -423,12 +425,30 @@ export function AIAnalysisModal({
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4">
 
-          {/* Loading */}
-          {isLoading && (
+          {/* Loading — with streaming text preview (Track 14d) */}
+          {isLoading && !streamText && (
             <div className="flex flex-col items-center justify-center gap-3 py-14 text-slate-500">
               <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
               <p className="text-sm font-medium">Analyzing your workflow…</p>
               <p className="text-xs text-slate-400">This may take a few seconds</p>
+            </div>
+          )}
+
+          {/* Live streaming text — populates progressively as AI generates */}
+          {isLoading && streamText && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 mb-3">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500 shrink-0" />
+                <span className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">
+                  Generating analysis…
+                </span>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4">
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-mono">
+                  {streamText}
+                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-500 animate-pulse align-middle rounded-sm" />
+                </p>
+              </div>
             </div>
           )}
 

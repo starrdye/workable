@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateText, type AIProvider } from '@/lib/aiClient';
+import { generateText, streamText, type AIProvider } from '@/lib/aiClient';
 import { classifyAIError } from '@/lib/aiErrors';
 import { OptimizeResponseSchema } from '@/lib/aiSchemas';
 import { buildOptimizeSnapshot } from '@/lib/snapshotBuilder';
+import { compressSnapshot, estimateTokens, SAFE_INPUT_THRESHOLD } from '@/lib/contextCompressor';
 import { jsonrepair } from 'jsonrepair';
 import { runDistributedOptimize } from '@/lib/agents/distributedOptimize';
 import type { ServerGraphState } from '@/lib/serverState';
@@ -211,13 +212,15 @@ function stripFences(text: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const { workflowData, apiKey, provider = 'anthropic', model, baseUrl, engine } = await req.json() as {
+    const { workflowData, apiKey, provider = 'anthropic', model, baseUrl, engine, stream: wantStream } = await req.json() as {
       workflowData: Record<string, unknown>;
       apiKey: string;
       provider?: AIProvider;
       model?: string;
       baseUrl?: string;
       engine?: AIEngineMode;
+      /** Track 14d: set true to receive Server-Sent Events instead of a JSON blob */
+      stream?: boolean;
     };
 
     if (!apiKey?.trim())    return NextResponse.json({ error: 'API key is required.'      }, { status: 400 });
@@ -255,15 +258,161 @@ export async function POST(req: NextRequest) {
     // ── Monolithic engine (original implementation below) ─────────────────────
 
     // Build enriched snapshot (Track 14b-i: hierarchical group summaries)
-    const { coreNodes, customNodes, coreEdges, customEdges, groupSummary, nameLookup, workflowSnapshot } =
-      buildOptimizeSnapshot(workflowData);
+    const optimizeSnapshot = buildOptimizeSnapshot(workflowData);
+    const { coreNodes, customNodes, coreEdges, customEdges, groupSummary, nameLookup } = optimizeSnapshot;
+
+    // Track 14b: Context compression — trim snapshot if it exceeds the token budget
+    const compressionResult = compressSnapshot(optimizeSnapshot);
+    const workflowSnapshot  = compressionResult.workflowSnapshot;
+
+    // Log compression details to the response when compression was applied
+    const compressionMeta = compressionResult.wasCompressed ? {
+      contextCompressed:     true,
+      compressionOmissions:  compressionResult.omissions,
+      originalTokenEstimate: compressionResult.originalTokenEstimate,
+      compressedTokenEstimate: compressionResult.compressedTokenEstimate,
+    } : null;
+
+    const userMessage = `Analyze this workflow and provide optimization recommendations:\n\n${workflowSnapshot}`;
+
+    // ── Track 14d: Streaming path ─────────────────────────────────────────────
+    if (wantStream) {
+      const encoder = new TextEncoder();
+
+      const sseStream = new ReadableStream({
+        async start(controller) {
+          const send = (event: Record<string, unknown>) => {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          };
+
+          try {
+            let rawText = '';
+
+            // Stream chunks from the AI, forwarding each as an SSE event
+            const genResult = await streamText(
+              {
+                provider,
+                model:        resolvedModel,
+                apiKey,
+                systemPrompt: SYSTEM_PROMPT,
+                userMessage,
+                maxTokens:    5000,
+                baseUrl:      baseUrl || undefined,
+              },
+              {
+                onChunk: (chunk) => {
+                  rawText += chunk;
+                  send({ type: 'chunk', text: chunk });
+                },
+              },
+            );
+            rawText = genResult.text;
+
+            // Parse the full JSON from the completed stream
+            let analysis: string = rawText;
+            let suggestedConnections:  unknown[] = [];
+            let suggestedEdgeRemovals: unknown[] = [];
+            let suggestedRemovals:     unknown[] = [];
+            let suggestedNewNodes:     unknown[] = [];
+            let suggestedTaskUpdates:  unknown[] = [];
+            let suggestedGroupUpdates: unknown[] = [];
+            let suggestionPlan:        unknown   = null;
+
+            try {
+              const raw    = JSON.parse(jsonrepair(stripFences(rawText)));
+              const parsed = OptimizeResponseSchema.safeParse(raw);
+              if (parsed.success) {
+                analysis              = parsed.data.analysis;
+                suggestedConnections  = parsed.data.suggestedConnections;
+                suggestedEdgeRemovals = parsed.data.suggestedEdgeRemovals;
+                suggestedRemovals     = parsed.data.suggestedRemovals;
+                suggestedNewNodes     = parsed.data.suggestedNewNodes;
+                suggestedTaskUpdates  = parsed.data.suggestedTaskUpdates;
+                suggestedGroupUpdates = parsed.data.suggestedGroupUpdates;
+                suggestionPlan        = parsed.data.suggestionPlan ?? null;
+              } else if (typeof raw === 'object' && raw !== null) {
+                analysis              = typeof raw.analysis === 'string' ? raw.analysis : rawText;
+                suggestedConnections  = Array.isArray(raw.suggestedConnections)  ? raw.suggestedConnections  : [];
+                suggestedEdgeRemovals = Array.isArray(raw.suggestedEdgeRemovals) ? raw.suggestedEdgeRemovals : [];
+                suggestedRemovals     = Array.isArray(raw.suggestedRemovals)     ? raw.suggestedRemovals     : [];
+                suggestedNewNodes     = Array.isArray(raw.suggestedNewNodes)     ? raw.suggestedNewNodes     : [];
+                suggestedTaskUpdates  = Array.isArray(raw.suggestedTaskUpdates)  ? raw.suggestedTaskUpdates  : [];
+                suggestedGroupUpdates = Array.isArray(raw.suggestedGroupUpdates) ? raw.suggestedGroupUpdates : [];
+                suggestionPlan        = raw.suggestionPlan ?? null;
+              }
+            } catch {
+              analysis = rawText;
+            }
+
+            // Notify client that suggestions are being validated (Pass 2)
+            if ((suggestedConnections as unknown[]).length > 0) {
+              send({ type: 'validating', message: 'Validating suggested connections…' });
+              const validationPromises = (suggestedConnections as Array<Record<string, unknown>>).map(async (conn) => {
+                try {
+                  const tempEdges = [...coreEdges, ...customEdges, {
+                    id:         `temp_${conn.sourceId}_${conn.targetId}`,
+                    sourceName: nameLookup[conn.sourceId as string] ?? conn.sourceId,
+                    targetName: nameLookup[conn.targetId as string] ?? conn.targetId,
+                  }];
+                  const modifiedSnapshot = JSON.stringify({
+                    coreNodes, coreEdges: tempEdges, customNodes, groups: groupSummary
+                  }, null, 2);
+                  const pass2Result = await generateText({
+                    provider, model: resolvedModel, apiKey,
+                    systemPrompt: PASS2_PROMPT,
+                    userMessage: `Evaluate adding a connection from '${conn.sourceName}' to '${conn.targetName}'.\n\nWorkflow:\n${modifiedSnapshot}`,
+                    maxTokens: 1000,
+                    baseUrl:   baseUrl || undefined,
+                  });
+                  const effects = JSON.parse(stripFences(pass2Result.text));
+                  conn.cascadeEffects = Array.isArray(effects) ? effects : [{ id: `fb_${Date.now()}`, type: 'stable', description: 'Safe to apply', depth: 1 }];
+                } catch {
+                  conn.cascadeEffects = [{ id: `fb_${Date.now()}`, type: 'stable', description: 'Could not evaluate cascade', depth: 1 }];
+                }
+              });
+              await Promise.all(validationPromises);
+            }
+
+            // Send the final structured result
+            send({
+              type: 'done',
+              analysis,
+              tokenUsage:           genResult.usage ?? null,
+              suggestedConnections,
+              suggestedEdgeRemovals,
+              suggestedRemovals,
+              suggestedNewNodes,
+              suggestedTaskUpdates,
+              suggestedGroupUpdates,
+              suggestionPlan,
+              ...(compressionMeta ?? {}),
+            });
+          } catch (err) {
+            const { userMessage: msg } = classifyAIError(err);
+            send({ type: 'error', message: msg });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(sseStream, {
+        headers: {
+          'Content-Type':  'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection':    'keep-alive',
+        },
+      });
+    }
+
+    // ── Non-streaming (buffered) path ─────────────────────────────────────────
 
     const pass1Result = await generateText({
       provider,
       model: resolvedModel,
       apiKey,
       systemPrompt: SYSTEM_PROMPT,
-      userMessage:  `Analyze this workflow and provide optimization recommendations:\n\n${workflowSnapshot}`,
+      userMessage,
       maxTokens:    5000,
       baseUrl:      baseUrl || undefined,
     });
@@ -355,6 +504,7 @@ export async function POST(req: NextRequest) {
       suggestedTaskUpdates,
       suggestedGroupUpdates,
       suggestionPlan,
+      ...(compressionMeta ?? {}),
     });
   } catch (err: unknown) {
     const { userMessage, status } = classifyAIError(err);

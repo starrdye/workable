@@ -48,6 +48,13 @@ interface StartScreenProps {
   aiConfig?:         AIConfig;
   onSaveConfig?:     (config: AIConfig) => void;
   onOpenSettings?:   () => void;
+  /**
+   * Track 15a — called the moment the user clicks "Generate with AI",
+   * BEFORE the AI call starts. Page transitions to canvas immediately.
+   */
+  onGenerationStart?: () => void;
+  /** Track 15a — called if AI generation fails, so the page shows the error overlay */
+  onGenerationError?: (error: string) => void;
 }
 
 // ── Mini network preview SVGs per template ────────────────────────────────────
@@ -294,6 +301,7 @@ function TemplateGallery({
 export function StartScreen({
   onStart, onImportAndStart, onAiParsed, onTemplateLoad, onDebugLog,
   aiConfig, onSaveConfig: _onSaveConfig, onOpenSettings,
+  onGenerationStart, onGenerationError,
 }: StartScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName]         = useState<string | null>(null);
@@ -356,6 +364,11 @@ export function StartScreen({
     if (csvText && onImportAndStart) { onImportAndStart(csvText); return; }
     if (instructions.trim() && activeKey && cfg && onAiParsed) {
       setIsParsingAI(true);
+
+      // Track 15a: Transition to canvas shell immediately — don't wait for the AI call.
+      // The page shows the WorkflowGeneratingOverlay while the fetch is in flight.
+      onGenerationStart?.();
+
       try {
         const sentPrompt = instructions.trim();
         const res = await fetch("/api/ai/parse-workflow", {
@@ -371,15 +384,26 @@ export function StartScreen({
         });
         const data = await res.json();
         if (!res.ok) {
-          onDebugLog?.({ prompt: sentPrompt, rawAIResponse: data.rawAIResponse ?? '', error: data.error });
-          setAiError(data.error ?? "AI parsing failed.");
+          const errMsg = data.error ?? "AI parsing failed.";
+          onDebugLog?.({ prompt: sentPrompt, rawAIResponse: data.rawAIResponse ?? '', error: errMsg });
+          // Propagate error to page overlay (stays on canvas with error card)
+          if (onGenerationError) {
+            onGenerationError(errMsg);
+          } else {
+            setAiError(errMsg);
+          }
           setIsParsingAI(false);
           return;
         }
         onDebugLog?.({ prompt: sentPrompt, rawAIResponse: data.rawAIResponse ?? '' });
         onAiParsed(data as AIParsedResult);
       } catch {
-        setAiError("Network error. Please try again.");
+        const errMsg = "Network error. Please try again.";
+        if (onGenerationError) {
+          onGenerationError(errMsg);
+        } else {
+          setAiError(errMsg);
+        }
         setIsParsingAI(false);
       }
       return;

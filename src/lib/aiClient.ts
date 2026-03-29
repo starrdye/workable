@@ -220,3 +220,78 @@ export async function generateText(options: {
 
   throw new Error(`Unsupported AI provider: "${provider}"`);
 }
+
+// ── Streaming generation (Track 14d) ─────────────────────────────────────────
+//
+// Streams raw AI text chunks to an SSE-style WritableStream controller.
+// Used by the /api/ai/optimize streaming path.
+//
+// Only Anthropic supports native token-by-token streaming.
+// Gemini and Doubao fall back to a single "pseudo-chunk" (generates fully
+// then sends the whole text as one chunk) so the SSE protocol is identical.
+
+export interface StreamOptions {
+  provider:     AIProvider;
+  model:        string;
+  apiKey:       string;
+  systemPrompt: string;
+  userMessage:  string;
+  maxTokens?:   number;
+  baseUrl?:     string;
+}
+
+export interface StreamWriter {
+  /** Called for each text chunk as it arrives */
+  onChunk: (chunk: string) => void;
+}
+
+/**
+ * Stream AI text to `writer.onChunk`, then return the accumulated full text
+ * and token usage once the stream is complete.
+ *
+ * For providers that do not support native streaming (Gemini, Doubao),
+ * `onChunk` is called once with the complete text.
+ */
+export async function streamText(
+  options: StreamOptions,
+  writer: StreamWriter,
+): Promise<GenerateResult> {
+  const { provider, model, apiKey, systemPrompt, userMessage, maxTokens = 5000, baseUrl } = options;
+
+  // ── Anthropic (native streaming) ──────────────────────────────────────────
+  if (provider === 'anthropic') {
+    const client = new Anthropic({ apiKey });
+    const stream = client.messages.stream({
+      model,
+      max_tokens: maxTokens,
+      system:     systemPrompt,
+      messages:   [{ role: 'user', content: userMessage }],
+    });
+
+    let fullText = '';
+    for await (const event of stream) {
+      if (
+        event.type === 'content_block_delta' &&
+        event.delta.type === 'text_delta'
+      ) {
+        const chunk = event.delta.text;
+        fullText   += chunk;
+        writer.onChunk(chunk);
+      }
+    }
+
+    const finalMessage = await stream.finalMessage();
+    const usage: TokenUsage = {
+      inputTokens:  finalMessage.usage.input_tokens,
+      outputTokens: finalMessage.usage.output_tokens,
+    };
+    return { text: fullText, usage };
+  }
+
+  // ── Gemini / Doubao — pseudo-streaming (single chunk) ────────────────────
+  const result = await generateText({
+    provider, model, apiKey, systemPrompt, userMessage, maxTokens, baseUrl,
+  });
+  writer.onChunk(result.text);
+  return result;
+}

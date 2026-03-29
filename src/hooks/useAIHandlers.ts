@@ -1,7 +1,8 @@
 // src/hooks/useAIHandlers.ts
 // All AI-related state and handlers: settings, analyze, update, apply, debug log.
 // Receives shared state as parameters so mutations propagate back to the page.
-// Track 8b — vb0.2: delegates to useAIEngine for mode-aware routing.
+// Track 8b  — vb0.2: delegates to useAIEngine for mode-aware routing.
+// Track 14d — vb0.21: runAnalyze uses streaming SSE so analysis text appears live.
 
 import { useState, useEffect } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
@@ -56,6 +57,8 @@ export function useAIHandlers(
   const [aiAnalysis,            setAiAnalysis]            = useState<string | null>(null);
   const [aiAnalysisLoading,     setAiAnalysisLoading]     = useState(false);
   const [aiAnalysisError,       setAiAnalysisError]       = useState<string | null>(null);
+  /** Track 14d: partial text accumulated as SSE chunks arrive — shown live in modal */
+  const [aiAnalysisStreamText,  setAiAnalysisStreamText]  = useState<string>('');
   const [aiSuggestedConnections,setAiSuggestedConnections] = useState<SuggestedConnection[]>([]);
   const [aiSuggestedRemovals,   setAiSuggestedRemovals]   = useState<SuggestedRemoval[]>([]);
   const [aiAnalysisTimestamp,   setAiAnalysisTimestamp]   = useState<number | null>(null);
@@ -83,50 +86,79 @@ export function useAIHandlers(
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  // Core fetch — called by both handleAiAnalyze (first time) and handleReAnalyze
-  // Routes through useAIEngine which injects the current engine mode and handles
-  // abort/race conditions when the user toggles mode mid-flight.
+  // Core fetch — called by both handleAiAnalyze (first time) and handleReAnalyze.
+  // Track 14d: Uses SSE streaming so analysis text appears progressively in the modal.
+  // Falls back to buffered if the distributed engine is active (it doesn't stream).
   const runAnalyze = async () => {
     setAiAnalysisError(null);
     setAiAnalysisLoading(true);
+    setAiAnalysisStreamText('');
+
+    const config = {
+      apiKey:   activeApiKey,
+      provider: aiConfig.provider,
+      model:    aiConfig.models[aiConfig.provider],
+      baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
+    };
+
+    // Distributed engine doesn't support streaming — use buffered path
+    if (aiEngine.mode === 'distributed') {
+      try {
+        const { data, aborted, engine } = await aiEngine.runAnalyze(fullServerState, config);
+        if (aborted) { setAiAnalysisLoading(false); return; }
+        applyAnalysisData(data, engine);
+      } catch (err) {
+        setAiAnalysisError(err instanceof Error ? err.message : 'Network error. Please try again.');
+      } finally {
+        setAiAnalysisLoading(false);
+      }
+      return;
+    }
+
+    // Monolithic engine — streaming path
     try {
-      const { data, aborted, engine } = await aiEngine.runAnalyze(
+      const { aborted } = await aiEngine.runAnalyzeStream(
         fullServerState,
+        config,
         {
-          apiKey:   activeApiKey,
-          provider: aiConfig.provider,
-          model:    aiConfig.models[aiConfig.provider],
-          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
+          onChunk: (chunk) => {
+            setAiAnalysisStreamText(prev => prev + chunk);
+          },
+          onDone: (data) => {
+            setAiAnalysisStreamText('');
+            applyAnalysisData(data, 'monolithic');
+            setAiAnalysisLoading(false);
+          },
+          onError: (message) => {
+            setAiAnalysisError(message);
+            setAiAnalysisLoading(false);
+          },
         },
       );
-
-      // If aborted (mode toggled mid-flight), silently discard
-      if (aborted) {
-        setAiAnalysisLoading(false);
-        return;
-      }
-
-      setAiAnalysis(data.analysis as string);
-      setAiSuggestedConnections((data.suggestedConnections ?? []) as SuggestedConnection[]);
-      setAiSuggestedRemovals((data.suggestedRemovals ?? []) as SuggestedRemoval[]);
-      setAiSuggestedEdgeRemovals((data.suggestedEdgeRemovals ?? []) as SuggestedEdgeRemoval[]);
-      setAiSuggestedNewNodes((data.suggestedNewNodes ?? []) as SuggestedNewNode[]);
-      setAiSuggestedTaskUpdates((data.suggestedTaskUpdates ?? []) as SuggestedTaskUpdate[]);
-      setAiSuggestedGroupUpdates((data.suggestedGroupUpdates ?? []) as SuggestedGroupUpdate[]);
-      setAiSuggestionPlan((data.suggestionPlan ?? null) as { phases: SuggestionPhase[] } | null);
-      setAiAnalysisTimestamp(Date.now());
-      setAiDebugLog({
-        prompt: `[AI Analyze — ${engine} engine]`,
-        rawAIResponse: typeof data.analysis === 'string' ? data.analysis : JSON.stringify(data, null, 2),
-        engine,
-        tokenUsage: (data.tokenUsage as { inputTokens: number; outputTokens: number } | null) ?? null,
-      });
+      if (aborted) setAiAnalysisLoading(false);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Network error. Please try again.';
-      setAiAnalysisError(msg);
-    } finally {
+      setAiAnalysisError(err instanceof Error ? err.message : 'Network error. Please try again.');
       setAiAnalysisLoading(false);
     }
+  };
+
+  /** Apply a completed analysis result (shared by streaming onDone + buffered path) */
+  const applyAnalysisData = (data: Record<string, unknown>, engine: 'monolithic' | 'distributed') => {
+    setAiAnalysis(data.analysis as string);
+    setAiSuggestedConnections((data.suggestedConnections ?? []) as SuggestedConnection[]);
+    setAiSuggestedRemovals((data.suggestedRemovals ?? []) as SuggestedRemoval[]);
+    setAiSuggestedEdgeRemovals((data.suggestedEdgeRemovals ?? []) as SuggestedEdgeRemoval[]);
+    setAiSuggestedNewNodes((data.suggestedNewNodes ?? []) as SuggestedNewNode[]);
+    setAiSuggestedTaskUpdates((data.suggestedTaskUpdates ?? []) as SuggestedTaskUpdate[]);
+    setAiSuggestedGroupUpdates((data.suggestedGroupUpdates ?? []) as SuggestedGroupUpdate[]);
+    setAiSuggestionPlan((data.suggestionPlan ?? null) as { phases: SuggestionPhase[] } | null);
+    setAiAnalysisTimestamp(Date.now());
+    setAiDebugLog({
+      prompt: `[AI Analyze — ${engine} engine]`,
+      rawAIResponse: typeof data.analysis === 'string' ? data.analysis : JSON.stringify(data, null, 2),
+      engine,
+      tokenUsage: (data.tokenUsage as { inputTokens: number; outputTokens: number } | null) ?? null,
+    });
   };
 
   // Opens the modal; only auto-fetches when no cached result exists
@@ -594,7 +626,7 @@ export function useAIHandlers(
     showAIUpdate,   setShowAIUpdate,
     showDebugLog,   setShowDebugLog,
     // analyze
-    aiAnalysis, aiAnalysisLoading, aiAnalysisError,
+    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText,
     aiSuggestedConnections, aiSuggestedRemovals,
     aiAnalysisTimestamp,
     handleAiAnalyze, handleReAnalyze, resetAnalysis,

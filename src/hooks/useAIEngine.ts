@@ -205,6 +205,118 @@ export function useAIEngine() {
   }, [mode]);
 
   /**
+   * Track 14d — Streaming analyze.
+   * Opens an SSE connection to /api/ai/optimize?stream=true and calls
+   * the provided callbacks as events arrive.
+   *
+   * `onChunk`   — called for each raw text chunk (for live analysis preview)
+   * `onDone`    — called once with the final structured result
+   * `onError`   — called if the server sends an error event or the fetch fails
+   */
+  const runAnalyzeStream = useCallback(async (
+    workflowData: unknown,
+    config: AIEngineConfig,
+    callbacks: {
+      onChunk:  (chunk: string) => void;
+      onDone:   (data: Record<string, unknown>) => void;
+      onError:  (message: string) => void;
+    },
+    options?: EngineCallOptions,
+  ): Promise<{ engine: AIEngineMode; aborted: boolean }> => {
+    const effectiveMode  = options?.forceMode ?? mode;
+    const callGeneration = generationRef.current;
+
+    // Abort any previous in-flight analyze
+    const existing = inFlightRef.current.get('analyze');
+    if (existing) {
+      existing.controller.abort(new DOMException('Superseded by new request', 'AbortError'));
+      inFlightRef.current.delete('analyze');
+    }
+
+    const controller = new AbortController();
+    if (options?.signal) {
+      options.signal.addEventListener('abort', () => controller.abort(options.signal!.reason));
+    }
+
+    inFlightRef.current.set('analyze', {
+      controller,
+      generation: callGeneration,
+      operationType: 'analyze',
+    });
+
+    try {
+      const res = await fetch('/api/ai/optimize', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workflowData,
+          apiKey:   config.apiKey,
+          provider: config.provider,
+          model:    config.model,
+          baseUrl:  config.baseUrl || undefined,
+          engine:   effectiveMode,
+          stream:   true,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Analysis failed.' }));
+        throw new Error(err.error ?? 'Analysis failed.');
+      }
+
+      if (!res.body) throw new Error('No response body for streaming.');
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer    = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Check staleness on each chunk
+        if (generationRef.current !== callGeneration) {
+          reader.cancel();
+          return { engine: effectiveMode, aborted: true };
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE lines are delimited by "\n\n"
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6)) as Record<string, unknown>;
+            if (event.type === 'chunk') {
+              callbacks.onChunk(event.text as string);
+            } else if (event.type === 'done') {
+              callbacks.onDone(event);
+            } else if (event.type === 'error') {
+              callbacks.onError(event.message as string ?? 'Unknown error');
+            }
+          } catch {
+            // malformed SSE line — skip
+          }
+        }
+      }
+
+      return { engine: effectiveMode, aborted: false };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return { engine: effectiveMode, aborted: true };
+      }
+      throw err;
+    } finally {
+      inFlightRef.current.delete('analyze');
+    }
+  }, [mode]);
+
+  /**
    * Abort a specific in-flight operation.
    */
   const abort = useCallback((operationType: 'analyze' | 'update') => {
@@ -225,6 +337,7 @@ export function useAIEngine() {
   return {
     mode,
     runAnalyze,
+    runAnalyzeStream,
     runUpdate,
     abort,
     isInFlight,
