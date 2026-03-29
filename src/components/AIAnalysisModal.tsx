@@ -142,9 +142,9 @@ const SECTION_CONFIGS: SectionConfig[] = [
   {
     key: "workflow summary",
     title: "Workflow Summary",
-    icon: <Info className="w-3.5 h-3.5 text-indigo-600" />,
-    bg: "bg-indigo-50/60", border: "border-indigo-100",
-    iconBg: "bg-indigo-100", titleColor: "text-indigo-700", dotColor: "bg-indigo-400",
+    icon: <Info className="w-3.5 h-3.5 text-purple-600" />,
+    bg: "bg-purple-50/60", border: "border-purple-100",
+    iconBg: "bg-purple-100", titleColor: "text-purple-700", dotColor: "bg-purple-400",
   },
   {
     key: "bottlenecks identified",
@@ -173,6 +173,20 @@ const SECTION_CONFIGS: SectionConfig[] = [
     icon: <Zap className="w-3.5 h-3.5 text-violet-600" />,
     bg: "bg-violet-50/60", border: "border-violet-100",
     iconBg: "bg-violet-100", titleColor: "text-violet-700", dotColor: "bg-violet-400",
+  },
+  {
+    key: "per-node analysis",
+    title: "Per-Node Analysis",
+    icon: <Info className="w-3.5 h-3.5 text-sky-600" />,
+    bg: "bg-sky-50/60", border: "border-sky-100",
+    iconBg: "bg-sky-100", titleColor: "text-sky-700", dotColor: "bg-sky-400",
+  },
+  {
+    key: "group analysis",
+    title: "Group Analysis",
+    icon: <Layers className="w-3.5 h-3.5 text-teal-600" />,
+    bg: "bg-teal-50/60", border: "border-teal-100",
+    iconBg: "bg-teal-100", titleColor: "text-teal-700", dotColor: "bg-teal-400",
   },
 ];
 
@@ -871,13 +885,31 @@ export function AIAnalysisModal({
                         </div>
                         <h3 className={`text-sm font-bold ${section.config.titleColor}`}>{section.title}</h3>
                       </div>
-                      <ul className="space-y-2">
-                        {section.items.map((item, idx) => (
-                          <li key={idx} className="flex items-start gap-2.5">
-                            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${section.config.dotColor}`} />
-                            <span className="text-sm text-slate-700 leading-relaxed">{renderInline(item)}</span>
-                          </li>
-                        ))}
+                      <ul className="space-y-2.5">
+                        {section.items.map((item, idx) => {
+                          const node = parseNodeAnalysisItem(item);
+                          if (node) {
+                            // Per-node / group analysis card: label + expandable body
+                            return (
+                              <li key={idx} className="rounded-xl border border-slate-100 bg-white/70 px-4 py-3">
+                                <p className={`text-xs font-bold mb-1 ${section.config.titleColor}`}>{node.label}</p>
+                                <ExpandableText
+                                  text={node.text}
+                                  className="text-sm text-slate-700 leading-relaxed"
+                                />
+                              </li>
+                            );
+                          }
+                          return (
+                            <li key={idx} className="flex items-start gap-2.5">
+                              <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${section.config.dotColor}`} />
+                              <ExpandableText
+                                text={item}
+                                className="text-sm text-slate-700 leading-relaxed"
+                              />
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   ))}
@@ -956,6 +988,58 @@ function renderInline(text: string): React.ReactNode {
           : part
       )}
     </>
+  );
+}
+
+// ─── JSON blob extractor ──────────────────────────────────────────────────────
+// Items in Per-Node / Group Analysis can arrive as:
+//   "Email / Inbox: {"analysis": "Long text..."}"
+// This extracts the label and the inner text, stripping the raw JSON wrapper.
+
+interface NodeItem { label: string; text: string }
+
+function parseNodeAnalysisItem(raw: string): NodeItem | null {
+  // Find the first `{` — everything before it is the label, everything after is JSON
+  const braceIdx = raw.indexOf(': {');
+  if (braceIdx === -1) return null;
+  const label     = raw.slice(0, braceIdx).trim();
+  const jsonPart  = raw.slice(braceIdx + 2).trim(); // starts at `{`
+  try {
+    const parsed = JSON.parse(jsonPart);
+    // Accept any string value — prefer common key names
+    const text =
+      typeof parsed.analysis  === 'string' ? parsed.analysis  :
+      typeof parsed.text      === 'string' ? parsed.text      :
+      typeof parsed.summary   === 'string' ? parsed.summary   :
+      typeof parsed.content   === 'string' ? parsed.content   :
+      // fallback: first string-valued key
+      Object.values(parsed).find(v => typeof v === 'string') as string | undefined;
+    if (text) return { label, text };
+  } catch { /* malformed JSON — fall through */ }
+  return null;
+}
+
+// ─── Expandable text ──────────────────────────────────────────────────────────
+// Long analysis bullets are clamped; clicking "Read more" reveals the rest.
+
+const EXPAND_THRESHOLD = 200;
+
+function ExpandableText({ text, className }: { text: string; className?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const needsExpand = text.length > EXPAND_THRESHOLD;
+  const display = needsExpand && !expanded ? text.slice(0, EXPAND_THRESHOLD) + '…' : text;
+  return (
+    <span className={className}>
+      {renderInline(display)}
+      {needsExpand && (
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="ml-1.5 text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 underline underline-offset-2 transition-colors"
+        >
+          {expanded ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </span>
   );
 }
 
