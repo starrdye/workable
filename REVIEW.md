@@ -6,14 +6,12 @@ This document provides an overview of all current branches in the repository, th
 
 | Branch Name | Status | Recommendation | Primary Changes / Purpose |
 | :--- | :--- | :--- | :--- |
-| `main` | **Active** | Keep | Production-ready branch with Tracks 1-12 fully implemented. |
+| `vb0.2` | **Active** | Keep | Implementation of Track 16b (Strategy Engine Toggle, token usage). |
+| `vb0.1` | **Merged** | Delete | Implementation of Track 16a (Distributed Agent System). |
+| `main` | **Stable** | Keep | Production-ready branch with Tracks 1-12 fully implemented. |
 | `0.51-personal` | **Merged** | Delete | Fix: SSE stream interval not cleared on client disconnect. |
 | `0.5-personal` | **Merged** | Delete | Implementation of Tracks 1, 3, 4, and 9 (Persistence, SSE, AI, UI). |
 | `0.47-personal` | **Merged** | Delete | Final implementation of Track 9 & 12 (merged into `main`). |
-| `0.4-personal` | **Unmerged** | Delete (Stale) | Early implementation of Tracks 1-3. Superseded by `main`. |
-| `0.41-personal` | **Unmerged** | Delete (Stale) | AI Quality/Reliability (Track 4). Superseded by `main`. |
-| `0.42-personal` | **Unmerged** | Delete (Stale) | Undo/Redo (Track 2). Superseded by `main`. |
-| `v0.2` | **Unmerged** | Keep (Draft) | Divergent AI provider settings Page. Major regressions if merged. |
 | `0.21` - `0.39` | **Merged** | Delete | Incremental personal development branches. All in `main`. |
 | `master` | **Merged** | Delete | Legacy main branch. Identical to `main`'s history. |
 | `v0.1` | **Merged** | Keep (Tag?) | First release version. Already in `main` history. |

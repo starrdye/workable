@@ -4,7 +4,7 @@
   <em>Personal Workflow Mapper · Next.js 16 · React 19 · TypeScript 5 · Multi-provider AI</em>
 </p>
 
-> **Current branch:** `vb0.1`
+> **Current branch:** `vb0.2`
 
 > This guide covers the current production architecture. The original prototype (`prototype.html`) is kept for historical reference only — all active development happens in `src/`.
 
@@ -49,21 +49,16 @@ Browser
        │                        groupAwareLayout()
        │                        importState()   ──▶ in-memory singleton
        │
-       ├─ GraphCanvas.tsx ──── GET  /api/graph-state  (polls every 3 s)
+       ├─ GraphCanvas.tsx ──── GET  /api/graph-state/stream (SSE sync)
        │                       PUT  /api/graph-state  (node drag, CRUD)
        │
        ├─ AnalysisSidebar.tsx ─ reads AnalysisData built in page.tsx
        │                         PUT /api/graph-state (updateMetadata / updateEdgeParams)
        │
-       ├─ AIAnalysisModal.tsx ─ POST /api/ai/optimize
-       │                          reads fullServerState → bottleneck report
-       │                          suggested connections / removals (apply individually)
+       ├─ AIAnalysisModal.tsx ─ POST /api/ai/optimize (Monolithic)
+       │                          OR   /api/ai/agent (Distributed)
        │
-       ├─ AIUpdateModal.tsx ─── POST /api/ai/update
-       │                          buildSnapshot(fullServerState) → semantic text context
-       │                          prompt + snapshot → AI → validated patch JSON
-       │                          onApply → sequential PUT /api/graph-state calls
-       │                          → resetLayout
+       ├─ AIEngineToggle.tsx ── context: AIEngineContext (Strategy Pattern)
        │
        └─ AISettingsModal.tsx ── localStorage: nwt_ai_config
                                   (provider, model, API key, baseUrl)
@@ -158,7 +153,7 @@ Server state lives in a single module-level object (`global.__graphState`) in `s
 
 **`metadataOverrides`** is a flat `Record<string, PartialEntityMeta>` keyed by both node IDs and edge IDs. Fields: `name`, `role`, `status`, `summary`, `constraints`, `processes` (workflow group memberships), `connections` (neighbour names), `tasks`.
 
-The client polls `GET /api/graph-state?since=<ts>` every 3 seconds; the server returns `{ unchanged: true }` if `lastUpdated` hasn't changed, keeping bandwidth low.
+The client opens an **SSE stream** via `/api/graph-state/stream` for instant updates. If the stream fails, it falls back to polling `/api/graph-state?since=<ts>` every 3 seconds.
 
 ---
 
@@ -333,10 +328,10 @@ The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explici
 
 ## Distributed Agent System (vb0.1)
 
-Branch `vb0.1` introduces a parallel, distributed AI architecture layered on top of the existing monolithic analysis. All new features are **additive** — zero existing files changed, all gated behind `WORKABLE_USE_*` env flags.
+Branch `vb0.2` formalizes the distributed agent architecture and makes it the default for large-scale operations. It uses a **Strategy Pattern** via `AIEngineContext` to switch between engines.
 
 ```
-vb0.1 Architecture
+vb0.1/vb0.2 Architecture
 
 Phase 1 — SQLite Foundation      src/lib/db/
 Phase 2 — Node-as-an-Agent       src/lib/agents/nodeAgent.ts
@@ -538,12 +533,13 @@ At each depth level, affected agents receive the trigger context and decide inde
 | Message broker + organic cascade simulation | 🔶 In progress | vb0.1 |
 | Group-level governance agents | 🔶 In progress | vb0.1 |
 | Viewport streaming + R-tree spatial index | 🔶 In progress | vb0.1 |
-| Real-time WebSocket sync | ⬜ Roadmap | — |
-| Constraint propagation (risk cascading) | ⬜ Roadmap | — |
-| Webhook ingestion (Slack, Jira, GitHub) | ⬜ Roadmap | — |
-| OCR / PDF import | ⬜ Roadmap | — |
-| Diff view (workflow version comparison) | ⬜ Roadmap | — |
-| Shareable read-only links | ⬜ Roadmap | — |
+| Feature | Status | Branch |
+|---|---|---|
+| Real-time SSE Sync (multi-tab) | ✅ Complete | 0.5 |
+| Undo/Redo (50-step circular buffer) | ✅ Complete | 0.42 |
+| Distributed reasoning engine toggle | ✅ Complete | vb0.2 |
+| Token usage tracking in debug logs | ✅ Complete | vb0.2 |
+| PNG export | ✅ Complete | 0.1 |
 
 ---
 

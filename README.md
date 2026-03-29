@@ -100,6 +100,13 @@ Describe any change in plain English and apply it as a precise patch — no rebu
 - Preview a colour-coded diff (**green** add / **amber** update / **red** remove) before committing
 - Layout reflows automatically after every patch
 
+### 🏗️ Distributed Reasoning (vb0.2)
+Specifically for large graphs (100+ nodes) where monolithic AI prompts would hit context limits:
+- **Ego-centric Analysis** — each node is analyzed as its own agent with local neighborhood context
+- **Message Broker** — agents communicate changes along real graph edges to simulate cascades
+- **Engine Toggle** — switch between Monolithic (fast/holistic) and Distributed (precise/scalable) on the fly
+- **Scalability** — reasoning remains sharp regardless of total graph size
+
 ### 📤 Export & Import
 | Format | What's included |
 |---|---|
@@ -147,9 +154,11 @@ Workable is provider-agnostic. Swap between them any time in AI Settings.
 |---|---|---|
 | **Anthropic Claude** | `claude-sonnet-4-6` (default), `claude-opus-4-6`, `claude-haiku-4-5` | Best overall reasoning and JSON fidelity |
 | **Google Gemini** | `gemini-2.0-flash` (default), `gemini-1.5-pro`, `gemini-1.5-flash` | Fast, generous free tier |
-| **ByteDance Doubao** | Your endpoint ID (e.g. `ep-20260318…`) | OpenAI-compatible; supports Coding Plan base URL for cost control |
+| **ByteDance Doubao** | Your endpoint ID (e.g. `ep-20260318…`) | OpenAI-compatible; supports Coding Plan base URL |
 
-**Base URL override** — Doubao (and any OpenAI-compatible endpoint) lets you set a custom base URL directly in settings. Switch between billing tiers without touching code.
+**Strategy Selection** — Choose between **Monolithic** and **Distributed** reasoning engines via the toolbar toggle. Distributed mode is recommended for graphs with >30 nodes to maintain reasoning precision.
+
+**Token Transparency** — Full input/output token counts are displayed in the AI Debug Log for every call, regardless of engine.
 
 All API keys are stored client-side only. The server route forwards them per-request and never persists them.
 
@@ -183,7 +192,8 @@ POST /api/ai/parse-workflow
         │
         ▼
   importState()         ← writes to in-memory server singleton
-  → client polls /api/graph-state every 3 s
+  → client syncs via **Server-Sent Events (SSE)** /api/graph-state/stream
+  (instant multi-tab synchronization with 3s polling fallback)
 ```
 
 ### Layout Physics
@@ -291,8 +301,10 @@ npm run lint    # ESLint check
 ## 🗺️ Roadmap
 
 - [x] **GitHub Launch** — Repository is live and ready for clones
-- [ ] **Persistent storage** — SQLite or Postgres backend
-- [ ] **Real-time collaboration** — WebSocket sync, presence indicators
+- [x] **Real-time synchronization** — Server-Sent Events (SSE) for instant multi-tab sync
+- [x] **Distributed Reasoning** — Node-agent architecture for 100+ node scalability
+- [/] **Persistent storage** — localStorage auto-save + named snapshots in production
+- [ ] **Database backend** — SQLite or Postgres for server-side persistence
 - [ ] **Constraint propagation** — risk badges that cascade through the graph
 - [ ] **Webhook ingestion** — live workflow updates from GitHub, Jira, Slack
 - [ ] **OCR / PDF import** — extract workflow from scanned process docs

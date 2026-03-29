@@ -1,7 +1,7 @@
 # Workable — Product Improvement Proposal
 
 **Date:** March 2026
-**Branch baseline:** `main` (post 0.39 merge)
+**Branch baseline:** `vb0.2` (Distributed Reasoning / Strategy Engine)
 **Scope:** Full codebase review — architecture, UX, performance, security
 
 ---
@@ -1332,7 +1332,7 @@ Selecting a card updates the context immediately. No Save needed — the mode is
 
 | Track | Priority | Effort | Impact | Status |
 |---|---|---|---|---|
-| Persistence (localStorage → SQLite) | P0 | Low → Medium | Unblocks daily use | ✅ `0.5-personal` (Tier 1 & 2) |
+| Persistence (localStorage → SQLite) | P0 | Low → Medium | Unblocks daily use | ✅ `0.5-personal` |
 | Undo / Redo | P0 | Medium | Removes fear of using AI features | ✅ `0.42-personal` |
 | SSE state sync | P1 | Low | Better responsiveness, enables multi-tab | ✅ `0.5-personal` |
 | AI reliability — streaming, retries, errors (4b/4c/4d/4e) | P1 | Medium | Reduces friction on the core loop | ✅ `0.5-personal` |
