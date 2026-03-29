@@ -23,6 +23,7 @@ import { useAIHandlers }        from "@/hooks/useAIHandlers";
 import { useUndoRedo }          from "@/hooks/useUndoRedo";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useWorkflowLibrary }   from "@/hooks/useWorkflowLibrary";
+import { AIEngineToggle }       from "@/components/AIEngineToggle";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -134,7 +135,7 @@ export default function Home() {
     aiAnalysis, aiAnalysisLoading, aiAnalysisError,
     aiSuggestedConnections, aiSuggestedRemovals,
     aiAnalysisTimestamp,
-    handleAiAnalyze, handleReAnalyze,
+    handleAiAnalyze, handleReAnalyze, resetAnalysis,
     aiUpdateLoading, aiUpdateResult, aiUpdateError,
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     handleAddConnection, handleRemoveEntity,
@@ -213,6 +214,8 @@ export default function Home() {
 
   // ── Import helpers ─────────────────────────────────────────────────────────
   const importStateAndStart = async (result: AIParsedResult) => {
+    // Clear any stale AI analysis so the new workflow gets a fresh run
+    resetAnalysis();
     await fetch("/api/graph-state", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -294,6 +297,30 @@ export default function Home() {
                   {aiDebugLog.error && (
                     <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700">
                       <span className="font-medium">Error: </span>{aiDebugLog.error}
+                    </div>
+                  )}
+                  {/* Engine + Token usage pill row */}
+                  {(aiDebugLog.engine || aiDebugLog.tokenUsage) && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {aiDebugLog.engine && (
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                          aiDebugLog.engine === 'distributed'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-indigo-100 text-indigo-700'
+                        }`}>
+                          {aiDebugLog.engine === 'distributed' ? '⚡ Distributed' : '⬤ Monolithic'} engine
+                        </span>
+                      )}
+                      {aiDebugLog.tokenUsage && (
+                        <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">
+                          {aiDebugLog.tokenUsage.inputTokens.toLocaleString()} in · {aiDebugLog.tokenUsage.outputTokens.toLocaleString()} out tokens
+                        </span>
+                      )}
+                      {aiDebugLog.tokenUsage && (
+                        <span className="text-xs text-slate-400">
+                          ≈ {(aiDebugLog.tokenUsage.inputTokens + aiDebugLog.tokenUsage.outputTokens).toLocaleString()} total
+                        </span>
+                      )}
                     </div>
                   )}
                   <div>
@@ -453,6 +480,9 @@ export default function Home() {
             <Settings className="w-4 h-4" />
             {activeApiKey && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white" />}
           </button>
+
+          {/* AI Engine toggle (vb0.2) */}
+          <AIEngineToggle compact />
 
           <div className="h-6 w-px bg-gray-300" />
 
