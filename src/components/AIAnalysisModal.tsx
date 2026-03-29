@@ -301,9 +301,6 @@ export function AIAnalysisModal({
   const [appliedTaskIdx,  setAppliedTaskIdx]  = useState<Set<number>>(new Set());
   const [appliedGroupIdx, setAppliedGroupIdx] = useState<Set<number>>(new Set());
 
-  // Phase completion tracking (phaseIndex -> bool)
-  const [completedPhases, setCompletedPhases] = useState<Set<number>>(new Set());
-
   // Refs for scrolling to suggestion cards when fishbone bone is clicked
   const connRefs    = useRef<(HTMLDivElement | null)[]>([]);
   const edgeRefs    = useRef<(HTMLDivElement | null)[]>([]);
@@ -326,13 +323,13 @@ export function AIAnalysisModal({
     suggestedRemovals.length > 0 || suggestedNewNodes.length > 0 || suggestedTaskUpdates.length > 0 ||
     suggestedGroupUpdates.length > 0
   ) && !isLoading && !error;
-  const hasPlan        = !!suggestionPlan?.phases?.length && !isLoading && !error;
+  const hasPlan        = false; // Phase plan section removed; ordering is enforced inline on action cards
   const isCachedResult = !!analysis && !isLoading && !!analysisTimestamp;
 
   // ── Fishbone scroll helper ──────────────────────────────────────────────────
   function scrollToBone(resolvedBy: FishboneBone["resolvedBy"]) {
     if (!resolvedBy) return;
-    setActiveTab("findings");
+    setActiveTab("plan");
     let el: HTMLDivElement | null = null;
     const { type, refId } = resolvedBy;
     if (type === "connection") {
@@ -363,16 +360,6 @@ export function AIAnalysisModal({
         setTimeout(() => setHighlightId(null), 1800);
       }, 50);
     }
-  }
-
-  // ── Check if a phase is unlocked ───────────────────────────────────────────
-  function isPhaseUnlocked(phase: SuggestionPhase) {
-    return phase.prerequisitePhases.every(p => completedPhases.has(p));
-  }
-
-  // ── Mark phase complete (all refs applied) ─────────────────────────────────
-  function markPhaseComplete(phaseIndex: number) {
-    setCompletedPhases(prev => { const next = new Set(prev); next.add(phaseIndex); return next; });
   }
 
   return (
@@ -410,8 +397,8 @@ export function AIAnalysisModal({
           </div>
         </div>
 
-        {/* ── Tabs (only when there is a plan) ── */}
-        {hasPlan && !isLoading && (
+        {/* ── Tabs (show whenever there are suggestions or a plan) ── */}
+        {(hasSuggestions || hasPlan) && !isLoading && (
           <div className="flex gap-1 px-8 pt-3 pb-0 flex-shrink-0">
             <button
               onClick={() => setActiveTab("findings")}
@@ -423,7 +410,12 @@ export function AIAnalysisModal({
               onClick={() => setActiveTab("plan")}
               className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${activeTab === "plan" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"}`}
             >
-              📋 Suggested Plan
+              📋 Suggested Actions
+              {hasSuggestions && (
+                <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold">
+                  {suggestedConnections.length + suggestedEdgeRemovals.length + suggestedRemovals.length + suggestedNewNodes.length + suggestedTaskUpdates.length + suggestedGroupUpdates.length}
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -457,90 +449,10 @@ export function AIAnalysisModal({
             </div>
           )}
 
-          {/* ═══════════ PLAN TAB ═══════════ */}
-          {activeTab === "plan" && hasPlan && (
-            <div className="space-y-3">
-              {suggestionPlan!.phases.map(phase => {
-                const unlocked   = isPhaseUnlocked(phase);
-                const completed  = completedPhases.has(phase.phaseIndex);
-                return (
-                  <div key={phase.phaseIndex}
-                    className={`rounded-2xl border p-5 transition-opacity ${completed ? "bg-slate-50/60 border-slate-100 opacity-60" : unlocked ? "bg-white border-indigo-100" : "bg-slate-50/40 border-slate-100 opacity-50"}`}>
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${completed ? "bg-emerald-100 text-emerald-700" : unlocked ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-400"}`}>
-                          {completed ? "✓" : phase.phaseIndex}
-                        </span>
-                        <div>
-                          <h4 className={`text-sm font-bold ${unlocked ? "text-slate-800" : "text-slate-400"}`}>{phase.label}</h4>
-                          <p className="text-xs text-slate-500">{phase.description}</p>
-                        </div>
-                      </div>
-                      {!completed && unlocked && (
-                        <button onClick={() => markPhaseComplete(phase.phaseIndex)}
-                          className="flex-shrink-0 text-[10px] font-semibold text-emerald-600 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-full transition-colors">
-                          Mark done
-                        </button>
-                      )}
-                    </div>
-                    {!unlocked && phase.prerequisitePhases.length > 0 && (
-                      <p className="text-[10px] text-slate-400 mt-1 pl-8">
-                        Complete Phase {phase.prerequisitePhases.join(", ")} first
-                      </p>
-                    )}
-                    {phase.suggestionRefs.length > 0 && (
-                      <ul className="mt-2 pl-8 space-y-1">
-                        {phase.suggestionRefs.map((ref, ri) => (
-                          <li key={ri}
-                            onClick={() => scrollToBone({ type: ref.type as FishboneBone["resolvedBy"] extends undefined ? never : NonNullable<FishboneBone["resolvedBy"]>["type"], refId: ref.refId })}
-                            className={`flex items-center gap-1.5 text-xs cursor-pointer ${unlocked ? "text-indigo-600 hover:text-indigo-800" : "text-slate-400 pointer-events-none"}`}
-                          >
-                            <span className="text-slate-400 text-[10px] font-mono uppercase">[{ref.type}]</span>
-                            <span className="underline underline-offset-2">{ref.refId}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {/* ═══════════ SUGGESTED ACTIONS TAB ═══════════ */}
+          {activeTab === "plan" && (hasSuggestions || hasPlan) && (
+            <div className="space-y-4">
 
-          {/* ═══════════ FINDINGS TAB (default) ═══════════ */}
-          {activeTab === "findings" && (
-            <>
-              {/* Section cards */}
-              {!isLoading && sections.length > 0 && (
-                <div className="space-y-3">
-                  {sections.map((section) => (
-                    <div key={section.title}
-                      className={`rounded-2xl border p-5 ${section.config.bg} ${section.config.border}`}>
-                      <div className="flex items-center gap-2.5 mb-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${section.config.iconBg}`}>
-                          {section.config.icon}
-                        </div>
-                        <h3 className={`text-sm font-bold ${section.config.titleColor}`}>{section.title}</h3>
-                      </div>
-                      <ul className="space-y-2">
-                        {section.items.map((item, idx) => (
-                          <li key={idx} className="flex items-start gap-2.5">
-                            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${section.config.dotColor}`} />
-                            <span className="text-sm text-slate-700 leading-relaxed">{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Fallback raw text */}
-              {!isLoading && analysis && sections.length === 0 && (
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-5">
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{analysis}</p>
-                </div>
-              )}
 
               {/* ── Suggested Connections ── */}
               {hasSuggestions && suggestedConnections.length > 0 && (
@@ -921,6 +833,52 @@ export function AIAnalysisModal({
                   })}
                 </SuggestionSection>
               )}
+            </div>
+          )}
+
+          {/* ═══════════ FINDINGS TAB ═══════════ */}
+          {activeTab === "findings" && (
+            <>
+              {/* Section cards */}
+              {!isLoading && sections.length > 0 && (
+                <div className="space-y-3">
+                  {sections.map((section) => (
+                    <div key={section.title}
+                      className={`rounded-2xl border p-5 ${section.config.bg} ${section.config.border}`}>
+                      <div className="flex items-center gap-2.5 mb-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${section.config.iconBg}`}>
+                          {section.config.icon}
+                        </div>
+                        <h3 className={`text-sm font-bold ${section.config.titleColor}`}>{section.title}</h3>
+                      </div>
+                      <ul className="space-y-2">
+                        {section.items.map((item, idx) => (
+                          <li key={idx} className="flex items-start gap-2.5">
+                            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${section.config.dotColor}`} />
+                            <span className="text-sm text-slate-700 leading-relaxed">{renderInline(item)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Fallback raw text */}
+              {!isLoading && analysis && sections.length === 0 && (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-5">
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{analysis}</p>
+                </div>
+              )}
+
+              {/* Nudge to switch to Actions tab when suggestions exist */}
+              {hasSuggestions && !isLoading && (
+                <button
+                  onClick={() => setActiveTab("plan")}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-500 hover:bg-indigo-50 transition-colors">
+                  📋 View {suggestedConnections.length + suggestedEdgeRemovals.length + suggestedRemovals.length + suggestedNewNodes.length + suggestedTaskUpdates.length + suggestedGroupUpdates.length} suggested actions →
+                </button>
+              )}
             </>
           )}
         </div>
@@ -962,6 +920,22 @@ function SuggestionSection({ title, subtitle, icon, iconBg, children }: {
       </div>
       <div className="space-y-2">{children}</div>
     </div>
+  );
+}
+
+// ─── Inline markdown renderer (handles **bold** spans) ───────────────────────
+
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*\n]+\*\*)/g);
+  if (parts.length === 1) return text;
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("**") && part.endsWith("**")
+          ? <strong key={i} className="font-semibold text-slate-800">{part.slice(2, -2)}</strong>
+          : part
+      )}
+    </>
   );
 }
 
