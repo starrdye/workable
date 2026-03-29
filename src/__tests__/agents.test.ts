@@ -263,9 +263,9 @@ describe('MessageBroker', () => {
     const bReceived: AgentMessage[] = [];
     const cReceived: AgentMessage[] = [];
 
-    broker.subscribe('a', (msg) => aReceived.push(msg));
-    broker.subscribe('b', (msg) => bReceived.push(msg));
-    broker.subscribe('c', (msg) => cReceived.push(msg));
+    broker.subscribe('a', (msg) => { aReceived.push(msg); });
+    broker.subscribe('b', (msg) => { bReceived.push(msg); });
+    broker.subscribe('c', (msg) => { cReceived.push(msg); });
 
     broker.broadcast('EDGE_DELETED', 'Edge removed');
 

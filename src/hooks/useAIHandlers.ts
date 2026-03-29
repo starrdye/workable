@@ -1,7 +1,7 @@
 // src/hooks/useAIHandlers.ts
 // All AI-related state and handlers: settings, analyze, update, apply, debug log.
 // Receives shared state as parameters so mutations propagate back to the page.
-// Track 8b
+// Track 8b — vb0.2: delegates to useAIEngine for mode-aware routing.
 
 import { useState, useEffect } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
@@ -11,6 +11,7 @@ import type { ServerGraphState } from '@/lib/serverState';
 import type { SuggestedConnection, SuggestedRemoval, SuggestedEdgeRemoval, SuggestedNewNode, SuggestedTaskUpdate, SuggestedGroupUpdate, SuggestionPhase } from '@/components/AIAnalysisModal';
 import type { AIUpdateResult } from '@/components/AIUpdateModal';
 import type { AIDebugLog } from '@/components/StartScreen';
+import { useAIEngine } from './useAIEngine';
 
 function put(body: Record<string, unknown>) {
   return fetch('/api/graph-state', {
@@ -77,40 +78,46 @@ export function useAIHandlers(
   // ── Debug log ──────────────────────────────────────────────────────────────
   const [aiDebugLog, setAiDebugLog] = useState<AIDebugLog | null>(null);
 
+  // ── AI Engine (vb0.2: mode-aware routing with abort handling) ─────────────
+  const aiEngine = useAIEngine();
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   // Core fetch — called by both handleAiAnalyze (first time) and handleReAnalyze
+  // Routes through useAIEngine which injects the current engine mode and handles
+  // abort/race conditions when the user toggles mode mid-flight.
   const runAnalyze = async () => {
     setAiAnalysisError(null);
     setAiAnalysisLoading(true);
     try {
-      const res = await fetch('/api/ai/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workflowData: fullServerState,
+      const { data, aborted } = await aiEngine.runAnalyze(
+        fullServerState,
+        {
           apiKey:   activeApiKey,
           provider: aiConfig.provider,
           model:    aiConfig.models[aiConfig.provider],
-          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider] || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAiAnalysisError(data.error ?? 'Analysis failed.');
-      } else {
-        setAiAnalysis(data.analysis);
-        setAiSuggestedConnections(data.suggestedConnections ?? []);
-        setAiSuggestedRemovals(data.suggestedRemovals ?? []);
-        setAiSuggestedEdgeRemovals(data.suggestedEdgeRemovals ?? []);
-        setAiSuggestedNewNodes(data.suggestedNewNodes ?? []);
-        setAiSuggestedTaskUpdates(data.suggestedTaskUpdates ?? []);
-        setAiSuggestedGroupUpdates(data.suggestedGroupUpdates ?? []);
-        setAiSuggestionPlan(data.suggestionPlan ?? null);
-        setAiAnalysisTimestamp(Date.now());
+          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
+        },
+      );
+
+      // If aborted (mode toggled mid-flight), silently discard
+      if (aborted) {
+        setAiAnalysisLoading(false);
+        return;
       }
-    } catch {
-      setAiAnalysisError('Network error. Please try again.');
+
+      setAiAnalysis(data.analysis as string);
+      setAiSuggestedConnections((data.suggestedConnections ?? []) as SuggestedConnection[]);
+      setAiSuggestedRemovals((data.suggestedRemovals ?? []) as SuggestedRemoval[]);
+      setAiSuggestedEdgeRemovals((data.suggestedEdgeRemovals ?? []) as SuggestedEdgeRemoval[]);
+      setAiSuggestedNewNodes((data.suggestedNewNodes ?? []) as SuggestedNewNode[]);
+      setAiSuggestedTaskUpdates((data.suggestedTaskUpdates ?? []) as SuggestedTaskUpdate[]);
+      setAiSuggestedGroupUpdates((data.suggestedGroupUpdates ?? []) as SuggestedGroupUpdate[]);
+      setAiSuggestionPlan((data.suggestionPlan ?? null) as { phases: SuggestionPhase[] } | null);
+      setAiAnalysisTimestamp(Date.now());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network error. Please try again.';
+      setAiAnalysisError(msg);
     } finally {
       setAiAnalysisLoading(false);
     }
@@ -148,26 +155,27 @@ export function useAIHandlers(
     setAiUpdateError(null);
     setAiUpdateLoading(true);
     try {
-      const res = await fetch('/api/ai/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          currentState: fullServerState,
+      const { data, aborted } = await aiEngine.runUpdate(
+        prompt,
+        fullServerState,
+        {
           apiKey:   activeApiKey,
           provider: aiConfig.provider,
           model:    aiConfig.models[aiConfig.provider],
-          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider] || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAiUpdateError(data.error ?? 'Update failed.');
-      } else {
-        setAiUpdateResult(data as AIUpdateResult);
+          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
+        },
+      );
+
+      // If aborted (mode toggled mid-flight), silently discard
+      if (aborted) {
+        setAiUpdateLoading(false);
+        return;
       }
-    } catch {
-      setAiUpdateError('Network error. Please try again.');
+
+      setAiUpdateResult(data as unknown as AIUpdateResult);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network error. Please try again.';
+      setAiUpdateError(msg);
     } finally {
       setAiUpdateLoading(false);
     }

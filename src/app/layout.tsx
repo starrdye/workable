@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { DevErrorFilter } from "@/components/DevErrorFilter";
+import { AIEngineProvider } from "@/contexts/AIEngineContext";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -25,7 +26,9 @@ export default function RootLayout({
       <body className={`${inter.variable} antialiased`}>
         {/* Suppress chrome-extension errors in dev only — never ships to production */}
         {process.env.NODE_ENV === "development" && <DevErrorFilter />}
-        {children}
+        <AIEngineProvider>
+          {children}
+        </AIEngineProvider>
       </body>
     </html>
   );

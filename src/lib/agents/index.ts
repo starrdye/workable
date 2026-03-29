@@ -38,3 +38,12 @@ export { MessageBroker, MAX_CASCADE_DEPTH, MAX_MESSAGES_PER_SIMULATION } from '.
 
 // Cascade
 export { CascadeSimulator } from './cascadeSimulator';
+
+// Adapters (vb0.2: bridge distributed → monolithic response shapes)
+export { orchestratorResultToOptimizeResponse, buildCoordinatorNodeList } from './adapters';
+export type { OptimizeResponse } from './adapters';
+
+// Distributed pipelines (vb0.2: full engine implementations)
+export { runDistributedOptimize } from './distributedOptimize';
+export { runDistributedUpdate } from './distributedUpdate';
+export type { DistributedUpdateResult } from './distributedUpdate';

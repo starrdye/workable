@@ -6,6 +6,8 @@ import { jsonrepair } from 'jsonrepair';
 import type { ServerGraphState } from '@/lib/serverState';
 import { AIUpdatePatchResponse } from '@/lib/aiSchemas';
 import { buildUpdateSnapshot } from '@/lib/snapshotBuilder';
+import { runDistributedUpdate } from '@/lib/agents/distributedUpdate';
+import type { AIEngineMode } from '@/contexts/AIEngineContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -322,13 +324,14 @@ function validatePatch(
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, currentState, apiKey, provider = 'anthropic', model, baseUrl } = await req.json() as {
+    const { prompt, currentState, apiKey, provider = 'anthropic', model, baseUrl, engine } = await req.json() as {
       prompt: string;
       currentState: ServerGraphState;
       apiKey: string;
       provider?: AIProvider;
       model?: string;
       baseUrl?: string;
+      engine?: AIEngineMode;
     };
 
     if (!apiKey?.trim())     return NextResponse.json({ error: 'API key is required.'           }, { status: 400 });
@@ -353,6 +356,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ── Distributed engine branch ─────────────────────────────────────────────
+    if (engine === 'distributed') {
+      const aiConfig = { provider, model: resolvedModel, apiKey, baseUrl };
+      const result = await runDistributedUpdate(prompt, currentState, aiConfig);
+      // Run the same validatePatch to enforce ID guards, core node protection, etc.
+      const validated = validatePatch(result as Partial<AIUpdateResult>, currentState);
+      return NextResponse.json(validated);
+    }
+
+    // ── Monolithic engine (original implementation below) ─────────────────────
     const snapshot = buildUpdateSnapshot(currentState);
 
     const genResult = await generateText({

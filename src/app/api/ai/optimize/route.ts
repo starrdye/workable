@@ -4,6 +4,9 @@ import { classifyAIError } from '@/lib/aiErrors';
 import { OptimizeResponseSchema } from '@/lib/aiSchemas';
 import { buildOptimizeSnapshot } from '@/lib/snapshotBuilder';
 import { jsonrepair } from 'jsonrepair';
+import { runDistributedOptimize } from '@/lib/agents/distributedOptimize';
+import type { ServerGraphState } from '@/lib/serverState';
+import type { AIEngineMode } from '@/contexts/AIEngineContext';
 
 const SYSTEM_PROMPT = `You are a workflow optimization expert specializing in business process improvement and operational efficiency.
 
@@ -208,12 +211,13 @@ function stripFences(text: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const { workflowData, apiKey, provider = 'anthropic', model, baseUrl } = await req.json() as {
+    const { workflowData, apiKey, provider = 'anthropic', model, baseUrl, engine } = await req.json() as {
       workflowData: Record<string, unknown>;
       apiKey: string;
       provider?: AIProvider;
       model?: string;
       baseUrl?: string;
+      engine?: AIEngineMode;
     };
 
     if (!apiKey?.trim())    return NextResponse.json({ error: 'API key is required.'      }, { status: 400 });
@@ -236,6 +240,19 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // ── Distributed engine branch ─────────────────────────────────────────────
+    if (engine === 'distributed') {
+      const aiConfig = { provider, model: resolvedModel, apiKey, baseUrl };
+      const result = await runDistributedOptimize(
+        workflowData as unknown as ServerGraphState,
+        aiConfig,
+        { maxConcurrent: 5, runGroupAnalysis: true, runCascades: true },
+      );
+      return NextResponse.json(result);
+    }
+
+    // ── Monolithic engine (original implementation below) ─────────────────────
 
     // Build enriched snapshot (Track 14b-i: hierarchical group summaries)
     const { coreNodes, customNodes, coreEdges, customEdges, groupSummary, nameLookup, workflowSnapshot } =
