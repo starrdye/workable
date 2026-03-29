@@ -4,7 +4,7 @@
   <em>Personal Workflow Mapper · Next.js 16 · React 19 · TypeScript 5 · Multi-provider AI</em>
 </p>
 
-> **Current branch:** `0.39-personal`
+> **Current branch:** `vb0.1`
 
 > This guide covers the current production architecture. The original prototype (`prototype.html`) is kept for historical reference only — all active development happens in `src/`.
 
@@ -21,10 +21,16 @@
    - [AI Update Pipeline](#ai-update-pipeline)
    - [Layout Engine](#layout-engine)
    - [Analysis Sidebar](#analysis-sidebar)
-5. [Feature Status](#feature-status)
-6. [Branch & Version History](#branch--version-history)
-7. [Development Patterns](#development-patterns)
-8. [Roadmap](#roadmap)
+5. [Distributed Agent System (vb0.1)](#distributed-agent-system-vb01)
+   - [Token Budget](#token-budget)
+   - [Node-as-an-Agent (Phase 2)](#node-as-an-agent-phase-2)
+   - [Message Passing & Cascades (Phase 3)](#message-passing--cascades-phase-3)
+   - [Group-Level Governance (Phase 4)](#group-level-governance-phase-4)
+   - [Infinite Canvas & Viewport (Phase 5)](#infinite-canvas--viewport-phase-5)
+6. [Feature Status](#feature-status)
+7. [Branch & Version History](#branch--version-history)
+8. [Development Patterns](#development-patterns)
+9. [Roadmap](#roadmap)
 
 ---
 
@@ -325,6 +331,166 @@ The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explici
 
 ---
 
+## Distributed Agent System (vb0.1)
+
+Branch `vb0.1` introduces a parallel, distributed AI architecture layered on top of the existing monolithic analysis. All new features are **additive** — zero existing files changed, all gated behind `WORKABLE_USE_*` env flags.
+
+```
+vb0.1 Architecture
+
+Phase 1 — SQLite Foundation      src/lib/db/
+Phase 2 — Node-as-an-Agent       src/lib/agents/nodeAgent.ts
+                                  src/lib/agents/contextBuilder.ts
+                                  src/lib/agents/orchestrator.ts
+                                  POST /api/ai/agent
+Phase 3 — Message Passing        src/lib/agents/messageBroker.ts
+                                  src/lib/agents/cascadeSimulator.ts
+                                  POST /api/ai/cascade
+Phase 4 — Group Governance       src/lib/agents/groupAgent.ts
+                                  POST /api/ai/group-agent
+Phase 5 — Infinite Canvas        src/lib/spatialIndex.ts
+                                  GET  /api/graph-state/viewport
+```
+
+### Token Budget
+
+**The key efficiency claim:** instead of serialising the entire graph into one prompt (~3,000–50,000+ tokens), each node agent receives only its ego-centric local neighbourhood.
+
+#### Per-call estimates
+
+| Operation | Input tokens | Output cap | Typical output | Total/call |
+|---|---|---|---|---|
+| **NodeAgent** (single node) | 700–1,200 | 1,024 | 300–700 | **~1,000–1,900** |
+| **GroupAgent** (5-member group) | 1,500–3,500 | 2,048 | 600–1,200 | **~2,500–5,000** |
+| **CascadeSimulator** (per affected node) | 1,000–1,500 | 1,024 | 300–700 | **~1,300–2,200** |
+
+What fills the NodeAgent input (~700–1,200 tokens):
+
+| Section | Tokens |
+|---|---|
+| Node identity (name, role, summary, constraints) | ~50–150 |
+| Tasks list | ~0–100 (0 if none) |
+| Inbound edges (3–4 avg) | ~60–100 |
+| Outbound edges (2–3 avg) | ~40–80 |
+| Group memberships | ~20–60 |
+| 1-hop neighbour summaries (3–5 avg) | ~150–400 |
+| JSON response schema | ~200–250 |
+| User message | ~80–130 |
+| **Total** | **~600–1,270** |
+
+#### Full-orchestration totals (N nodes, all parallel)
+
+| Graph size | Total input | Total output | Wall time |
+|---|---|---|---|
+| 10 nodes | ~9,500 | ~5,000 | ~1–2 s (concurrency=5) |
+| 20 nodes | ~19,000 | ~10,000 | ~2–4 s |
+| 50 nodes | ~47,500 | ~25,000 | ~4–8 s |
+| 100 nodes | ~95,000 | ~50,000 | ~8–15 s |
+
+Concurrency is capped at 5 simultaneous LLM calls (configurable). Wall time scales with `ceil(N / 5)` batches, not N.
+
+#### Comparison: monolithic vs. distributed
+
+| Operation | Calls | Input | Output cap | Total tokens |
+|---|---|---|---|---|
+| **Monolithic analyze** (`/api/ai/optimize`, current) | 1–2 | 3,500–8,000 | 8,000 | **~11,500–16,000** |
+| **Monolithic update** (`/api/ai/update`, current) | 1 | 2,500–6,000 | 8,000 | **~10,500–14,000** |
+| **Distributed orchestrate** — 10-node graph | 10 parallel | ~9,500 | 10×1,024 | **~19,700** |
+| **Distributed orchestrate** — 20-node graph | 20 parallel | ~19,000 | 20×1,024 | **~39,400** |
+| **Distributed orchestrate** — 50-node graph | 50 parallel | ~47,500 | 50×1,024 | **~98,700** |
+
+**Trade-offs:**
+
+- For graphs ≤ ~12 nodes, monolithic uses fewer total tokens.
+- For graphs > 12 nodes, distributed uses more total tokens but:
+  - **Does not hit a context-window ceiling** (each call stays under 2K input regardless of graph size)
+  - **Parallel wall time** is roughly constant, not linear
+  - **Precision** — each agent reasons about only its local neighbourhood (fewer hallucinations, more actionable suggestions)
+  - **Incremental** — re-run a single node's agent without re-analysing the whole graph
+
+---
+
+### Node-as-an-Agent (Phase 2)
+
+**Entry point:** `POST /api/ai/agent`
+
+```
+Modes:
+  single      → { nodeId } → AgentResponse (one LLM call)
+  orchestrate → { nodeIds? } → OrchestratorResult (N parallel calls)
+  simulate    → { payload: SimulationPayload } → SimulationResult (graph traversal)
+```
+
+`buildAgentContext(nodeId, state)` in `contextBuilder.ts` constructs the ego-centric view:
+- Resolves identity from `NODE_DATA`, `customNodes`, and `metadataOverrides` (in that priority order)
+- Collects inbound/outbound edges from both `EDGE_DATA` (core) and `customEdges`, skipping `isImprovementOnly`
+- Finds group memberships and peer node IDs
+- Builds 1-hop neighbour summaries (name + role + summary)
+
+`AgentOrchestrator` merges all responses into a unified `OrchestratorResult`:
+- `bottlenecks[]` — nodes flagged by their own agent or a neighbour's agent
+- `proposedEdges[]` — new connections suggested by agents
+- `orphanWarnings[]` — nodes with no inbound or no outbound
+- `conflicts[]` — cases where two agents propose conflicting changes to the same edge
+- `totalTokens` — aggregate input/output across all agents
+
+---
+
+### Message Passing & Cascades (Phase 3)
+
+**Entry point:** `POST /api/ai/cascade`
+
+`MessageBroker` (EventEmitter-based) enforces:
+- **Edge validation** — targeted messages must travel along a real graph edge (core or custom)
+- **Depth limit** — default `MAX_CASCADE_DEPTH = 5`; messages at depth > limit are rejected
+- **Count limit** — default `MAX_MESSAGES_PER_SIMULATION = 100`; prevents runaway cascades
+- **System bypass** — `fromNodeId: "system"` skips edge validation for injected triggers
+
+`CascadeSimulator` runs a BFS cascade from a `CascadeTrigger`:
+```typescript
+type CascadeTriggerType = "remove_edge" | "add_edge" | "remove_node" | "bottleneck_resolve"
+```
+At each depth level, affected agents receive the trigger context and decide independently whether to propagate it further. This replaces the current Pass 2 monolithic cascade prediction.
+
+**Token cost for cascade:** depth D affecting K nodes per level → `K × D` agent calls, each ~1,300–2,200 tokens. A typical 3-depth cascade touching 3–5 nodes/level = 9–15 calls = ~12,000–33,000 tokens total.
+
+---
+
+### Group-Level Governance (Phase 4)
+
+**Entry point:** `POST /api/ai/group-agent`
+
+`buildGroupContext(groupId, state)` aggregates all member `AgentContext` objects plus:
+- **Boundary edges** — edges crossing the group perimeter (inbound/outbound)
+- **Adjacent group summaries** — groups reachable via boundary edges (nodeCount, roleSummary, edgeCount)
+- **Subgroup / parent group** — hierarchical group structure
+
+`GroupAgent.negotiate(proposal)` supports inter-group negotiation: one group proposes a cross-boundary change; the receiving group's agent evaluates and accepts/counter-proposes/rejects.
+
+**Token cost:** GroupAgent input scales with group size. Rule of thumb: `group_input ≈ (members × 250) + 400` tokens. A 5-member group ≈ 1,650 input tokens; a 10-member group ≈ 2,900 input tokens.
+
+---
+
+### Infinite Canvas & Viewport (Phase 5)
+
+**Entry point:** `GET /api/graph-state/viewport?minX=&minY=&maxX=&maxY=&lod=`
+
+`SpatialIndex` wraps `rbush` (R-tree) for O(log n) spatial queries. Built once from `baselinePositions`; updated incrementally on node drag.
+
+**LOD levels** (controlled by zoom factor):
+
+| Zoom | LOD | Payload contents |
+|---|---|---|
+| > 0.7 | `full` | All metadata, tasks, group memberships |
+| 0.3–0.7 | `simplified` | Name + role only; no metadata details |
+| < 0.3 | `dot` | LabelInitials + node type only; no text |
+
+**Margin:** viewport is expanded by 20% in each direction before querying, so nodes just off-screen are pre-loaded for smooth scrolling.
+
+`?since=<timestamp>` returns `{ unchanged: true }` when `lastUpdated ≤ since` — same optimization as the existing 3-second polling endpoint.
+
+---
+
 ## Feature Status
 
 | Feature | Status | Branch |
@@ -367,7 +533,11 @@ The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explici
 | AI Update — two-panel modal (prompt input → diff preview → apply) | ✅ Complete | 0.39 |
 | AI Update — cascade edge removal when nodes are deleted | ✅ Complete | 0.39 |
 | AI Update — group membership extensions (`addNodeIds` / `removeNodeIds`) | ✅ Complete | 0.39 |
-| Persistent database backend | ⬜ Roadmap | — |
+| Persistent database backend | 🔶 In progress | vb0.1 |
+| Node-as-an-Agent distributed analysis | 🔶 In progress | vb0.1 |
+| Message broker + organic cascade simulation | 🔶 In progress | vb0.1 |
+| Group-level governance agents | 🔶 In progress | vb0.1 |
+| Viewport streaming + R-tree spatial index | 🔶 In progress | vb0.1 |
 | Real-time WebSocket sync | ⬜ Roadmap | — |
 | Constraint propagation (risk cascading) | ⬜ Roadmap | — |
 | Webhook ingestion (Slack, Jira, GitHub) | ⬜ Roadmap | — |
@@ -391,6 +561,7 @@ The inline type for `metadataOverrides` in `parse-workflow/route.ts` now explici
 | `0.37-personal` | Derived connections + workflow group memberships in metadata, template metadata overhaul, Workable brand icon + README |
 | `0.38-personal` | Endpoint ID caching (Doubao no longer wiped on load), post-import `resetLayout` pass so first-generation layout matches Reset Layout, orphaned subgroup fix in `groupAwareLayout`, explicit `connections`/`processes` in `metadataOverrides` type |
 | `0.39-personal` | AI Update feature: plain-English prompt applies any change to the live graph (add/update/remove nodes, edges, groups). Semantic snapshot context builder strips coordinates. Server-side patch validation guards protected nodes, validates IDs, auto-cascades edge removal. Two-panel modal: prompt input → colour-coded diff preview → sequential apply with `resetLayout` reflow. |
+| `vb0.1` | Distributed agent architecture (5 phases, all additive/feature-flagged). Phase 1: SQLite persistence layer (schema + adapter). Phase 2: NodeAgent + AgentOrchestrator — ego-centric per-node prompts (~700–1,200 input tokens each vs. monolithic ~3,500–8,000 tokens for the whole graph). Phase 3: EventEmitter MessageBroker + BFS CascadeSimulator. Phase 4: GroupAgent with boundary context and inter-group negotiation. Phase 5: R-tree spatial index, LOD system, viewport-filtered state endpoint. |
 
 ---
 
@@ -457,14 +628,20 @@ This guarantees that the positions the user sees on first load are identical to 
 
 ## Roadmap
 
+### In progress (vb0.1)
+
+- **SQLite persistence** — `src/lib/db/` has the full schema and adapter ready; wire up by swapping `getGraphState` / `importState` in `serverState.ts` to call the adapter when `WORKABLE_USE_DB=true`
+- **Distributed analysis UI** — frontend controls for triggering node-agent orchestration and displaying per-node results (the API routes exist; no UI yet)
+- **Cascade visualisation** — animate cascade propagation steps as a time-ordered edge pulse sequence
+
 ### Near-term
 
-- **Persistent storage** — swap the singleton for SQLite (`better-sqlite3`) or Postgres via Prisma. The `importState` / `getGraphState` interface is the only boundary that needs to change.
-- **Real-time collaboration** — upgrade 3-second polling to WebSocket (`socket.io` or Next.js built-in). Server pushes `lastUpdated` diffs; clients apply patches.
+- **Real-time collaboration** — upgrade 3-second polling to WebSocket. The viewport endpoint already supports `?since=` for diff-only delivery; extend to push model.
+- **Feature flag UI** — settings panel toggle for each distributed phase (currently env-var only)
 
 ### Medium-term
 
-- **Constraint propagation** — when a constrained node is blocked, visually cascade a risk indicator through all downstream edges and nodes
+- **Constraint propagation** — when a constrained node is blocked, visually cascade a risk indicator through all downstream edges and nodes (Phase 3 cascade infrastructure is already built)
 - **Webhook ingestion** — receive POST events from Slack / Jira / GitHub and animate a live pulse on the relevant graph edge when the event fires
 
 ### Long-term
