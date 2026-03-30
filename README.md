@@ -19,7 +19,7 @@
     <a href="#-features">Features</a> ·
     <a href="#-ai-providers">AI Providers</a> ·
     <a href="#-templates">Templates</a> ·
-    <a href="./DevelopmentGuide.md">Development Guide</a>
+    <a href="./docs/README.md">Development Guide</a>
   </p>
 
   <br/>
@@ -172,7 +172,7 @@ Workable is provider-agnostic. Swap between them any time in AI Settings.
 | **Google Gemini** | `gemini-2.0-flash` (default), `gemini-1.5-pro`, `gemini-1.5-flash` | Fast, generous free tier |
 | **ByteDance Doubao** | Your endpoint ID (e.g. `ep-20260318…`) | OpenAI-compatible; supports Coding Plan base URL |
 
-**Detailed technical documentation can be found in the [Development Guide](./DevelopmentGuide.md).**
+**Detailed technical documentation can be found in the [Development Guide](./docs/README.md).**
 
 ---
 
