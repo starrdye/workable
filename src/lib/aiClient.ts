@@ -64,9 +64,9 @@ export const PROVIDERS: ProviderMeta[] = [
     color: 'indigo',
     defaultModel: 'claude-sonnet-4-6',
     models: [
-      { id: 'claude-opus-4-6',          label: 'Claude Opus 4.6',    description: 'Most capable — best for complex workflows'  },
-      { id: 'claude-sonnet-4-6',        label: 'Claude Sonnet 4.6',  description: 'Balanced speed & quality (recommended)'     },
-      { id: 'claude-haiku-4-5-20251001',label: 'Claude Haiku 4.5',   description: 'Fastest & most cost-efficient'              },
+      { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', description: 'Most capable — best for complex workflows' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', description: 'Balanced speed & quality (recommended)' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', description: 'Fastest & most cost-efficient' },
     ],
   },
   {
@@ -78,9 +78,9 @@ export const PROVIDERS: ProviderMeta[] = [
     color: 'blue',
     defaultModel: 'gemini-2.0-flash',
     models: [
-      { id: 'gemini-2.0-flash',   label: 'Gemini 2.0 Flash',   description: 'Latest model — fast & multimodal'           },
-      { id: 'gemini-1.5-pro',     label: 'Gemini 1.5 Pro',     description: 'Long context, deep reasoning'               },
-      { id: 'gemini-1.5-flash',   label: 'Gemini 1.5 Flash',   description: 'Quick responses, cost-efficient'            },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', description: 'Latest model — fast & multimodal' },
+      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro', description: 'Long context, deep reasoning' },
+      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', description: 'Quick responses, cost-efficient' },
     ],
   },
   {
@@ -103,9 +103,9 @@ export const PROVIDERS: ProviderMeta[] = [
     codingPlanBaseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
     codingPlanModels: [
       { id: 'doubao-seed-2.0-lite', label: 'Doubao Seed 2.0 Lite', description: 'Fast & cost-efficient — recommended for coding plan' },
-      { id: 'doubao-seed-2.0',      label: 'Doubao Seed 2.0',      description: 'Full reasoning model — higher quality'              },
-      { id: 'doubao-pro-32k',       label: 'Doubao Pro 32K',       description: '32K context window — long documents'               },
-      { id: 'doubao-lite-32k',      label: 'Doubao Lite 32K',      description: '32K context — lighter & faster'                    },
+      { id: 'doubao-seed-2.0', label: 'Doubao Seed 2.0', description: 'Full reasoning model — higher quality' },
+      { id: 'doubao-pro-32k', label: 'Doubao Pro 32K', description: '32K context window — long documents' },
+      { id: 'doubao-lite-32k', label: 'Doubao Lite 32K', description: '32K context — lighter & faster' },
     ],
   },
 ];
@@ -117,12 +117,12 @@ export function getProviderMeta(provider: AIProvider): ProviderMeta {
 // ── Token usage ─────────────────────────────────────────────────────────────
 
 export interface TokenUsage {
-  inputTokens:  number;
+  inputTokens: number;
   outputTokens: number;
 }
 
 export interface GenerateResult {
-  text:  string;
+  text: string;
   usage: TokenUsage | null;
 }
 
@@ -177,7 +177,7 @@ export async function generateText(options: {
       const content = response.content[0];
       if (content.type !== 'text') throw new Error('Unexpected response type from Anthropic.');
       const usage: TokenUsage = {
-        inputTokens:  response.usage.input_tokens,
+        inputTokens: response.usage.input_tokens,
         outputTokens: response.usage.output_tokens,
       };
       return { text: content.text, usage };
@@ -216,7 +216,7 @@ export async function generateText(options: {
           max_tokens: maxTokens,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user',   content: userMessage  },
+            { role: 'user', content: userMessage },
           ],
         }),
       });
@@ -248,13 +248,13 @@ export async function generateText(options: {
 // then sends the whole text as one chunk) so the SSE protocol is identical.
 
 export interface StreamOptions {
-  provider:     AIProvider;
-  model:        string;
-  apiKey:       string;
+  provider: AIProvider;
+  model: string;
+  apiKey: string;
   systemPrompt: string;
-  userMessage:  string;
-  maxTokens?:   number;
-  baseUrl?:     string;
+  userMessage: string;
+  maxTokens?: number;
+  baseUrl?: string;
 }
 
 export interface StreamWriter {
@@ -281,8 +281,8 @@ export async function streamText(
     const stream = client.messages.stream({
       model,
       max_tokens: maxTokens,
-      system:     systemPrompt,
-      messages:   [{ role: 'user', content: userMessage }],
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
     });
 
     let fullText = '';
@@ -292,14 +292,14 @@ export async function streamText(
         event.delta.type === 'text_delta'
       ) {
         const chunk = event.delta.text;
-        fullText   += chunk;
+        fullText += chunk;
         writer.onChunk(chunk);
       }
     }
 
     const finalMessage = await stream.finalMessage();
     const usage: TokenUsage = {
-      inputTokens:  finalMessage.usage.input_tokens,
+      inputTokens: finalMessage.usage.input_tokens,
       outputTokens: finalMessage.usage.output_tokens,
     };
     return { text: fullText, usage };

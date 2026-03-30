@@ -26,7 +26,7 @@ import { jsonrepair } from 'jsonrepair';
 
 // ── Credentials (populated from .env via vitest.config.ts) ──────────────────
 
-const API_KEY     = process.env.DOUBAO_API_KEY?.trim();
+const API_KEY = process.env.DOUBAO_API_KEY?.trim();
 /** For coding plan: model name (e.g. doubao-seed-2.0-lite).
  *  For standard plan: endpoint ID (e.g. ep-xxxxxxxx).         */
 const ENDPOINT_ID = process.env.DOUBAO_ENDPOINT_ID?.trim();
@@ -132,7 +132,7 @@ function extractJSON(text: string): string {
   if (start === -1) return stripped;
 
   let depth = 0;
-  let end   = -1;
+  let end = -1;
   for (let i = start; i < stripped.length; i++) {
     if (stripped[i] === '{') depth++;
     else if (stripped[i] === '}') {
@@ -152,16 +152,16 @@ describe("Doubao AI Integration: Jack's Routine", () => {
     async () => {
       // TypeScript narrowing: both values are non-empty strings at this point
       // because missingCreds would have been true otherwise.
-      const apiKey     = API_KEY as string;
+      const apiKey = API_KEY as string;
       const endpointId = ENDPOINT_ID as string;
 
       const result = await generateText({
-        provider:     'doubao',
-        model:        endpointId,
+        provider: 'doubao',
+        model: endpointId,
         apiKey,
         systemPrompt: PARSE_SYSTEM_PROMPT,
-        userMessage:  JACK_ROUTINE,
-        baseUrl:      BASE_URL,
+        userMessage: JACK_ROUTINE,
+        baseUrl: BASE_URL,
       });
 
       // Raw response must exist
@@ -210,19 +210,19 @@ describe("Doubao AI Integration: Jack's Routine", () => {
           : ''),
       );
     },
-    30_000, // 30 s timeout for the real AI call
+    900_000, // 900s timeout for the real AI call
   );
 
   it.skipIf(missingCreds)(
     'returns token usage metadata',
     async () => {
       const result = await generateText({
-        provider:     'doubao',
-        model:        ENDPOINT_ID as string,
-        apiKey:       API_KEY as string,
+        provider: 'doubao',
+        model: ENDPOINT_ID as string,
+        apiKey: API_KEY as string,
         systemPrompt: 'Reply with only valid JSON: {"ok": true}',
-        userMessage:  'ping',
-        baseUrl:      BASE_URL,
+        userMessage: 'ping',
+        baseUrl: BASE_URL,
       });
 
       // Usage may be null for some providers but should be an object when present
