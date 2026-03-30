@@ -10,7 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-export type AIProvider = 'anthropic' | 'gemini' | 'doubao';
+export type AIProvider = 'anthropic' | 'gemini' | 'doubao' | 'demo';
 
 export interface AIProviderConfig {
   provider: AIProvider;

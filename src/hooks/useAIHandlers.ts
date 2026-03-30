@@ -67,6 +67,7 @@ export function useAIHandlers(
   const [aiSuggestedTaskUpdates,   setAiSuggestedTaskUpdates]   = useState<SuggestedTaskUpdate[]>([]);
   const [aiSuggestionPlan,         setAiSuggestionPlan]         = useState<{ phases: SuggestionPhase[] } | null>(null);
   const [aiSuggestedGroupUpdates,  setAiSuggestedGroupUpdates]  = useState<SuggestedGroupUpdate[]>([]);
+  const [aiAnalysisIsDemo,      setAiAnalysisIsDemo]      = useState(false);
 
   // Track which suggestions have already been applied so canvas can remove highlights
   const [appliedRemovalIds,     setAppliedRemovalIds]     = useState<Set<string>>(() => new Set());
@@ -100,10 +101,12 @@ export function useAIHandlers(
     setAiAnalysisLoading(true);
     setAiAnalysisStreamText('');
 
+    const isDemo = fullServerState?.settings?.templateId === 'demo-jack';
+
     const config = {
-      apiKey:   activeApiKey,
-      provider: aiConfig.provider,
-      model:    aiConfig.models[aiConfig.provider],
+      apiKey:   isDemo ? 'demo-mock-key' : activeApiKey,
+      provider: isDemo ? 'demo' as AIProvider : aiConfig.provider,
+      model:    isDemo ? 'demo-model' : aiConfig.models[aiConfig.provider],
       baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
     };
 
@@ -151,6 +154,7 @@ export function useAIHandlers(
   /** Apply a completed analysis result (shared by streaming onDone + buffered path) */
   const applyAnalysisData = (data: Record<string, unknown>, engine: 'monolithic' | 'distributed') => {
     setAiAnalysis(data.analysis as string);
+    setAiAnalysisIsDemo(!!data.isDemo);
     setAiSuggestedConnections((data.suggestedConnections ?? []) as SuggestedConnection[]);
     setAiSuggestedRemovals((data.suggestedRemovals ?? []) as SuggestedRemoval[]);
     setAiSuggestedEdgeRemovals((data.suggestedEdgeRemovals ?? []) as SuggestedEdgeRemoval[]);
@@ -169,7 +173,8 @@ export function useAIHandlers(
 
   // Opens the modal; only auto-fetches when no cached result exists
   const handleAiAnalyze = async () => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
+    const isDemo = fullServerState?.settings?.templateId === 'demo-jack';
+    if (!isDemo && !activeApiKey) { setShowAISettings(true); return; }
     setShowAIAnalysis(true);
     if (!aiAnalysis && !aiAnalysisError && !aiAnalysisLoading) {
       await runAnalyze();
@@ -179,6 +184,7 @@ export function useAIHandlers(
   // Clear all analysis state without re-running (e.g. when a new workflow/template is loaded)
   const resetAnalysis = () => {
     setAiAnalysis(null);
+    setAiAnalysisIsDemo(false);
     setAiAnalysisError(null);
     setAiSuggestedConnections([]);
     setAiSuggestedRemovals([]);
@@ -634,7 +640,7 @@ export function useAIHandlers(
     showAIUpdate,   setShowAIUpdate,
     showDebugLog,   setShowDebugLog,
     // analyze
-    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText,
+    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText, aiAnalysisIsDemo,
     aiSuggestedConnections, aiSuggestedRemovals,
     aiAnalysisTimestamp,
     handleAiAnalyze, handleReAnalyze, resetAnalysis,

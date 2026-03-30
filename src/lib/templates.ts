@@ -14,6 +14,7 @@
 import { hierarchicalLayout, radialWebLayout } from "./layout";
 import { CORE_NODE_IDS, ROLE_COLOR } from "./constants";
 import type { NodeTask, WorkflowGroup } from "./serverState";
+import { JACK_ROUTINE_DEMO_ANALYSIS } from "./demoAnalysis";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,11 +59,55 @@ export interface Template {
   nodeMeta?: Record<string, TplNodeMeta>;
   /** Named workflow groups pre-configured for this template. */
   workflowGroups?: WorkflowGroup[];
+  /** Pre-baked AI analysis for demo purposes. */
+  demoAnalysis?: any;
 }
 
 // ── Template definitions ──────────────────────────────────────────────────────
 
 export const TEMPLATES: Template[] = [
+
+  // ── 0. Demo: Jack's Routine (Mocked AI Analysis) ──────────────────────────
+  {
+    id: "demo-jack",
+    name: "Demo: Jack's Routine",
+    description: "A pre-baked scenario showcasing instant AI optimization, Fishbone diagrams, and automated root-cause analysis.",
+    density: "few",
+    nodeCount: 8,
+    edgeCount: 10,
+    demoAnalysis: JACK_ROUTINE_DEMO_ANALYSIS,
+    nodes: [
+      { id: "jack",       label: "Jack",            initials: "J",  role: "person"   },
+      { id: "bloomberg",  label: "Bloomberg T.",    initials: "BT", role: "external" },
+      { id: "reconciler", label: "Python Recon",    initials: "PR", role: "tool"     },
+      { id: "postgresql", label: "internal DB",     initials: "DB", role: "tool"     },
+      { id: "sarah",      label: "Sarah (PM)",      initials: "S",  role: "person"   },
+      { id: "dashboard",  label: "Client Dash",     initials: "CD", role: "output"   },
+      { id: "mary",       label: "Mary (HR)",       initials: "M",  role: "person"   },
+      { id: "jason",      label: "Jason (Supv)",    initials: "JS", role: "person"   },
+    ],
+    edges: [
+      { source: "bloomberg",  target: "jack",       sequence: 1 },
+      { source: "jack",       target: "reconciler", sequence: 2 },
+      { source: "reconciler", target: "postgresql", sequence: 3 },
+      { source: "reconciler", target: "sarah",      sequence: 3 },
+      { source: "sarah",      target: "jack",       sequence: 4 },
+      { source: "jack",       target: "dashboard",  sequence: 5 },
+      { source: "mary",       target: "jack",       sequence: 6 },
+      { source: "jason",      target: "mary",       sequence: 7 },
+      { source: "mary",       target: "sarah",      sequence: 8 },
+    ],
+    nodeMeta: {
+      jack: {
+        summary: "Primary analyst responsible for EOD numbers. Currently manual gatekeeper for reconciliation files.",
+        tasks: [{ id: "t_slack_sarah", title: "Slack Sarah if breaks occur", status: "todo", priority: "high" }]
+      },
+      sarah: {
+        summary: "Portfolio Manager. Must manually vet every exception before Jack can commit to the Dashboard.",
+      }
+    }
+  },
+
 
   // ── 0. Blank Canvas ──────────────────────────────────────────────────────
   {

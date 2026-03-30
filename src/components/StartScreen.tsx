@@ -17,6 +17,7 @@ const DOT: Record<AIProvider, string> = {
   anthropic: "bg-indigo-500",
   gemini:    "bg-blue-500",
   doubao:    "bg-violet-500",
+  demo:      "bg-emerald-500",
 };
 
 export interface AIParsedResult {
@@ -26,7 +27,7 @@ export interface AIParsedResult {
   ecosystemPositions: Record<string, { x: number; y: number }>;
   metadataOverrides?: Record<string, { summary?: string; constraints?: string }>;
   workflowGroups?:    Array<{ id: string; name: string; color: string; nodeIds: string[] }>;
-  settings?:          { hiddenCoreNodes?: string[] };
+  settings?:          { hiddenCoreNodes?: string[], templateId?: string };
 }
 
 export interface AIDebugLog {
@@ -351,7 +352,7 @@ export function StartScreen({
         customEdges:        state.customEdges,
         baselinePositions:  state.baselinePositions,
         ecosystemPositions: state.ecosystemPositions,
-        settings:           state.settings,
+        settings:           { ...state.settings, templateId: template.id },
       });
     } else {
       onStart();

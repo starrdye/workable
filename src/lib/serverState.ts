@@ -105,6 +105,8 @@ export interface GlobalSettings {
    * default Ridgeview nodes with their own custom node set.
    */
   hiddenCoreNodes?: string[];
+  /** The ID of the template used to initialize this workflow (if any). */
+  templateId?: string;
 }
 
 export interface ServerGraphState {

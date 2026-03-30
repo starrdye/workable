@@ -123,6 +123,8 @@ interface AIAnalysisModalProps {
   appliedConnectionKeys?: Set<string>;
   /** Applied removal node IDs from parent */
   appliedRemovalIds?: Set<string>;
+  /** If true, indicates this is pre-baked demo data */
+  isDemo?: boolean;
 }
 
 // ─── Section config ──────────────────────────────────────────────────────────
@@ -304,6 +306,7 @@ export function AIAnalysisModal({
   onAddConnection, onRemoveEdge, onRemoveEntity, onAddNewNode, onUpdateTasks, onApplyGroupUpdate,
   onReAnalyze, analysisTimestamp,
   appliedConnectionKeys, appliedRemovalIds,
+  isDemo = false,
 }: AIAnalysisModalProps) {
   const timeLabel   = useRelativeTime(analysisTimestamp);
   const modalRef    = useFocusTrap(isOpen);
@@ -390,9 +393,16 @@ export function AIAnalysisModal({
               <Sparkles className="w-4 h-4 text-indigo-600" />
             </div>
             <div className="min-w-0">
-              <h2 id="ai-analysis-title" className="text-base font-bold text-slate-800">AI Workflow Analysis</h2>
               <div className="flex items-center gap-2">
-                <p className="text-xs text-slate-500">Powered by AI · click suggestions to apply</p>
+                <h2 id="ai-analysis-title" className="text-base font-bold text-slate-800">AI Workflow Analysis</h2>
+                {isDemo && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider border border-emerald-200 shadow-sm flex items-center gap-1">
+                    <Zap className="w-2.5 h-2.5" /> Demo
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-slate-500">{isDemo ? "Static Demo Data" : "Powered by AI"} · click suggestions to apply</p>
                 {isCachedResult && timeLabel && (
                   <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full font-medium">{timeLabel}</span>
                 )}

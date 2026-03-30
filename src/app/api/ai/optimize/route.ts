@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
       stream?: boolean;
     };
 
-    if (!apiKey?.trim())    return NextResponse.json({ error: 'API key is required.'      }, { status: 400 });
+    if (provider !== 'demo' && !apiKey?.trim()) return NextResponse.json({ error: 'API key is required.' }, { status: 400 });
     if (!workflowData)      return NextResponse.json({ error: 'Workflow data is required.' }, { status: 400 });
 
     const resolvedModel = model?.trim() || (() => {
@@ -231,6 +231,7 @@ export async function POST(req: NextRequest) {
         anthropic: 'claude-sonnet-4-6',
         gemini:    'gemini-2.0-flash',
         doubao:    '',
+        demo:      'demo-model',
       };
       return defaults[provider] ?? '';
     })();
@@ -274,6 +275,53 @@ export async function POST(req: NextRequest) {
     } : null;
 
     const userMessage = `Analyze this workflow and provide optimization recommendations:\n\n${workflowSnapshot}`;
+
+    // ── Demo Provider Mock ────────────────────────────────────────────────────
+    if (provider === 'demo') {
+      const { JACK_ROUTINE_DEMO_ANALYSIS } = await import('@/lib/demoAnalysis');
+
+      if (wantStream) {
+        const encoder = new TextEncoder();
+        const sseStream = new ReadableStream({
+          async start(controller) {
+            const send = (event: Record<string, unknown>) => {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+            };
+            
+            // Send a pseudo-stream of chunks to simulate the AI "thinking"
+            const chunks = JACK_ROUTINE_DEMO_ANALYSIS.analysis.split('\n');
+            for (const chunk of chunks) {
+              send({ type: 'chunk', text: chunk + '\n' });
+              await new Promise(r => setTimeout(r, 80)); // 80ms delay per line for demo effect
+            }
+
+            send({ type: 'validating', message: 'Finalizing demo suggestions...' });
+            await new Promise(r => setTimeout(r, 600));
+
+            send({
+              type: 'done',
+              ...JACK_ROUTINE_DEMO_ANALYSIS,
+              isDemo: true, // Custom flag for UI to show a "Demo" badge
+            });
+            controller.close();
+          }
+        });
+
+        return new Response(sseStream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
+      }
+
+      // Non-streaming demo response
+      return NextResponse.json({
+        ...JACK_ROUTINE_DEMO_ANALYSIS,
+        isDemo: true,
+      });
+    }
 
     // ── Track 14d: Streaming path ─────────────────────────────────────────────
     if (wantStream) {
