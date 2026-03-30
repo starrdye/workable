@@ -1039,12 +1039,12 @@ export default function Home() {
           {/* Reset Layout */}
           <div className="absolute bottom-6 left-6 z-50">
             <button
-              title="Reset layout to default positions"
+              title="Automatically organize nodes and resolve overlaps"
               onClick={() => canvasRef.current?.triggerResetLayout()}
               className="bg-white/90 backdrop-blur-md border border-slate-200 rounded-full shadow-lg px-3 py-2 text-slate-600 hover:bg-slate-100 flex items-center gap-1.5 text-sm font-semibold transition-colors"
             >
               <LayoutGrid className="w-4 h-4" />
-              Reset Layout
+              Smart Layout
             </button>
           </div>
         </main>
