@@ -33,6 +33,24 @@ const ROLE_CHIPS = [
   { id: "output",   label: "Output",   color: "#10B981" },
 ] as const;
 
+// ── Demo Mode Badge ──────────────────────────────────────────────────────────
+// Fixed bottom-right corner overlay shown whenever demo mode is active.
+
+function DemoBadge() {
+  return (
+    <div
+      className="fixed bottom-5 right-5 z-[300] flex items-center gap-2 bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-2xl shadow-lg select-none pointer-events-none"
+      style={{ boxShadow: "0 4px 18px 0 rgba(16,185,129,0.35)" }}
+    >
+      <span className="text-sm leading-none" aria-hidden>🎭</span>
+      <div className="flex flex-col leading-tight">
+        <span className="font-bold tracking-wide">Demo Mode</span>
+        <span className="font-normal opacity-80 text-[10px]">Jack's scripted workflow</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   // ── App state ──────────────────────────────────────────────────────────────
   const [isAppStarted,          setIsAppStarted]          = useState(false);
@@ -173,6 +191,13 @@ export default function Home() {
   const pendingProposedGroupIds = Array.from(appliedAIGroupIds);
 
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
+
+  // ── Demo mode ──────────────────────────────────────────────────────────────
+  // True when the selected AI provider is "demo" OR when the canvas has the Jack
+  // scripted workflow loaded (templateId = 'demo-jack').
+  const isDemoMode =
+    aiConfig.provider === 'demo' ||
+    fullServerState?.settings?.templateId === 'demo-jack';
 
   // ── Workflow cache + tooltip ───────────────────────────────────────────────
   useEffect(() => {
@@ -411,9 +436,11 @@ export default function Home() {
           onOpenSettings={() => setShowAISettings(true)}
           onGenerationStart={handleGenerationStart}
           onGenerationError={handleGenerationError}
+          isDemoMode={isDemoMode}
         />
         <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
-          onSave={handleSaveAiConfig} currentConfig={aiConfig} />
+          onSave={handleSaveAiConfig} currentConfig={aiConfig} isDemoMode={isDemoMode} />
+        {isDemoMode && <DemoBadge />}
         {debugModal}
       </>
     );
@@ -971,7 +998,7 @@ export default function Home() {
 
       {/* AI Modals */}
       <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
-        onSave={handleSaveAiConfig} currentConfig={aiConfig} />
+        onSave={handleSaveAiConfig} currentConfig={aiConfig} isDemoMode={isDemoMode} />
       <AIAnalysisModal
         isOpen={showAIAnalysis}
         isLoading={aiAnalysisLoading}
@@ -1006,7 +1033,11 @@ export default function Home() {
         onClose={() => { setShowAIUpdate(false); setAiUpdateResult(null); setAiUpdateError(null); }}
         onSubmit={handleAiUpdate}
         onApply={handleApplyUpdate}
+        isDemoMode={isDemoMode}
       />
+
+      {/* Demo mode badge — fixed bottom-right */}
+      {isDemoMode && <DemoBadge />}
 
       {debugModal}
 

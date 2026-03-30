@@ -6,6 +6,7 @@ import { hierarchicalLayout, groupAwareLayout } from '@/lib/layout';
 import { CORE_NODE_IDS } from '@/lib/constants';
 import { jsonrepair } from 'jsonrepair';
 import { ParseWorkflowResponse } from '@/lib/aiSchemas';
+import { JACK_ROUTINE_DEMO_AI_JSON } from '@/lib/demoAnalysis';
 
 const SYSTEM_PROMPT = `You are a workflow graph parser. Convert natural language workflow descriptions into structured JSON graphs.
 
@@ -275,14 +276,18 @@ export async function POST(req: NextRequest) {
       baseUrl?: string;
     };
 
-    if (!apiKey?.trim())  return NextResponse.json({ error: 'API key is required.'              }, { status: 400 });
-    if (!prompt?.trim())  return NextResponse.json({ error: 'Workflow description is required.' }, { status: 400 });
+    // Demo provider: skip API key check and use pre-built JSON response
+    const isDemoProvider = provider === 'demo';
+
+    if (!isDemoProvider && !apiKey?.trim()) return NextResponse.json({ error: 'API key is required.'              }, { status: 400 });
+    if (!prompt?.trim())                    return NextResponse.json({ error: 'Workflow description is required.' }, { status: 400 });
 
     const resolvedModel = model?.trim() || (() => {
       const defaults: Record<AIProvider, string> = {
         anthropic: 'claude-sonnet-4-6',
         gemini:    'gemini-2.0-flash',
         doubao:    '',
+        demo:      'demo-mock',
       };
       return defaults[provider] ?? '';
     })();
@@ -296,16 +301,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const genResult = await generateText({
-      provider,
-      model: resolvedModel,
-      apiKey,
-      systemPrompt: SYSTEM_PROMPT,
-      userMessage:  prompt,
-      maxTokens:    8000,
-      baseUrl:      baseUrl || undefined,
-    });
-    const rawText = genResult.text;
+    // For demo provider, skip the AI call and use pre-built JSON
+    let rawText: string;
+    let genResult: { usage: { inputTokens: number; outputTokens: number } | null } = { usage: null };
+    if (isDemoProvider) {
+      rawText = JACK_ROUTINE_DEMO_AI_JSON;
+    } else {
+      const result = await generateText({
+        provider,
+        model: resolvedModel,
+        apiKey,
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage:  prompt,
+        maxTokens:    8000,
+        baseUrl:      baseUrl || undefined,
+      });
+      rawText = result.text;
+      genResult = result;
+    }
 
     let parsed: { nodes: AINode[]; edges: AIEdge[]; groups?: AIGroup[] };
     try {
@@ -436,7 +449,10 @@ export async function POST(req: NextRequest) {
       ecosystemPositions,
       metadataOverrides,
       workflowGroups,
-      settings: { hiddenCoreNodes: [...CORE_NODE_IDS] },
+      settings: {
+        hiddenCoreNodes: [...CORE_NODE_IDS],
+        ...(isDemoProvider ? { templateId: 'demo-jack' } : {}),
+      },
       nodeCount: customNodes.length,
       edgeCount: customEdges.length,
       rawAIResponse: rawText,

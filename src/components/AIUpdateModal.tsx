@@ -91,6 +91,10 @@ export interface AIUpdateResult {
   };
 }
 
+// ── Demo mode scripted prompt ─────────────────────────────────────────────────
+
+const DEMO_UPDATE_PROMPT = "Sarah was promoted to Head of Portfolio Management. She now manages two junior analysts, and Jack's Exception Files will be reviewed by them first before escalating to Sarah for final sign-off.";
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface AIUpdateModalProps {
@@ -101,6 +105,8 @@ interface AIUpdateModalProps {
   onClose:   () => void;
   onSubmit:  (prompt: string) => void;
   onApply:   (result: AIUpdateResult) => void;
+  /** When true, the prompt textarea is pre-filled with scripted demo content and made read-only */
+  isDemoMode?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -155,10 +161,10 @@ function diffSummaryPill(result: AIUpdateResult) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function AIUpdateModal({
-  isOpen, isLoading, result, error, onClose, onSubmit, onApply,
+  isOpen, isLoading, result, error, onClose, onSubmit, onApply, isDemoMode,
 }: AIUpdateModalProps) {
   const [view, setView]       = useState<"prompt" | "preview">("prompt");
-  const [prompt, setPrompt]   = useState("");
+  const [prompt, setPrompt]   = useState(isDemoMode ? DEMO_UPDATE_PROMPT : "");
   const textareaRef           = useRef<HTMLTextAreaElement>(null);
   const modalRef              = useFocusTrap(isOpen);
 
@@ -167,12 +173,13 @@ export function AIUpdateModal({
     if (result && !isLoading) setView("preview");
   }, [result, isLoading]);
 
-  // Reset to prompt panel whenever modal opens fresh
+  // Reset to prompt panel whenever modal opens fresh; pre-fill in demo mode
   useEffect(() => {
     if (isOpen) {
       setView("prompt");
+      if (isDemoMode) setPrompt(DEMO_UPDATE_PROMPT);
     }
-  }, [isOpen]);
+  }, [isOpen, isDemoMode]);
 
   // Auto-focus textarea on open
   useEffect(() => {
@@ -184,8 +191,9 @@ export function AIUpdateModal({
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    if (!prompt.trim() || isLoading) return;
-    onSubmit(prompt.trim());
+    const effectivePrompt = isDemoMode ? DEMO_UPDATE_PROMPT : prompt;
+    if (!effectivePrompt.trim() || isLoading) return;
+    onSubmit(effectivePrompt.trim());
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -247,26 +255,46 @@ export function AIUpdateModal({
             <>
               {/* Textarea */}
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   What changed?
+                  {isDemoMode && (
+                    <span className="ml-auto flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full normal-case tracking-normal">
+                      🎬 Scripted
+                    </span>
+                  )}
                 </label>
-                <textarea
-                  ref={textareaRef}
-                  value={prompt}
-                  onChange={e => setPrompt(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isLoading}
-                  rows={4}
-                  maxLength={2000}
-                  placeholder="e.g. Bryan joins as Mary's mentee — he's working on the company website"
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition disabled:opacity-50 disabled:bg-slate-50"
-                />
-                <div className="flex justify-between items-center mt-1">
-                  <p className="text-[10px] text-slate-400">⌘ Return to submit</p>
-                  <p className={`text-[10px] ${prompt.length > 1800 ? "text-amber-500" : "text-slate-400"}`}>
-                    {prompt.length} / 2000
-                  </p>
+                <div className="relative">
+                  <textarea
+                    ref={textareaRef}
+                    value={isDemoMode ? DEMO_UPDATE_PROMPT : prompt}
+                    onChange={e => { if (!isDemoMode) setPrompt(e.target.value); }}
+                    onKeyDown={handleKeyDown}
+                    readOnly={isDemoMode}
+                    disabled={isLoading}
+                    rows={4}
+                    maxLength={2000}
+                    title={isDemoMode ? "Demo mode — no editing" : undefined}
+                    placeholder="e.g. Bryan joins as Mary's mentee — he's working on the company website"
+                    className={`w-full border rounded-xl px-4 py-3 text-sm placeholder-slate-400 resize-none focus:outline-none transition ${
+                      isDemoMode
+                        ? "bg-slate-50 border-emerald-200 text-slate-500 cursor-not-allowed"
+                        : "border-slate-200 text-slate-700 focus:border-violet-400 focus:ring-2 focus:ring-violet-100 disabled:opacity-50 disabled:bg-slate-50"
+                    }`}
+                  />
+                  {isDemoMode && (
+                    <div className="absolute bottom-2 right-2 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-0.5 pointer-events-none select-none">
+                      demo · read only
+                    </div>
+                  )}
                 </div>
+                {!isDemoMode && (
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-[10px] text-slate-400">⌘ Return to submit</p>
+                    <p className={`text-[10px] ${prompt.length > 1800 ? "text-amber-500" : "text-slate-400"}`}>
+                      {prompt.length} / 2000
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Loading state */}
@@ -490,7 +518,7 @@ export function AIUpdateModal({
           {view === "prompt" ? (
             <button
               onClick={handleSubmit}
-              disabled={!prompt.trim() || isLoading}
+              disabled={!(isDemoMode ? DEMO_UPDATE_PROMPT : prompt).trim() || isLoading}
               className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2">
               {isLoading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating patch…</>

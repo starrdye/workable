@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Zap, ArrowRight, UploadCloud, FileText,
   Sparkles, Loader2, AlertCircle, Settings,
@@ -12,6 +12,12 @@ import { TEMPLATES, buildTemplateState, type Template } from "@/lib/templates";
 
 // Dot colour per provider
 const MAX_PROMPT_CHARS = 8000;
+
+// ── Demo mode scripted content ────────────────────────────────────────────────
+
+const DEMO_JACK_TEXT = `For Jack's daily routine, he usually starts around 9:00 AM by logging into the Bloomberg Terminal to extract the raw end-of-day pricing data. Once that CSV file is downloaded, he immediately feeds it into his local Python reconciliation script. This script automatically compares the Bloomberg data against our internal PostgreSQL database to check for any price breaks.
+
+If the script outputs a clean Match Report, Jack just uploads that report directly to the Ternary Client Dashboard and his morning is done. However, if there are discrepancies, the script generates an Exception File. Jack takes that Exception File and Slacks it over to Sarah, the Portfolio Manager. Jack is blocked at this point—he can't proceed until Sarah manually reviews the Exception File and gives him the thumbs up. Once Sarah approves the overrides, Jack updates the database and finally pushes the corrected numbers to the Client Dashboard. Mary is Jack's HR, Every week Mary and Jack will have a meeting to evaluate Jack's mental well being. Jason is Mary's supervisor, and Jason will talk the joint Mary and Jacks talk once every month. Mary also talks with Sarah on Jack's performance.`;
 
 const DOT: Record<AIProvider, string> = {
   anthropic: "bg-indigo-500",
@@ -56,6 +62,8 @@ interface StartScreenProps {
   onGenerationStart?: () => void;
   /** Track 15a — called if AI generation fails, so the page shows the error overlay */
   onGenerationError?: (error: string) => void;
+  /** When true, the text input is pre-filled with scripted demo content and made read-only */
+  isDemoMode?: boolean;
 }
 
 // ── Mini network preview SVGs per template ────────────────────────────────────
@@ -302,15 +310,20 @@ function TemplateGallery({
 export function StartScreen({
   onStart, onImportAndStart, onAiParsed, onTemplateLoad, onDebugLog,
   aiConfig, onSaveConfig: _onSaveConfig, onOpenSettings,
-  onGenerationStart, onGenerationError,
+  onGenerationStart, onGenerationError, isDemoMode,
 }: StartScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName]         = useState<string | null>(null);
   const [csvText, setCsvText]           = useState<string | null>(null);
-  const [instructions, setInstructions] = useState("");
+  const [instructions, setInstructions] = useState(isDemoMode ? DEMO_JACK_TEXT : "");
   const [isParsingAI, setIsParsingAI]   = useState(false);
   const [aiError, setAiError]           = useState<string | null>(null);
   const [showGallery, setShowGallery]   = useState(false);
+
+  // Pre-fill with demo text whenever demo mode is activated
+  useEffect(() => {
+    if (isDemoMode) setInstructions(DEMO_JACK_TEXT);
+  }, [isDemoMode]);
 
   const cfg            = aiConfig;
   const activeProvider = cfg?.provider ?? "anthropic";
@@ -363,7 +376,7 @@ export function StartScreen({
   const handleLoadWorkflow = async () => {
     setAiError(null);
     if (csvText && onImportAndStart) { onImportAndStart(csvText); return; }
-    if (instructions.trim() && activeKey && cfg && onAiParsed) {
+    if (instructions.trim() && (activeKey || isDemoMode) && cfg && onAiParsed) {
       setIsParsingAI(true);
 
       // Track 15a: Transition to canvas shell immediately — don't wait for the AI call.
@@ -412,9 +425,10 @@ export function StartScreen({
     onStart();
   };
 
-  const hasInstructions = instructions.trim().length > 0;
-  const canUseAI        = hasInstructions && !!activeKey;
-  const buttonMode      = csvText ? "csv" : canUseAI ? "ai" : "default";
+  const hasInstructions = isDemoMode ? true : instructions.trim().length > 0;
+  // Demo mode: always can use AI (no key required)
+  const canUseAI = isDemoMode ? true : (hasInstructions && !!activeKey);
+  const buttonMode = csvText ? "csv" : canUseAI ? "ai" : "default";
 
   return (
     <>
@@ -517,31 +531,50 @@ export function StartScreen({
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                 Or paste your notes / describe your daily workflow
+                {isDemoMode && (
+                  <span className="ml-auto flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full normal-case tracking-normal">
+                    🎬 Scripted
+                  </span>
+                )}
               </label>
-              <textarea
-                rows={3}
-                value={instructions}
-                onChange={(e) => {
-                  if (e.target.value.length <= MAX_PROMPT_CHARS) {
-                    setInstructions(e.target.value);
-                    setAiError(null);
-                  }
-                }}
-                disabled={isParsingAI}
-                className={`w-full bg-white border rounded-xl p-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 resize-none shadow-sm transition-colors disabled:opacity-60 ${
-                  canUseAI
-                    ? "border-indigo-300 focus:border-indigo-600 focus:ring-indigo-600"
-                    : "border-gray-300 focus:border-indigo-600 focus:ring-indigo-600"
-                }`}
-                placeholder="e.g., Every morning I check emails, then update my task list in Notion, before a stand-up with the team, then deep work until lunch…"
-              />
-              {/* Token counter */}
-              <div className={`text-xs text-right tabular-nums ${
-                instructions.length >= MAX_PROMPT_CHARS ? "text-red-500 font-medium" : "text-slate-400"
-              }`}>
-                {instructions.length.toLocaleString()}&thinsp;/&thinsp;{MAX_PROMPT_CHARS.toLocaleString()}
+              <div className="relative">
+                <textarea
+                  rows={isDemoMode ? 5 : 3}
+                  value={isDemoMode ? DEMO_JACK_TEXT : instructions}
+                  onChange={(e) => {
+                    if (isDemoMode) return;
+                    if (e.target.value.length <= MAX_PROMPT_CHARS) {
+                      setInstructions(e.target.value);
+                      setAiError(null);
+                    }
+                  }}
+                  readOnly={isDemoMode}
+                  disabled={isParsingAI}
+                  title={isDemoMode ? "Demo mode — no editing" : undefined}
+                  className={`w-full border rounded-xl p-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 resize-none shadow-sm transition-colors disabled:opacity-60 ${
+                    isDemoMode
+                      ? "bg-slate-50 border-emerald-200 text-slate-500 cursor-not-allowed"
+                      : canUseAI
+                      ? "bg-white border-indigo-300 focus:border-indigo-600 focus:ring-indigo-600"
+                      : "bg-white border-gray-300 focus:border-indigo-600 focus:ring-indigo-600"
+                  }`}
+                  placeholder="e.g., Every morning I check emails, then update my task list in Notion, before a stand-up with the team, then deep work until lunch…"
+                />
+                {isDemoMode && (
+                  <div className="absolute bottom-2 right-2 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-0.5 pointer-events-none select-none">
+                    demo · read only
+                  </div>
+                )}
               </div>
-              {hasInstructions && !activeKey && (
+              {/* Token counter — hidden in demo mode */}
+              {!isDemoMode && (
+                <div className={`text-xs text-right tabular-nums ${
+                  instructions.length >= MAX_PROMPT_CHARS ? "text-red-500 font-medium" : "text-slate-400"
+                }`}>
+                  {instructions.length.toLocaleString()}&thinsp;/&thinsp;{MAX_PROMPT_CHARS.toLocaleString()}
+                </div>
+              )}
+              {hasInstructions && !activeKey && !isDemoMode && (
                 <p className="text-xs text-amber-600 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   Add an API key in AI Settings (⚙) to generate from this description.

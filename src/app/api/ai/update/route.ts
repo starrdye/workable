@@ -343,6 +343,7 @@ export async function POST(req: NextRequest) {
         anthropic: 'claude-sonnet-4-6',
         gemini:    'gemini-2.0-flash',
         doubao:    '',
+        demo:      'demo-mock',
       };
       return defaults[provider] ?? '';
     })();

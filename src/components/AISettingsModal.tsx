@@ -72,6 +72,13 @@ const COLORS: Record<AIProvider, { ring: string; bg: string; text: string; dot: 
     dot:   "bg-violet-500",
     badge: "bg-violet-100 text-violet-700",
   },
+  demo: {
+    ring:  "ring-emerald-500",
+    bg:    "bg-emerald-50",
+    text:  "text-emerald-700",
+    dot:   "bg-emerald-500",
+    badge: "bg-emerald-100 text-emerald-700",
+  },
 };
 
 // ── Provider logo marks (SVG-free, text-based) ─────────────────────────────
@@ -92,11 +99,13 @@ interface AISettingsModalProps {
   onClose: () => void;
   onSave: (config: AIConfig) => void;
   currentConfig: AIConfig;
+  /** When true, all settings fields are read-only (demo mode) */
+  isDemoMode?: boolean;
 }
 
-export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISettingsModalProps) {
+export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemoMode }: AISettingsModalProps) {
   const [config, setConfig] = useState<AIConfig>(currentConfig);
-  const [showKey, setShowKey] = useState<Record<AIProvider, boolean>>({ anthropic: false, gemini: false, doubao: false });
+  const [showKey, setShowKey] = useState<Record<AIProvider, boolean>>({ anthropic: false, gemini: false, doubao: false, demo: false });
   const [saved, setSaved] = useState(false);
   const { mode: engineMode, setMode: setEngineMode } = useAIEngineMode();
   
@@ -156,6 +165,17 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
           </button>
         </div>
 
+        {/* ── Demo mode banner ────────────────────────────────────────────── */}
+        {isDemoMode && (
+          <div className="px-8 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-3 shrink-0">
+            <span className="text-xl select-none">🎭</span>
+            <div>
+              <p className="text-sm font-bold text-emerald-800 leading-tight">Demo Mode — read only</p>
+              <p className="text-xs text-emerald-600 leading-tight mt-0.5">Settings are pre-configured for the scripted Jack workflow. Export (PNG, CSV) and data flow are fully functional.</p>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-7">
 
           {/* ── Section 1: Provider selection ─────────────────────────────── */}
@@ -171,12 +191,13 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                 return (
                   <button
                     key={meta.id}
-                    onClick={() => setProvider(meta.id)}
+                    onClick={() => !isDemoMode && setProvider(meta.id)}
+                    title={isDemoMode ? "Demo mode — no editing" : undefined}
                     className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
                       isActive
                         ? `${c.bg} border-current ${c.text} ring-2 ${c.ring} ring-offset-1`
                         : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
-                    }`}
+                    } ${isDemoMode ? "cursor-not-allowed" : ""}`}
                   >
                     <ProviderMark meta={meta} />
                     <div className="text-center">
@@ -299,12 +320,13 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                         return (
                           <button
                             key={m.id}
-                            onClick={() => setModel(activeProvider, m.id)}
+                            onClick={() => !isDemoMode && setModel(activeProvider, m.id)}
+                            title={isDemoMode ? "Demo mode — no editing" : undefined}
                             className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-start gap-3 ${
                               isSelected
                                 ? `${activeColor.bg} border-current ${activeColor.text}`
                                 : "border-slate-200 bg-white hover:border-slate-300 text-slate-700"
-                            }`}
+                            } ${isDemoMode ? "cursor-not-allowed" : ""}`}
                           >
                             <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
                               isSelected ? "border-current" : "border-slate-300"
@@ -327,13 +349,15 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                       <input
                         type="text"
                         value={config.models[activeProvider] ?? ""}
-                        onChange={(e) => setModel(activeProvider, e.target.value.trim())}
+                        onChange={(e) => !isDemoMode && setModel(activeProvider, e.target.value.trim())}
+                        readOnly={isDemoMode}
+                        title={isDemoMode ? "Demo mode — no editing" : undefined}
                         placeholder={activeMeta.endpointPlaceholder}
                         className={`w-full bg-slate-50 border-2 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 transition-colors ${
                           config.models[activeProvider]
                             ? `border-current ${activeColor.text} focus:${activeColor.ring}`
                             : "border-slate-200 focus:border-violet-400 focus:ring-violet-400"
-                        }`}
+                        } ${isDemoMode ? "cursor-not-allowed opacity-70" : ""}`}
                       />
                       <p className="text-[11px] text-slate-400 leading-relaxed">
                         {activeMeta.endpointHint}
@@ -395,13 +419,15 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                       <input
                         type={isShow ? "text" : "password"}
                         value={key}
-                        onChange={(e) => setKey(meta.id, e.target.value)}
+                        onChange={(e) => !isDemoMode && setKey(meta.id, e.target.value)}
+                        readOnly={isDemoMode}
+                        title={isDemoMode ? "Demo mode — no editing" : undefined}
                         placeholder={meta.keyPlaceholder}
                         className={`w-full bg-slate-50 border rounded-xl px-4 py-2.5 pr-11 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 font-mono transition-colors ${
                           config.provider === meta.id
                             ? `border-current ${c.text} focus:${c.ring}`
                             : "border-slate-200 focus:border-indigo-400 focus:ring-indigo-400"
-                        }`}
+                        } ${isDemoMode ? "cursor-not-allowed opacity-70" : ""}`}
                       />
                       <button
                         type="button"
@@ -448,12 +474,13 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => setEngineMode(opt.value)}
+                    onClick={() => !isDemoMode && setEngineMode(opt.value)}
+                    title={isDemoMode ? "Demo mode — no editing" : undefined}
                     className={`relative flex flex-col items-start gap-1.5 p-4 rounded-2xl border-2 transition-all text-left ${
                       isActive
                         ? `${opt.activeBg} ring-2 ${opt.activeRing} ring-offset-1`
                         : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                    }`}
+                    } ${isDemoMode ? "cursor-not-allowed" : ""}`}
                   >
                     <div className="flex items-center gap-2 w-full">
                       <span className="font-bold text-sm">{opt.label}</span>
@@ -479,7 +506,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
         <div className="px-8 pb-7 pt-4 border-t border-slate-100 space-y-2 shrink-0">
-          {!hasKeyForActive && (
+          {!hasKeyForActive && !isDemoMode && (
             <p className="text-xs text-amber-600 text-center">
               Add an API key for <strong>{activeMeta.name}</strong> to enable AI features.
             </p>
