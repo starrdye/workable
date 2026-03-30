@@ -11,12 +11,15 @@
     <img src="https://img.shields.io/badge/AI-Multi--provider-8B5CF6" alt="AI"/>
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"/>
   </p>
+  <p align="center">
+    <strong>Workable</strong> is a personal workflow engine that uses AI to transform your mental notes into structured, interactive process maps. 
+    <br/>Spot bottlenecks, organize tasks, and optimize your daily routines — all in one unified canvas.
+  </p>
   <p>
-    <a href="#-quick-start">Quick Start</a> ·
     <a href="#-features">Features</a> ·
     <a href="#-ai-providers">AI Providers</a> ·
     <a href="#-templates">Templates</a> ·
-    <a href="#-how-it-works">How It Works</a>
+    <a href="./DevelopmentGuide.md">Development Guide</a>
   </p>
 
   <br/>
@@ -58,15 +61,25 @@ Describe your workflow in plain English — names, tools, handoffs, blockers, al
 - **Constraints** (GDPR limits, manual approvals, rate caps)
 
 ### 🗺️ Dual-View Canvas
+
+<div align="center">
+  <img src="./public/demo/ecosystem.png" alt="Ecosystem Hub Radial View" width="700px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+</div>
+
 | Baseline Process Map | Ecosystem Hub |
 |---|---|
 | Left-to-right hierarchical flow | Radial web-map centred on the most-connected node |
 | Clear sequence and handoffs | Visualise influence, coupling, and dependency rings |
 | Great for process documentation | Great for spotting architectural smells |
 
-Toggle instantly with no data loss.
+Toggle instantly with no data loss using the **Mono/Dist** and **Ecosystem** toggles in the toolbar.
 
 ### 🔬 Analysis Sidebar
+
+<div align="right">
+  <img src="./public/demo/sidebar.png" alt="Node Analysis Sidebar" width="400px" style="float: right; margin-left: 20px; border-radius: 12px; border: 1px solid #E2E8F0;"/>
+</div>
+
 Click any node or edge to open a deep-dive panel:
 - **Entity name**, role badge, and AI-generated vs user-added origin
 - **Summary** — concise description of the node's role in the workflow
@@ -79,6 +92,8 @@ For edges:
 - **Data Flow Direction** — From → To pill with node names
 - **Connection Name** — the actual named handoff (e.g. "Send Exception File for review")
 - **Auto-generated summary** — what flows along this edge and why
+
+<br clear="both"/>
 
 ### 🧩 Workflow Groups & Nested Phases
 Colour-coded bounding regions that organise nodes into named phases. Supports:
@@ -122,13 +137,6 @@ Specifically for large graphs (100+ nodes) where monolithic AI prompts would hit
 | **PNG** | Full canvas render at current zoom |
 | **CSV import** | Restore any previously exported workflow |
 
-### 🎨 Templates Gallery
-Four pre-built starters so you're never staring at a blank canvas:
-- **Morning Routine** — 7-node personal daily startup flow
-- **Project Workflow** — 14-node idea-to-publish pipeline
-- **Full Work Week** — 22-node complete weekly system
-- **Blank Canvas** — start from scratch
-
 ---
 
 ## 🚀 Quick Start
@@ -164,104 +172,7 @@ Workable is provider-agnostic. Swap between them any time in AI Settings.
 | **Google Gemini** | `gemini-2.0-flash` (default), `gemini-1.5-pro`, `gemini-1.5-flash` | Fast, generous free tier |
 | **ByteDance Doubao** | Your endpoint ID (e.g. `ep-20260318…`) | OpenAI-compatible; supports Coding Plan base URL |
 
-**Strategy Selection** — Choose between **Monolithic** and **Distributed** reasoning engines via the toolbar toggle. Distributed mode is recommended for graphs with >30 nodes to maintain reasoning precision.
-
-**Token Transparency** — Full input/output token counts are displayed in the AI Debug Log for every call, regardless of engine.
-
-All API keys are stored client-side only. The server route forwards them per-request and never persists them.
-
----
-
-## 📐 How It Works
-
-### Parse Pipeline
-
-```
-User prompt (plain text)
-        │
-        ▼
-POST /api/ai/parse-workflow
-        │  ┌─────────────────────────────┐
-        ├─▶│  generateText()             │  ← provider-agnostic, 8k token budget
-        │  │  (Anthropic / Gemini / Ark) │
-        │  └─────────────────────────────┘
-        │
-        ▼
-  extractJSON()      ← brace-depth scanner, handles preamble/postamble
-  jsonrepair()       ← fixes missing quotes, trailing commas, etc.
-        │
-        ▼
-  hierarchicalLayout()  ← Sugiyama-style left→right positioning
-  groupAwareLayout()    ← AABB physics: hub gravity + collision + centroid repulsion
-        │
-        ▼
-  metadataOverrides     ← per-node: name, role, summary, constraints, tasks,
-                           connections (derived from edges), workflows (from groups)
-        │
-        ▼
-  importState()         ← writes to in-memory server singleton
-  → client syncs via **Server-Sent Events (SSE)** /api/graph-state/stream
-  (instant multi-tab synchronization with 3s polling fallback)
-```
-
-### Layout Physics
-
-The group-aware layout runs a multi-force physics solver (no velocity, pure position):
-
-1. **Hub gravity** — all groups attract toward the most-connected node
-2. **Shared-node tension** — groups sharing a node are pulled together
-3. **Centroid repulsion** — sharing groups that collapse get pushed apart (prevents pile-up)
-4. **AABB collision** — non-sharing groups are pushed apart via node-level delta accumulation (no rigid-body oscillation)
-
-Followed by two post-processing passes:
-- **Strict separation** (60 iterations) — node-level adjustment, facing-half strategy to break symmetry for same-shaped groups
-- **Union-bbox eviction** (40 iterations) — non-member nodes trapped inside foreign groups exit via the shortest canvas-valid path
-
-### Data Model
-
-```
-GraphState
-├── customNodes[]      — id, label, initials, role, position, source
-├── customEdges[]      — id, source, target, name, sequence, weight
-├── ecosystemPositions — node → {x, y} for hub view
-├── workflowGroups[]   — id, name, color, nodeIds, parentGroupId?
-└── settings
-    ├── metadataOverrides  — per-entity: name, summary, tasks, constraints,
-    │                        connections, processes (workflow memberships)
-    ├── edgeWeightOverrides
-    ├── nodeDelayOverrides
-    └── hiddenCoreNodes
-```
-
----
-
-## 📁 Project Structure
-
-```
-src/
-├── app/
-│   ├── page.tsx                    # Root page — start screen + canvas router
-│   └── api/
-│       ├── ai/
-│       │   ├── parse-workflow/     # POST: text → graph JSON
-│       │   ├── optimize/           # POST: graph → bottleneck report
-│       │   └── update/             # POST: prompt + snapshot → patch
-│       ├── graph-state/            # GET/PUT: server state CRUD
-│       └── workflow/               # GET: static workflow definitions
-├── components/
-│   ├── GraphCanvas.tsx             # SVG canvas, nodes, edges, pulses
-│   ├── AnalysisSidebar.tsx         # Right panel — node/edge deep-dive
-│   ├── StartScreen.tsx             # Landing, template gallery, AI input
-│   ├── AIAnalysisModal.tsx         # Bottleneck report + suggested changes
-│   ├── AIUpdateModal.tsx           # Prompt input → diff preview → apply
-│   └── AISettingsModal.tsx         # Provider / key / base URL settings
-└── lib/
-    ├── aiClient.ts                 # Provider-agnostic generateText()
-    ├── layout.ts                   # hierarchicalLayout + groupAwareLayout
-    ├── serverState.ts              # In-memory state singleton + mutations
-    ├── templates.ts                # Pre-built workflow templates
-    └── constants.ts                # Core node IDs, role colours, etc.
-```
+**Detailed technical documentation can be found in the [Development Guide](./DevelopmentGuide.md).**
 
 ---
 
@@ -286,38 +197,6 @@ Groups: Discovery · Production · Review Loop · Distribution
 Five external input streams → capture + planning → you (hub) → deep work blocks + collaboration → deliverables + published content + weekly KPIs
 
 Groups: External Inputs · Capture & Plan · Deep Focus · Collaboration · Outputs & Review
-
----
-
-## 🛠️ Development
-
-```bash
-npm run dev     # Dev server with Turbopack → localhost:3000
-npm run build   # Production build
-npm run lint    # ESLint check
-```
-
-**State note:** The server uses an in-memory singleton (`src/lib/serverState.ts`). It resets on server restart. For persistence across restarts, swap the singleton with a database (SQLite, Postgres, etc.) using the same `importState` / `getGraphState` interface.
-
-**Adding a new AI provider:**
-1. Add the provider to `AIProvider` union type in `src/lib/aiClient.ts`
-2. Implement the `generateText` branch for the new provider
-3. Add the provider config (name, models, colour) to `PROVIDERS` in `AISettingsModal.tsx`
-
----
-
-## 🗺️ Roadmap
-
-- [x] **GitHub Launch** — Repository is live and ready for clones
-- [x] **Real-time synchronization** — Server-Sent Events (SSE) for instant multi-tab sync
-- [x] **Distributed Reasoning** — Node-agent architecture for 100+ node scalability
-- [/] **Persistent storage** — localStorage auto-save + named snapshots in production
-- [ ] **Database backend** — SQLite or Postgres for server-side persistence
-- [ ] **Constraint propagation** — risk badges that cascade through the graph
-- [ ] **Webhook ingestion** — live workflow updates from GitHub, Jira, Slack
-- [ ] **OCR / PDF import** — extract workflow from scanned process docs
-- [ ] **Diff view** — visualise what changed between two workflow versions
-- [ ] **Shareable links** — read-only public URLs for graphs
 
 ---
 
