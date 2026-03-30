@@ -8,6 +8,7 @@ import { AIUpdatePatchResponse } from '@/lib/aiSchemas';
 import { buildUpdateSnapshot } from '@/lib/snapshotBuilder';
 import { runDistributedUpdate } from '@/lib/agents/distributedUpdate';
 import type { AIEngineMode } from '@/contexts/AIEngineContext';
+import { JACK_ROUTINE_DEMO_UPDATE_RESULT } from '@/lib/demoAnalysis';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -334,7 +335,8 @@ export async function POST(req: NextRequest) {
       engine?: AIEngineMode;
     };
 
-    if (!apiKey?.trim())     return NextResponse.json({ error: 'API key is required.'           }, { status: 400 });
+    const isDemoProvider = provider === 'demo';
+    if (!isDemoProvider && !apiKey?.trim()) return NextResponse.json({ error: 'API key is required.' }, { status: 400 });
     if (!prompt?.trim())     return NextResponse.json({ error: 'Update prompt is required.'     }, { status: 400 });
     if (!currentState)       return NextResponse.json({ error: 'Current workflow state is required.' }, { status: 400 });
 
@@ -355,6 +357,11 @@ export async function POST(req: NextRequest) {
             : 'No model configured for this provider.' },
         { status: 400 }
       );
+    }
+
+    // Demo provider: return pre-built mock without any AI call
+    if (isDemoProvider) {
+      return NextResponse.json(JACK_ROUTINE_DEMO_UPDATE_RESULT);
     }
 
     // ── Distributed engine branch ─────────────────────────────────────────────

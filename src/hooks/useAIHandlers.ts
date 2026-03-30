@@ -4,7 +4,7 @@
 // Track 8b  — vb0.2: delegates to useAIEngine for mode-aware routing.
 // Track 14d — vb0.21: runAnalyze uses streaming SSE so analysis text appears live.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { loadAIConfig, type AIConfig, AI_CONFIG_KEY } from '@/components/AISettingsModal';
 import { PROVIDERS, type AIProvider } from '@/lib/aiClient';
@@ -79,6 +79,9 @@ export function useAIHandlers(
    * visual (dashed emerald border + pulse) so they stand out from manually-created groups.
    */
   const [appliedAIGroupIds, setAppliedAIGroupIds] = useState<Set<string>>(() => new Set());
+
+  // Ref guard: ensures demo auto-apply only runs once per analysis session
+  const demoAutoApplied = useRef(false);
 
   // ── AI Update state ────────────────────────────────────────────────────────
   const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
@@ -198,7 +201,86 @@ export function useAIHandlers(
     setAiSuggestedTaskUpdates([]);
     setAiSuggestedGroupUpdates([]);
     setAiSuggestionPlan(null);
+    demoAutoApplied.current = false;
   };
+
+  // Demo mode: once analysis loads, auto-apply suggested new nodes as improvement-only additions
+  useEffect(() => {
+    if (!aiAnalysisIsDemo || demoAutoApplied.current || aiSuggestedNewNodes.length === 0) return;
+    demoAutoApplied.current = true;
+
+    for (const node of aiSuggestedNewNodes) {
+      const nodeId = node.tempId; // use stable ID for demo so references stay consistent
+      put({ action: 'addNode', node: {
+        id: nodeId,
+        labelInitials: node.label.slice(0, 2).toUpperCase(),
+        label: node.label,
+        nodeType: 'neural' as const,
+        role: node.role as 'person' | 'tool' | 'external' | 'output',
+        source: 'ai-generated' as const,
+        position: { x: 0, y: 0 },
+      }}).then(() => put({ action: 'updateMetadata', id: nodeId, metadata: {
+        name: node.label, role: node.role, summary: node.summary,
+      }}));
+
+      for (const srcId of node.connectFrom) {
+        put({ action: 'addEdge', edge: {
+          id: `${srcId}-${nodeId}-demo`,
+          source: srcId, target: nodeId,
+          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+        }});
+      }
+      for (const tgtId of node.connectTo) {
+        put({ action: 'addEdge', edge: {
+          id: `${nodeId}-${tgtId}-demo`,
+          source: nodeId, target: tgtId,
+          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+        }});
+      }
+    }
+
+    // Optimistic local state update
+    setFullServerState(prev => {
+      if (!prev) return prev;
+      const newNodes = aiSuggestedNewNodes.map(node => ({
+        id: node.tempId,
+        labelInitials: node.label.slice(0, 2).toUpperCase(),
+        label: node.label,
+        nodeType: 'neural' as const,
+        role: node.role as 'person' | 'tool' | 'external' | 'output',
+        source: 'ai-generated' as const,
+        position: { x: 0, y: 0 } as { x: number; y: number },
+      }));
+      const newEdges = aiSuggestedNewNodes.flatMap(node => [
+        ...node.connectFrom.map(srcId => ({
+          id: `${srcId}-${node.tempId}-demo`, source: srcId, target: node.tempId,
+          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+        })),
+        ...node.connectTo.map(tgtId => ({
+          id: `${node.tempId}-${tgtId}-demo`, source: node.tempId, target: tgtId,
+          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+        })),
+      ]);
+      return {
+        ...prev,
+        customNodes: [
+          ...(prev.customNodes ?? []).filter(n => !newNodes.find(nn => nn.id === n.id)),
+          ...newNodes,
+        ],
+        customEdges: [
+          ...(prev.customEdges ?? []).filter(e => !newEdges.find(ne => ne.id === e.id)),
+          ...newEdges,
+        ],
+      };
+    });
+
+    // Trigger incremental layout for the new node(s)
+    setTimeout(() => {
+      put({ action: 'incrementalLayout', nodeIds: aiSuggestedNewNodes.map(n => n.tempId) });
+      onCanvasMutation?.();
+    }, 300);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiAnalysisIsDemo, aiSuggestedNewNodes.length]);
 
   // Re-run fresh analysis, clearing the previous result and applied tracking
   const handleReAnalyze = async () => {
@@ -207,20 +289,19 @@ export function useAIHandlers(
   };
 
   const handleAiUpdate = async (prompt: string) => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
+    const isDemo = fullServerState?.settings?.templateId === 'demo-jack';
+    if (!isDemo && !activeApiKey) { setShowAISettings(true); return; }
     setAiUpdateResult(null);
     setAiUpdateError(null);
     setAiUpdateLoading(true);
     try {
+      const updateConfig = isDemo
+        ? { apiKey: 'demo', provider: 'demo' as AIProvider, model: 'demo-mock', baseUrl: undefined }
+        : { apiKey: activeApiKey, provider: aiConfig.provider, model: aiConfig.models[aiConfig.provider], baseUrl: aiConfig.baseUrls?.[aiConfig.provider] };
       const { data, aborted, engine } = await aiEngine.runUpdate(
         prompt,
         fullServerState,
-        {
-          apiKey:   activeApiKey,
-          provider: aiConfig.provider,
-          model:    aiConfig.models[aiConfig.provider],
-          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
-        },
+        updateConfig,
       );
 
       // If aborted (mode toggled mid-flight), silently discard

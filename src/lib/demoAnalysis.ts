@@ -248,3 +248,60 @@ The workflow represents a daily financial reconciliation routine. Jack (the cent
     ]
   }
 };
+
+/** Pre-built AI Update response for the Sarah-promotion demo scenario */
+export const JACK_ROUTINE_DEMO_UPDATE_RESULT = {
+  summary: "Sarah has been promoted to Head of Portfolio Management. Two junior analysts — Alex and Jamie — have joined her team to handle first-line Exception File reviews. Jack now sends Exception Files to Alex first; Alex escalates complex cases to Sarah, while Jamie provides backup triage support. The direct Jack-to-Sarah Slack step is replaced by this structured review chain.",
+  add: {
+    nodes: [
+      {
+        id: "alex_analyst",
+        name: "Alex (Junior Analyst)",
+        initials: "AA",
+        role: "person",
+        summary: "First-line reviewer of Exception Files from Jack's reconciliation script. Handles standard price-break overrides and escalates complex cases to Sarah.",
+        tasks: [
+          { id: "t_review_exceptions", title: "Review Exception Files from Python reconciliation script", status: "todo", priority: "high" },
+          { id: "t_escalate_sarah",    title: "Escalate non-standard price breaks to Sarah for sign-off", status: "todo", priority: "medium" }
+        ]
+      },
+      {
+        id: "jamie_analyst",
+        name: "Jamie (Junior Analyst)",
+        initials: "JA",
+        role: "person",
+        summary: "Backup analyst who assists Alex with overflow exception triage when volume is high.",
+        tasks: [
+          { id: "t_overflow_triage", title: "Handle overflow Exception File triage alongside Alex", status: "todo", priority: "medium" }
+        ]
+      }
+    ],
+    edges: [
+      { id: "e_reconciler_alex",  source: "reconciler",    target: "alex_analyst", name: "Exception File (first review)" },
+      { id: "e_alex_sarah",       source: "alex_analyst",  target: "sarah",        name: "Escalate complex cases" },
+      { id: "e_alex_jamie",       source: "alex_analyst",  target: "jamie_analyst",name: "Overflow triage request" },
+      { id: "e_analysts_postgresql", source: "alex_analyst", target: "postgresql", name: "Approved overrides (standard)" }
+    ],
+    groups: [
+      { id: "grp_analyst_tier", name: "Junior Analyst Review Tier", color: "#8B5CF6", nodeIds: ["alex_analyst", "jamie_analyst"], parentGroupId: null }
+    ]
+  },
+  update: {
+    nodes: [
+      {
+        id: "sarah",
+        name: "Sarah (Head of Portfolio Management)",
+        summary: "Promoted to Head of Portfolio Management. Now manages two junior analysts and handles only escalated, non-standard exception cases. No longer involved in routine daily overrides."
+      }
+    ],
+    groupExtensions: [],
+    groups: [],
+    nodeTasks: [],
+    edges: []
+  },
+  remove: {
+    nodeIds: [],
+    edgeIds: ["e_reconciler_sarah"],
+    groupIds: []
+  }
+};

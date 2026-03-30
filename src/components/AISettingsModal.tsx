@@ -120,74 +120,6 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
 
   if (!isOpen) return null;
 
-  // ── Demo mode: show a simple info panel instead of provider/key settings ───
-  if (isDemoMode) {
-    return (
-      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-        <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-settings-title"
-          className="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col relative border border-slate-100 overflow-hidden">
-
-          {/* Header */}
-          <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100">
-            <div>
-              <h2 id="ai-settings-title" className="text-lg font-bold text-slate-800">AI Settings</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Demo mode — pre-configured</p>
-            </div>
-            <button onClick={onClose}
-              className="p-1.5 rounded-full hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-700">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="px-8 py-8 flex flex-col items-center gap-5">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center">
-              <span className="text-3xl select-none">🎭</span>
-            </div>
-            <div className="text-center">
-              <h3 className="text-base font-bold text-emerald-800">Demo Mode Active</h3>
-              <p className="text-sm text-slate-500 mt-1 leading-relaxed max-w-xs">
-                This is a scripted demo of Jack's daily reconciliation workflow. No AI key is needed — all AI features run on built-in mock data.
-              </p>
-            </div>
-
-            {/* Feature availability */}
-            <div className="w-full bg-slate-50 rounded-xl divide-y divide-slate-100 border border-slate-100">
-              {[
-                { label: "Export PNG",          available: true  },
-                { label: "Export CSV",          available: true  },
-                { label: "Data Flow view",      available: true  },
-                { label: "Canvas interactions", available: true  },
-                { label: "AI Analyze",          available: true  },
-                { label: "AI Update",           available: true  },
-                { label: "Custom API key",      available: false },
-              ].map(({ label, available }) => (
-                <div key={label} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                  <span className={available ? "text-slate-700" : "text-slate-400"}>{label}</span>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                    available
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-100 text-slate-400"
-                  }`}>
-                    {available ? "✓ available" : "demo only"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-8 pb-7 pt-0 border-t border-slate-100">
-            <button onClick={onClose}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors">
-              Got it
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const activeProvider = config.provider;
   const activeMeta     = PROVIDERS.find((p) => p.id === activeProvider)!;
   const activeColor    = COLORS[activeProvider];
@@ -233,7 +165,22 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-7">
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-7 relative">
+          {/* Demo mode: invisible click-blocker so nothing in the form is interactive */}
+          {isDemoMode && <div className="absolute inset-0 z-10 cursor-not-allowed" title="Demo mode — pre-configured, cannot be changed" />}
+
+          {/* ── Demo mode notice ─────────────────────────────────────────── */}
+          {isDemoMode && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+              <span className="text-lg shrink-0 mt-0.5">🔒</span>
+              <div>
+                <p className="text-sm font-bold text-amber-800">Pre-configured for demo</p>
+                <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+                  These settings are fixed for the scripted demo workflow. Export (PNG, CSV), data flow, and canvas interactions work normally.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ── Section 1: Provider selection ─────────────────────────────── */}
           <section>
@@ -556,7 +503,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
         <div className="px-8 pb-7 pt-4 border-t border-slate-100 space-y-2 shrink-0">
-          {!hasKeyForActive && (
+          {!hasKeyForActive && !isDemoMode && (
             <p className="text-xs text-amber-600 text-center">
               Add an API key for <strong>{activeMeta.name}</strong> to enable AI features.
             </p>
