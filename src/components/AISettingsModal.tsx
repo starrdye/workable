@@ -195,66 +195,158 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
             </div>
           </section>
 
-          {/* ── Section 2: Model / Endpoint selection ─────────────────────── */}
-          <section>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-              {activeMeta.usesEndpointId ? "Endpoint ID" : "Model"} —{" "}
-              <span className={activeColor.text}>{activeMeta.name}</span>
-            </p>
+          {/* ── Section 2: Doubao billing plan toggle ─────────────────────── */}
+          {activeProvider === "doubao" && activeMeta.codingPlanBaseUrl && (
+            <section>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Billing Plan — <span className={activeColor.text}>ByteDance</span>
+              </p>
+              {(() => {
+                const isCodingPlan = (config.baseUrls?.doubao ?? "").includes("/coding/");
+                const switchPlan = (coding: boolean) => {
+                  const url = coding
+                    ? activeMeta.codingPlanBaseUrl!
+                    : (activeMeta.defaultBaseUrl ?? "");
+                  // Switch base URL and reset model to a sensible default for the plan
+                  setBaseUrl("doubao", url);
+                  if (coding) {
+                    // Pre-select the first coding plan model if no model is set yet
+                    const first = activeMeta.codingPlanModels?.[0];
+                    if (first && !config.models.doubao) setModel("doubao", first.id);
+                  } else {
+                    // Clear model so user fills in the endpoint ID
+                    setModel("doubao", "");
+                  }
+                };
+                return (
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      {
+                        id: false,
+                        label: "Standard",
+                        sub: "Pay-per-use",
+                        desc: "Requires an ep-xxx endpoint ID from Ark console.",
+                        hint: "/api/v3",
+                      },
+                      {
+                        id: true,
+                        label: "Coding Plan",
+                        sub: "Subscription",
+                        desc: "Use a direct model name — no endpoint ID needed.",
+                        hint: "/api/coding/v3",
+                      },
+                    ].map((opt) => {
+                      const isActive = isCodingPlan === opt.id;
+                      return (
+                        <button
+                          key={String(opt.id)}
+                          onClick={() => switchPlan(opt.id)}
+                          className={`text-left p-4 rounded-2xl border-2 transition-all ${
+                            isActive
+                              ? "bg-violet-50 border-violet-400 text-violet-800 ring-2 ring-violet-400 ring-offset-1"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="font-bold text-sm">{opt.label}</span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ml-auto ${
+                              isActive ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-500"
+                            }`}>
+                              {opt.sub}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-snug mb-1.5">{opt.desc}</p>
+                          <code className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                            isActive ? "bg-violet-100 text-violet-600" : "bg-slate-100 text-slate-400"
+                          }`}>{opt.hint}</code>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </section>
+          )}
 
-            {activeMeta.usesEndpointId ? (
-              /* Doubao: free-text endpoint ID input */
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={config.models[activeProvider] ?? ""}
-                  onChange={(e) => setModel(activeProvider, e.target.value.trim())}
-                  placeholder={activeMeta.endpointPlaceholder}
-                  className={`w-full bg-slate-50 border-2 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 transition-colors ${
-                    config.models[activeProvider]
-                      ? `border-current ${activeColor.text} focus:${activeColor.ring}`
-                      : "border-slate-200 focus:border-violet-400 focus:ring-violet-400"
-                  }`}
-                />
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  {activeMeta.endpointHint}
-                </p>
-              </div>
-            ) : (
-              /* Anthropic / Gemini: radio button list */
-              <div className="space-y-2">
-                {activeMeta.models.map((m) => {
-                  const isSelected = config.models[activeProvider] === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => setModel(activeProvider, m.id)}
-                      className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-start gap-3 ${
-                        isSelected
-                          ? `${activeColor.bg} border-current ${activeColor.text}`
-                          : "border-slate-200 bg-white hover:border-slate-300 text-slate-700"
-                      }`}
-                    >
-                      <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                        isSelected ? "border-current" : "border-slate-300"
-                      }`}>
-                        {isSelected && <span className={`w-2 h-2 rounded-full ${activeColor.dot}`} />}
-                      </span>
-                      <span>
-                        <span className={`block text-sm font-semibold ${isSelected ? activeColor.text : "text-slate-800"}`}>
-                          {m.label}
-                        </span>
-                        <span className="block text-xs text-slate-500 mt-0.5">{m.description}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+          {/* ── Section 2b: Model / Endpoint selection ────────────────────── */}
+          <section>
+            {(() => {
+              const isCodingPlan =
+                activeProvider === "doubao" &&
+                (config.baseUrls?.doubao ?? "").includes("/coding/");
+              const showModelList =
+                !activeMeta.usesEndpointId || isCodingPlan;
+              const modelList = isCodingPlan
+                ? (activeMeta.codingPlanModels ?? [])
+                : activeMeta.models;
+              const sectionLabel = isCodingPlan
+                ? "Model"
+                : activeMeta.usesEndpointId
+                ? "Endpoint ID"
+                : "Model";
+
+              return (
+                <>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                    {sectionLabel} — <span className={activeColor.text}>{activeMeta.name}</span>
+                  </p>
+
+                  {showModelList ? (
+                    /* Model dropdown (Anthropic / Gemini / Doubao coding plan) */
+                    <div className="space-y-2">
+                      {modelList.map((m) => {
+                        const isSelected = config.models[activeProvider] === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => setModel(activeProvider, m.id)}
+                            className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-start gap-3 ${
+                              isSelected
+                                ? `${activeColor.bg} border-current ${activeColor.text}`
+                                : "border-slate-200 bg-white hover:border-slate-300 text-slate-700"
+                            }`}
+                          >
+                            <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                              isSelected ? "border-current" : "border-slate-300"
+                            }`}>
+                              {isSelected && <span className={`w-2 h-2 rounded-full ${activeColor.dot}`} />}
+                            </span>
+                            <span>
+                              <span className={`block text-sm font-semibold ${isSelected ? activeColor.text : "text-slate-800"}`}>
+                                {m.label}
+                              </span>
+                              <span className="block text-xs text-slate-500 mt-0.5">{m.description}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* Free-text endpoint ID (Doubao standard) */
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={config.models[activeProvider] ?? ""}
+                        onChange={(e) => setModel(activeProvider, e.target.value.trim())}
+                        placeholder={activeMeta.endpointPlaceholder}
+                        className={`w-full bg-slate-50 border-2 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 transition-colors ${
+                          config.models[activeProvider]
+                            ? `border-current ${activeColor.text} focus:${activeColor.ring}`
+                            : "border-slate-200 focus:border-violet-400 focus:ring-violet-400"
+                        }`}
+                      />
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        {activeMeta.endpointHint}
+                      </p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </section>
 
-          {/* ── Section 2b: Base URL (providers that expose it) ───────────── */}
-          {activeMeta.defaultBaseUrl && (
+          {/* ── Section 2c: Base URL (advanced / manual override) ─────────── */}
+          {activeMeta.defaultBaseUrl && !(activeProvider === "doubao") && (
             <section>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
                 Base URL — <span className={activeColor.text}>{activeMeta.name}</span>

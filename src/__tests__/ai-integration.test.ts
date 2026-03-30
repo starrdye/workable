@@ -5,11 +5,18 @@
  * Credentials are loaded automatically from the project-root .env file via
  * vitest.config.ts (uses Vite's loadEnv — no dotenv package required).
  *
+ * Supports both billing plans:
+ *   Standard (pay-per-use)  DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+ *                           DOUBAO_ENDPOINT_ID=ep-xxxxxxxxxxxxxxxx-xxxxx
+ *
+ *   Coding plan             DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
+ *                           DOUBAO_ENDPOINT_ID=doubao-seed-2.0-lite   (model name, not ep-xxx)
+ *
  * To run:
  *   npx vitest src/__tests__/ai-integration.test.ts
  *
- * The tests are automatically skipped when DOUBAO_API_KEY or
- * DOUBAO_ENDPOINT_ID are absent from the environment.
+ * Tests are automatically skipped when DOUBAO_API_KEY or DOUBAO_ENDPOINT_ID
+ * are absent from the environment.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -20,9 +27,20 @@ import { jsonrepair } from 'jsonrepair';
 // ── Credentials (populated from .env via vitest.config.ts) ──────────────────
 
 const API_KEY     = process.env.DOUBAO_API_KEY?.trim();
+/** For coding plan: model name (e.g. doubao-seed-2.0-lite).
+ *  For standard plan: endpoint ID (e.g. ep-xxxxxxxx).         */
 const ENDPOINT_ID = process.env.DOUBAO_ENDPOINT_ID?.trim();
-const BASE_URL    = process.env.DOUBAO_BASE_URL?.trim()
-                    || 'https://ark.cn-beijing.volces.com/api/v3';
+/** Defaults to coding plan URL when DOUBAO_BASE_URL is not set and
+ *  DOUBAO_ENDPOINT_ID looks like a model name (no "ep-" prefix). */
+const BASE_URL = (() => {
+  const explicit = process.env.DOUBAO_BASE_URL?.trim();
+  if (explicit) return explicit;
+  // Auto-detect: if the model value doesn't start with "ep-" it's a coding plan model name
+  const isCodingPlanModel = ENDPOINT_ID && !ENDPOINT_ID.startsWith('ep-');
+  return isCodingPlanModel
+    ? 'https://ark.cn-beijing.volces.com/api/coding/v3'
+    : 'https://ark.cn-beijing.volces.com/api/v3';
+})();
 
 /** True when required credentials are missing — tests are skipped automatically */
 const missingCreds = !API_KEY || !ENDPOINT_ID;

@@ -44,6 +44,14 @@ export interface ProviderMeta {
   defaultBaseUrl?: string;
   baseUrlPlaceholder?: string;
   baseUrlHint?: string;
+  /**
+   * Coding-plan variant (Doubao only):
+   * When the user selects "Coding Plan" billing, the base URL switches to
+   * codingPlanBaseUrl and model is picked from codingPlanModels instead of
+   * a free-text endpoint ID.
+   */
+  codingPlanBaseUrl?: string;
+  codingPlanModels?: ModelOption[];
 }
 
 export const PROVIDERS: ProviderMeta[] = [
@@ -82,14 +90,23 @@ export const PROVIDERS: ProviderMeta[] = [
     keyPlaceholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
     keyHint: 'Get a key at console.volcengine.com/ark → API Keys',
     color: 'violet',
+    // Standard (pay-per-use): requires an ep-xxx endpoint ID
     usesEndpointId: true,
     endpointPlaceholder: 'ep-xxxxxxxxxxxxxxxx-xxxxx',
-    endpointHint: 'Create an endpoint at console.volcengine.com/ark → Online Inference, then copy its ID here.',
+    endpointHint: 'Create an endpoint at console.volcengine.com/ark → Online Inference, then copy its ID.',
     defaultModel: '',
     models: [],
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     baseUrlPlaceholder: 'https://ark.cn-beijing.volces.com/api/v3',
-    baseUrlHint: 'Use /api/coding/v3 for Coding Plan billing · /api/v3 for standard billing',
+    baseUrlHint: 'Standard pay-per-use base URL. Switch to Coding Plan above to use /api/coding/v3.',
+    // Coding plan: uses /api/coding/v3 and a direct model name (no endpoint ID needed)
+    codingPlanBaseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    codingPlanModels: [
+      { id: 'doubao-seed-2.0-lite', label: 'Doubao Seed 2.0 Lite', description: 'Fast & cost-efficient — recommended for coding plan' },
+      { id: 'doubao-seed-2.0',      label: 'Doubao Seed 2.0',      description: 'Full reasoning model — higher quality'              },
+      { id: 'doubao-pro-32k',       label: 'Doubao Pro 32K',       description: '32K context window — long documents'               },
+      { id: 'doubao-lite-32k',      label: 'Doubao Lite 32K',      description: '32K context — lighter & faster'                    },
+    ],
   },
 ];
 
