@@ -31,6 +31,78 @@ export interface LayoutGroup {
 
 export type PositionMap = Record<string, { x: number; y: number; z?: number }>;
 
+// ── Global Node Overlap Resolution ─────────────────────────────────────────────
+
+export function resolveNodeOverlaps(
+  positions: PositionMap,
+  canvasW: number,
+  canvasH: number,
+  padX = 80,
+  padY = 70
+): PositionMap {
+  const result = { ...positions };
+  const MIN_DIST_X = 75;  // 32px glyph radius + horizontal breathing room
+  const MIN_DIST_Y = 110; // 32px glyph radius + ~50px label + vertical breathing
+  const allIds   = Object.keys(result);
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (let i = 0; i < allIds.length; i++) {
+      for (let j = i + 1; j < allIds.length; j++) {
+        const a  = result[allIds[i]];
+        const b  = result[allIds[j]];
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        
+        // Elliptical distance ratio
+        const ratioX = dx / MIN_DIST_X;
+        const ratioY = dy / MIN_DIST_Y;
+        const distSq = ratioX * ratioX + ratioY * ratioY;
+        
+        if (distSq < 1 && distSq > 0) {
+          const dist = Math.sqrt(distSq);
+          const overlap = 1 - dist;
+          
+          // Normalized elliptical push directions point outward
+          const nx = ratioX / dist;
+          const ny = ratioY / dist;
+          
+          // Multiply back by the radii to get actual pixels, then apply the 
+          // overlap fraction, plus a tiny structural push to break total symmetry
+          const fx = nx * overlap * MIN_DIST_X * 0.30 + (dx === 0 ? 0.1 : 0);
+          const fy = ny * overlap * MIN_DIST_Y * 0.70 + (dy === 0 ? 1.0 : 0);
+          
+          result[allIds[i]] = {
+            ...a,
+            x: Math.round(Math.max(padX,           a.x - fx)),
+            y: Math.round(Math.max(padY,            a.y - fy)),
+          };
+          result[allIds[j]] = {
+            ...b,
+            x: Math.round(Math.min(canvasW - padX, b.x + fx)),
+            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
+          };
+          moved = true;
+        } else if (distSq === 0) {
+          // Exactly identical positions — push apart manually
+          const fy = MIN_DIST_Y * 0.5;
+          result[allIds[i]] = {
+            ...a,
+            y: Math.round(Math.max(padY, a.y - fy)),
+          };
+          result[allIds[j]] = {
+            ...b,
+            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
+          };
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return result;
+}
+
 // ── Group-aware layout ─────────────────────────────────────────────────────────
 //
 // AABB physics solver (no velocity / no elasticity — pure position assignment).
@@ -409,7 +481,9 @@ export function groupAwareLayout(
     }
   }
 
-  return result;
+  // Final guarantee: multi-group nodes like Jack might have been squished back
+  // into single-group nodes like Bloomberg. Resolve node-level overlaps.
+  return resolveNodeOverlaps(result, canvasW, canvasH, 60, 40);
 }
 
 // ── Cycle breaker ─────────────────────────────────────────────────────────────
@@ -790,72 +864,9 @@ export function hierarchicalLayout(
   }
 
   // ── Global pairwise overlap resolution ────────────────────────────────────
-  // Catches nodes that ended up too close across adjacent layers (different X
-  // buckets) — e.g. two nodes both pulled to canvas-centre Y by the bottom-up
-  // refinement pass that also happen to be in very close layers.
-  // We push overlapping pairs apart using an elliptical check rather than a strict
-  // circle to account for the text label rendered below the node glyph.
-  const MIN_DIST_X = 75;  // 32px glyph radius + horizontal breathing room
-  const MIN_DIST_Y = 110; // 32px glyph radius + ~50px label + vertical breathing
-  const allIds   = Object.keys(positions);
-  for (let pass = 0; pass < 8; pass++) {
-    let moved = false;
-    for (let i = 0; i < allIds.length; i++) {
-      for (let j = i + 1; j < allIds.length; j++) {
-        const a  = positions[allIds[i]];
-        const b  = positions[allIds[j]];
-        if (!a || !b) continue;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        
-        // Elliptical distance ratio
-        const ratioX = dx / MIN_DIST_X;
-        const ratioY = dy / MIN_DIST_Y;
-        const distSq = ratioX * ratioX + ratioY * ratioY;
-        
-        if (distSq < 1 && distSq > 0) {
-          const dist = Math.sqrt(distSq);
-          const overlap = 1 - dist;
-          
-          // Normalized elliptical push directions point outward
-          const nx = ratioX / dist;
-          const ny = ratioY / dist;
-          
-          // Multiply back by the radii to get actual pixels, then apply the 
-          // overlap fraction, plus a tiny structural push to break total symmetry
-          const fx = nx * overlap * MIN_DIST_X * 0.30 + (dx === 0 ? 0.1 : 0);
-          const fy = ny * overlap * MIN_DIST_Y * 0.70 + (dy === 0 ? 1.0 : 0);
-          
-          positions[allIds[i]] = {
-            ...a,
-            x: Math.round(Math.max(padX,           a.x - fx)),
-            y: Math.round(Math.max(padY,            a.y - fy)),
-          };
-          positions[allIds[j]] = {
-            ...b,
-            x: Math.round(Math.min(canvasW - padX, b.x + fx)),
-            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
-          };
-          moved = true;
-        } else if (distSq === 0) {
-          // Exactly identical positions — push apart manually
-          const fy = MIN_DIST_Y * 0.5;
-          positions[allIds[i]] = {
-            ...a,
-            y: Math.round(Math.max(padY, a.y - fy)),
-          };
-          positions[allIds[j]] = {
-            ...b,
-            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
-          };
-          moved = true;
-        }
-      }
-    }
-    if (!moved) break;
-  }
-
-  return positions;
+  // Catches nodes that ended up too close across adjacent layers, and uses the
+  // shared elliptical check helper to account for node label room.
+  return resolveNodeOverlaps(positions, canvasW, canvasH, padX, padY);
 }
 
 // ── 2. Radial web layout ───────────────────────────────────────────────────────
