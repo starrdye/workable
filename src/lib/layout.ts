@@ -31,6 +31,78 @@ export interface LayoutGroup {
 
 export type PositionMap = Record<string, { x: number; y: number; z?: number }>;
 
+// ── Global Node Overlap Resolution ─────────────────────────────────────────────
+
+export function resolveNodeOverlaps(
+  positions: PositionMap,
+  canvasW: number,
+  canvasH: number,
+  padX = 80,
+  padY = 70
+): PositionMap {
+  const result = { ...positions };
+  const MIN_DIST_X = 75;  // 32px glyph radius + horizontal breathing room
+  const MIN_DIST_Y = 110; // 32px glyph radius + ~50px label + vertical breathing
+  const allIds = Object.keys(result);
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (let i = 0; i < allIds.length; i++) {
+      for (let j = i + 1; j < allIds.length; j++) {
+        const a = result[allIds[i]];
+        const b = result[allIds[j]];
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+
+        // Elliptical distance ratio
+        const ratioX = dx / MIN_DIST_X;
+        const ratioY = dy / MIN_DIST_Y;
+        const distSq = ratioX * ratioX + ratioY * ratioY;
+
+        if (distSq < 1 && distSq > 0) {
+          const dist = Math.sqrt(distSq);
+          const overlap = 1 - dist;
+
+          // Normalized elliptical push directions point outward
+          const nx = ratioX / dist;
+          const ny = ratioY / dist;
+
+          // Multiply back by the radii to get actual pixels, then apply the 
+          // overlap fraction, plus a tiny structural push to break total symmetry
+          const fx = nx * overlap * MIN_DIST_X * 0.30 + (dx === 0 ? 0.1 : 0);
+          const fy = ny * overlap * MIN_DIST_Y * 0.70 + (dy === 0 ? 1.0 : 0);
+
+          result[allIds[i]] = {
+            ...a,
+            x: Math.round(Math.max(padX, a.x - fx)),
+            y: Math.round(Math.max(padY, a.y - fy)),
+          };
+          result[allIds[j]] = {
+            ...b,
+            x: Math.round(Math.min(canvasW - padX, b.x + fx)),
+            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
+          };
+          moved = true;
+        } else if (distSq === 0) {
+          // Exactly identical positions — push apart manually
+          const fy = MIN_DIST_Y * 0.5;
+          result[allIds[i]] = {
+            ...a,
+            y: Math.round(Math.max(padY, a.y - fy)),
+          };
+          result[allIds[j]] = {
+            ...b,
+            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
+          };
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return result;
+}
+
 // ── Group-aware layout ─────────────────────────────────────────────────────────
 //
 // AABB physics solver (no velocity / no elasticity — pure position assignment).
@@ -62,8 +134,8 @@ export function groupAwareLayout(
   /** Optional edge list — used to identify the hub (most-connected) node. */
   edges?: LayoutEdge[],
 ): PositionMap {
-  const GC_PAD  = 34;   // must match GraphCanvas PAD constant
-  const GC_SZ   = 56;   // must match GraphCanvas node element size
+  const GC_PAD = 34;   // must match GraphCanvas PAD constant
+  const GC_SZ = 56;   // must match GraphCanvas node element size
   const SEP_GAP = 16;   // minimum pixel gap between non-sharing group boxes
 
   // ── Recursively collect all nodeIds for a group (own + all descendants) ──
@@ -82,7 +154,7 @@ export function groupAwareLayout(
   const groupIdSet = new Set(groups.map((g) => g.id));
   const topLevel = groups
     .filter((g) => !g.parentGroupId || !groupIdSet.has(g.parentGroupId))
-    .map((g)    => ({ g, effIds: effNodeIds(g.id) }))
+    .map((g) => ({ g, effIds: effNodeIds(g.id) }))
     .filter(({ effIds }) => effIds.some((id) => positions[id]));
 
   if (topLevel.length < 2) return positions;
@@ -142,8 +214,8 @@ export function groupAwareLayout(
       if (!result[id]) continue;
       result[id] = {
         ...result[id],
-        x: Math.max(60,            Math.min(canvasW - 60, result[id].x + mdx)),
-        y: Math.max(40,            Math.min(canvasH - 40, result[id].y + mdy)),
+        x: Math.max(60, Math.min(canvasW - 60, result[id].x + mdx)),
+        y: Math.max(40, Math.min(canvasH - 40, result[id].y + mdy)),
       };
     }
   };
@@ -161,10 +233,10 @@ export function groupAwareLayout(
   // Gravity is kept very light so it cannot overpower the AABB collision push.
   // (Original 0.04 allowed gravity to pull a group back faster than a small
   // collision correction could push it out, causing persistent overlap.)
-  const GRAVITY       = 0.012;  // gentle hub pull — must not defeat collision
-  const TENSION       = 0.08;   // pull sharing groups toward each other (soft)
-  const COOLING_RATE  = 0.982;  // gravity + tension decay rate per iteration
-  const ITERATIONS    = 280;    // max iterations before forced stop
+  const GRAVITY = 0.012;  // gentle hub pull — must not defeat collision
+  const TENSION = 0.08;   // pull sharing groups toward each other (soft)
+  const COOLING_RATE = 0.982;  // gravity + tension decay rate per iteration
+  const ITERATIONS = 280;    // max iterations before forced stop
 
   let temperature = 1.0;
 
@@ -190,8 +262,8 @@ export function groupAwareLayout(
         const midX = (bI.cx + bJ.cx) / 2;
         const midY = (bI.cy + bJ.cy) / 2;
         const t = TENSION * temperature;
-        dx[i] += (midX - bI.cx) * t;   dy[i] += (midY - bI.cy) * t;
-        dx[j] += (midX - bJ.cx) * t;   dy[j] += (midY - bJ.cy) * t;
+        dx[i] += (midX - bI.cx) * t; dy[i] += (midY - bI.cy) * t;
+        dx[j] += (midX - bJ.cx) * t; dy[j] += (midY - bJ.cy) * t;
       }
     }
 
@@ -206,16 +278,16 @@ export function groupAwareLayout(
         const bI = getBbox(topLevel[i].effIds);
         const bJ = getBbox(topLevel[j].effIds);
         if (!bI || !bJ) continue;
-        const dcx  = bI.cx - bJ.cx;
-        const dcy  = bI.cy - bJ.cy;
+        const dcx = bI.cx - bJ.cx;
+        const dcy = bI.cy - bJ.cy;
         const dist = Math.sqrt(dcx * dcx + dcy * dcy);
         if (dist < SHARING_SEP) {
           // Push along the centroid vector; break ties along X.
-          const nx   = dist > 0 ? dcx / dist : 1;
-          const ny   = dist > 0 ? dcy / dist : 0;
+          const nx = dist > 0 ? dcx / dist : 1;
+          const ny = dist > 0 ? dcy / dist : 0;
           const push = (SHARING_SEP - dist) * 0.3;
-          dx[i] += nx * push;   dy[i] += ny * push;
-          dx[j] -= nx * push;   dy[j] -= ny * push;
+          dx[i] += nx * push; dy[i] += ny * push;
+          dx[j] -= nx * push; dy[j] -= ny * push;
         }
       }
     }
@@ -292,26 +364,26 @@ export function groupAwareLayout(
         if (overlapX <= 0 || overlapY <= 0) continue;
 
         anyMoved = true;
-        const useX  = overlapX <= overlapY;
-        const push  = (useX ? overlapX : overlapY) * 0.5;
+        const useX = overlapX <= overlapY;
+        const push = (useX ? overlapX : overlapY) * 0.5;
         // aFirst: true when A's centroid is ≤ B's on the resolution axis
         const aFirst = useX ? bA.cx <= bB.cx : bA.cy <= bB.cy;
 
         // Facing nodes of A: highest values when A is left/above (aFirst=true),
         // lowest values when A is right/below (aFirst=false).
         const aFacing = sortFn(topLevel[i].effIds, useX, aFirst);
-        const aCount  = Math.ceil(aFacing.length / 2);
+        const aCount = Math.ceil(aFacing.length / 2);
         aFacing.slice(0, aCount).forEach(id => {
           if (useX) nodeDx[id] = (nodeDx[id] ?? 0) + (aFirst ? -push : push);
-          else      nodeDy[id] = (nodeDy[id] ?? 0) + (aFirst ? -push : push);
+          else nodeDy[id] = (nodeDy[id] ?? 0) + (aFirst ? -push : push);
         });
 
         // Facing nodes of B: lowest values when B is right/below (aFirst=true).
         const bFacing = sortFn(topLevel[j].effIds, useX, !aFirst);
-        const bCount  = Math.ceil(bFacing.length / 2);
+        const bCount = Math.ceil(bFacing.length / 2);
         bFacing.slice(0, bCount).forEach(id => {
           if (useX) nodeDx[id] = (nodeDx[id] ?? 0) + (aFirst ? push : -push);
-          else      nodeDy[id] = (nodeDy[id] ?? 0) + (aFirst ? push : -push);
+          else nodeDy[id] = (nodeDy[id] ?? 0) + (aFirst ? push : -push);
         });
       }
     }
@@ -356,7 +428,7 @@ export function groupAwareLayout(
 
       // Build union bbox of all non-member groups that contain this node.
       let uLeft = Infinity, uRight = -Infinity;
-      let uTop  = Infinity, uBottom = -Infinity;
+      let uTop = Infinity, uBottom = -Infinity;
 
       for (let i = 0; i < n; i++) {
         if (topLevel[i].effIds.includes(nodeId)) continue; // member — skip
@@ -366,9 +438,9 @@ export function groupAwareLayout(
         const bT = bbox.cy - bbox.hh, bB = bbox.cy + bbox.hh;
         if (pos.x <= bL || pos.x >= bR || pos.y <= bT || pos.y >= bB) continue;
         // Node is inside this group's bbox — expand union.
-        uLeft   = Math.min(uLeft,   bL);
-        uRight  = Math.max(uRight,  bR);
-        uTop    = Math.min(uTop,    bT);
+        uLeft = Math.min(uLeft, bL);
+        uRight = Math.max(uRight, bR);
+        uTop = Math.min(uTop, bT);
         uBottom = Math.max(uBottom, bB);
       }
 
@@ -377,24 +449,24 @@ export function groupAwareLayout(
       evMoved = true;
 
       // Exit distances to each side of the union bbox (with SEP_GAP clearance).
-      const dL = pos.x - uLeft  + SEP_GAP;   // push LEFT  → new x = uLeft  - SEP_GAP
-      const dR = uRight  - pos.x + SEP_GAP;  // push RIGHT → new x = uRight + SEP_GAP
-      const dT = pos.y - uTop   + SEP_GAP;   // push UP    → new y = uTop   - SEP_GAP
+      const dL = pos.x - uLeft + SEP_GAP;   // push LEFT  → new x = uLeft  - SEP_GAP
+      const dR = uRight - pos.x + SEP_GAP;  // push RIGHT → new x = uRight + SEP_GAP
+      const dT = pos.y - uTop + SEP_GAP;   // push UP    → new y = uTop   - SEP_GAP
       const dB = uBottom - pos.y + SEP_GAP;  // push DOWN  → new y = uBottom+ SEP_GAP
 
       // Only consider exits that land within canvas bounds.
       type Exit = { axis: 'x' | 'y'; delta: number; dist: number };
       const exits: Exit[] = [];
-      if (pos.x - dL >= 60)          exits.push({ axis: 'x', delta: -dL, dist: dL });
-      if (pos.x + dR <= canvasW - 60) exits.push({ axis: 'x', delta:  dR, dist: dR });
-      if (pos.y - dT >= 40)          exits.push({ axis: 'y', delta: -dT, dist: dT });
-      if (pos.y + dB <= canvasH - 40) exits.push({ axis: 'y', delta:  dB, dist: dB });
+      if (pos.x - dL >= 60) exits.push({ axis: 'x', delta: -dL, dist: dL });
+      if (pos.x + dR <= canvasW - 60) exits.push({ axis: 'x', delta: dR, dist: dR });
+      if (pos.y - dT >= 40) exits.push({ axis: 'y', delta: -dT, dist: dT });
+      if (pos.y + dB <= canvasH - 40) exits.push({ axis: 'y', delta: dB, dist: dB });
 
       if (exits.length === 0) continue; // surrounded — cannot escape, leave it
 
       const best = exits.reduce((a, b) => a.dist <= b.dist ? a : b);
       if (best.axis === 'x') evDx[nodeId] = (evDx[nodeId] ?? 0) + best.delta;
-      else                   evDy[nodeId] = (evDy[nodeId] ?? 0) + best.delta;
+      else evDy[nodeId] = (evDy[nodeId] ?? 0) + best.delta;
     }
 
     if (!evMoved) break;
@@ -409,7 +481,9 @@ export function groupAwareLayout(
     }
   }
 
-  return result;
+  // Final guarantee: multi-group nodes like Jack might have been squished back
+  // into single-group nodes like Bloomberg. Resolve node-level overlaps.
+  return resolveNodeOverlaps(result, canvasW, canvasH, 60, 40);
 }
 
 // ── Cycle breaker ─────────────────────────────────────────────────────────────
@@ -427,7 +501,7 @@ export function groupAwareLayout(
 function detectBackEdges(nodes: LayoutNode[], edges: LayoutEdge[]): Set<string> {
   const WHITE = 0, GRAY = 1, BLACK = 2;
   const color: Record<string, number> = {};
-  const adj:   Record<string, string[]> = {};
+  const adj: Record<string, string[]> = {};
 
   for (const n of nodes) { color[n.id] = WHITE; adj[n.id] = []; }
   for (const e of edges) {
@@ -529,8 +603,8 @@ function resolveRingAngles(
         if (absDiff < minAngGap * 2) {
           // Soft-spring repulsion proportional to overlap, cooled by temperature
           const overlap = minAngGap - absDiff / 2;
-          const force   = overlap * 0.25 * cooling;
-          const sign    = diff >= 0 ? 1 : -1;
+          const force = overlap * 0.25 * cooling;
+          const sign = diff >= 0 ? 1 : -1;
           forces[i] -= sign * force;
           forces[j] += sign * force;
         }
@@ -578,7 +652,7 @@ export function hierarchicalLayout(
   // at the far right of the canvas.  We detect back-edges via iterative DFS
   // and exclude them from the layering / predecessor maps.  The actual edges
   // are still rendered on screen — only the POSITION calculation ignores them.
-  const _backEdges  = detectBackEdges(nodes, edges);
+  const _backEdges = detectBackEdges(nodes, edges);
   const layoutEdges = _backEdges.size > 0
     ? edges.filter((e) => !_backEdges.has(`${e.source}→${e.target}`))
     : edges;
@@ -594,17 +668,17 @@ export function hierarchicalLayout(
    *  canvas) from stretching nodes across the whole viewport. */
   const MAX_LAYER_SPACING_X = 230;
   /** Minimum vertical gap between node centres in the same column. */
-  const MIN_NODE_SPACING_Y  = 110;
+  const MIN_NODE_SPACING_Y = 110;
   /** Split dense columns into two sub-columns when count exceeds this. */
-  const MAX_PER_COL   = 4;
+  const MAX_PER_COL = 4;
   /** X offset between the two sub-columns for dense layers. */
   const COL_OFFSET_PX = 55;
 
   // ── Build predecessor / successor maps ──────────────────────────────────
-  const successors: Record<string, Set<string>>   = {};
+  const successors: Record<string, Set<string>> = {};
   const predecessors: Record<string, Set<string>> = {};
   for (const id of ids) {
-    successors[id]   = new Set();
+    successors[id] = new Set();
     predecessors[id] = new Set();
   }
   for (const e of layoutEdges) {
@@ -654,9 +728,9 @@ export function hierarchicalLayout(
   }
 
   // ── Horizontal column spacing ────────────────────────────────────────────
-  const numLayers     = maxLayer + 1;
+  const numLayers = maxLayer + 1;
   const naturalSpacingX = numLayers > 1 ? usableW / (numLayers - 1) : 0;
-  const layerSpacingX   = Math.min(MAX_LAYER_SPACING_X, Math.max(MIN_LAYER_SPACING_X, naturalSpacingX));
+  const layerSpacingX = Math.min(MAX_LAYER_SPACING_X, Math.max(MIN_LAYER_SPACING_X, naturalSpacingX));
 
   // ── Y-position helper: average of already-placed neighbour positions ─────
   const positions: PositionMap = {};
@@ -671,7 +745,7 @@ export function hierarchicalLayout(
   // ── Top-down placement pass ──────────────────────────────────────────────
   for (let l = 0; l <= maxLayer; l++) {
     const layerNodes = layers[l];
-    const count      = layerNodes.length;
+    const count = layerNodes.length;
 
     // Column X (may exceed canvasW for many layers — user can pan)
     const x = numLayers === 1 ? canvasW / 2 : padX + l * layerSpacingX;
@@ -691,7 +765,7 @@ export function hierarchicalLayout(
 
     if (count > MAX_PER_COL) {
       // ── Dense column: split into two sub-columns (left / right of x) ────
-      const leftNodes  = layerNodes.filter((_, i) => i % 2 === 0);
+      const leftNodes = layerNodes.filter((_, i) => i % 2 === 0);
       const rightNodes = layerNodes.filter((_, i) => i % 2 === 1);
 
       const placeCol = (colNodes: string[], xOff: number) => {
@@ -703,7 +777,7 @@ export function hierarchicalLayout(
         const colAnchor = colPredYs.length > 0
           ? colPredYs.reduce((a, b) => a + b, 0) / colPredYs.length
           : canvasH / 2;
-        const span   = Math.max(usableH, (n - 1) * MIN_NODE_SPACING_Y);
+        const span = Math.max(usableH, (n - 1) * MIN_NODE_SPACING_Y);
         const yStart = Math.max(padY, Math.min(canvasH - padY - span, colAnchor - span / 2));
         colNodes.forEach((id, i) => {
           const y = n === 1 ? colAnchor : yStart + i * (span / (n - 1));
@@ -715,8 +789,8 @@ export function hierarchicalLayout(
           };
         });
       };
-      placeCol(leftNodes,  -COL_OFFSET_PX);
-      placeCol(rightNodes,  COL_OFFSET_PX);
+      placeCol(leftNodes, -COL_OFFSET_PX);
+      placeCol(rightNodes, COL_OFFSET_PX);
 
     } else if (count === 1) {
       // ── Single node: inherit anchor Y + lane stagger for visual depth ────
@@ -734,7 +808,7 @@ export function hierarchicalLayout(
 
     } else {
       // ── Normal column: spread nodes evenly, centred on anchorY ──────────
-      const span   = Math.max(usableH * 0.6, (count - 1) * MIN_NODE_SPACING_Y);
+      const span = Math.max(usableH * 0.6, (count - 1) * MIN_NODE_SPACING_Y);
       const yStart = Math.max(padY, Math.min(canvasH - padY - span, anchorY - span / 2));
       for (let i = 0; i < count; i++) {
         const y = count === 1 ? anchorY : yStart + i * (span / (count - 1));
@@ -752,10 +826,10 @@ export function hierarchicalLayout(
   // Blend predecessor Y with successor Y so nodes sit midway along their edge.
   for (let l = maxLayer - 1; l >= 0; l--) {
     if (layers[l].length !== 1) continue;
-    const id   = layers[l][0];
+    const id = layers[l][0];
     const succY = avgPlacedY(successors[id]);
     if (succY === null) continue;
-    const predY  = avgPlacedY(predecessors[id]);
+    const predY = avgPlacedY(predecessors[id]);
     const blendY = predY !== null ? (predY + succY) / 2 : succY;
     const clamped = Math.max(padY, Math.min(canvasH - padY, blendY));
     positions[id] = { ...positions[id], y: Math.round(clamped) };
@@ -778,10 +852,10 @@ export function hierarchicalLayout(
         for (let i = 1; i < colNodes.length; i++) {
           const prev = colNodes[i - 1];
           const curr = colNodes[i];
-          const gap  = (positions[curr]?.y ?? 0) - (positions[prev]?.y ?? 0);
+          const gap = (positions[curr]?.y ?? 0) - (positions[prev]?.y ?? 0);
           if (gap < MIN_NODE_SPACING_Y) {
             const push = (MIN_NODE_SPACING_Y - gap) / 2;
-            if (positions[prev]) positions[prev] = { ...positions[prev], y: Math.round(Math.max(padY,            positions[prev].y - push)) };
+            if (positions[prev]) positions[prev] = { ...positions[prev], y: Math.round(Math.max(padY, positions[prev].y - push)) };
             if (positions[curr]) positions[curr] = { ...positions[curr], y: Math.round(Math.min(canvasH - padY, positions[curr].y + push)) };
           }
         }
@@ -790,51 +864,9 @@ export function hierarchicalLayout(
   }
 
   // ── Global pairwise overlap resolution ────────────────────────────────────
-  // Catches nodes that ended up too close across adjacent layers (different X
-  // buckets) — e.g. two nodes both pulled to canvas-centre Y by the bottom-up
-  // refinement pass that also happen to be in very close layers.
-  // We push overlapping pairs apart primarily in Y (preserving column X),
-  // iterating until no pair is closer than MIN_DIST or we exhaust passes.
-  const NODE_R   = 32; // px — node glyph radius + tight breathing room
-  const MIN_DIST = NODE_R * 2;
-  const allIds   = Object.keys(positions);
-  for (let pass = 0; pass < 8; pass++) {
-    let moved = false;
-    for (let i = 0; i < allIds.length; i++) {
-      for (let j = i + 1; j < allIds.length; j++) {
-        const a  = positions[allIds[i]];
-        const b  = positions[allIds[j]];
-        if (!a || !b) continue;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < MIN_DIST && dist >= 0) {
-          const overlap = MIN_DIST - dist + 4;
-          // Resolve primarily in Y to preserve layer column identity.
-          // Fall back to both axes when nodes are directly on top of each other.
-          const nx = dist === 0 ? 0 : dx / dist;
-          const ny = dist === 0 ? 1 : dy / dist;
-          // Weight: 70 % Y, 30 % X so column order is mostly preserved
-          const fx = nx * overlap * 0.30;
-          const fy = (ny === 0 ? 1 : ny) * overlap * 0.70;
-          positions[allIds[i]] = {
-            ...a,
-            x: Math.round(Math.max(padX,           a.x - fx)),
-            y: Math.round(Math.max(padY,            a.y - fy)),
-          };
-          positions[allIds[j]] = {
-            ...b,
-            x: Math.round(Math.min(canvasW - padX, b.x + fx)),
-            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
-          };
-          moved = true;
-        }
-      }
-    }
-    if (!moved) break;
-  }
-
-  return positions;
+  // Catches nodes that ended up too close across adjacent layers, and uses the
+  // shared elliptical check helper to account for node label room.
+  return resolveNodeOverlaps(positions, canvasW, canvasH, padX, padY);
 }
 
 // ── 2. Radial web layout ───────────────────────────────────────────────────────
@@ -861,7 +893,7 @@ export function radialWebLayout(
   const ids = nodes.map((n) => n.id);
 
   // Build undirected degree + neighbour map
-  const degree:    Record<string, number>      = {};
+  const degree: Record<string, number> = {};
   const neighbors: Record<string, Set<string>> = {};
   for (const id of ids) { degree[id] = 0; neighbors[id] = new Set(); }
   for (const e of edges) {
@@ -957,7 +989,7 @@ export function radialWebLayout(
 
     for (let i = 0; i < count; i++) {
       const nodeId = ringNodes[i];
-      const angle  = resolved[i];
+      const angle = resolved[i];
       const zJitter = idToJitter(nodeId, 0.24);
       const z = Math.max(-1, Math.min(1, baseZ + zJitter));
       positions[nodeId] = {
@@ -992,11 +1024,11 @@ export function forceDirectedLayout(
   if (nodes.length === 1) return { [nodes[0].id]: { x: canvasW / 2, y: canvasH / 2 } };
 
   const count = nodes.length;
-  const pad   = 80;
+  const pad = 80;
 
   // Ideal spring length
   const area = (canvasW - pad * 2) * (canvasH - pad * 2);
-  const k    = Math.sqrt(area / count);
+  const k = Math.sqrt(area / count);
 
   // Initialise on a circle
   const pos: Record<string, { x: number; y: number }> = {};
@@ -1013,9 +1045,9 @@ export function forceDirectedLayout(
   });
 
   // Temperature schedule
-  const iterations    = 200;
-  let temperature     = Math.min(canvasW, canvasH) * 0.1;
-  const cooling       = temperature / (iterations + 1);
+  const iterations = 200;
+  let temperature = Math.min(canvasW, canvasH) * 0.1;
+  const cooling = temperature / (iterations + 1);
 
   for (let iter = 0; iter < iterations; iter++) {
     const disp: Record<string, { dx: number; dy: number }> = {};
@@ -1058,7 +1090,7 @@ export function forceDirectedLayout(
 
     // Apply displacement with temperature cap and boundary clamp
     for (const n of nodes) {
-      const d  = disp[n.id];
+      const d = disp[n.id];
       const mag = Math.sqrt(d.dx * d.dx + d.dy * d.dy);
       if (mag === 0) continue;
       const scale = Math.min(mag, temperature) / mag;
