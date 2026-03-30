@@ -598,10 +598,10 @@ export default function Home() {
 
           {/* AI Analyze */}
           <button onClick={handleAiAnalyze}
-            title={activeApiKey ? `Analyze with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Analyze"}
+            title={(activeApiKey || isDemoMode) ? `Analyze with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Analyze"}
             aria-label="AI Analyze Workflow"
             className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
-              activeApiKey
+              (activeApiKey || isDemoMode)
                 ? "border-indigo-300 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
@@ -610,11 +610,11 @@ export default function Home() {
           </button>
 
           {/* AI Update */}
-          <button onClick={() => { if (!activeApiKey) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
-            title={activeApiKey ? `Update workflow with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Update"}
+          <button onClick={() => { if (!activeApiKey && !isDemoMode) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
+            title={(activeApiKey || isDemoMode) ? `Update workflow with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Update"}
             aria-label="AI Update Workflow"
             className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
-              activeApiKey
+              (activeApiKey || isDemoMode)
                 ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>

@@ -14,7 +14,7 @@
 import { hierarchicalLayout, radialWebLayout } from "./layout";
 import { CORE_NODE_IDS, ROLE_COLOR } from "./constants";
 import type { NodeTask, WorkflowGroup } from "./serverState";
-import { JACK_ROUTINE_DEMO_ANALYSIS } from "./demoAnalysis";
+import { JACK_ROUTINE_DEMO_ANALYSIS, JACK_ROUTINE_DEMO_AI_JSON } from "./demoAnalysis";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,6 +76,7 @@ export const TEMPLATES: Template[] = [
     nodeCount: 8,
     edgeCount: 10,
     demoAnalysis: JACK_ROUTINE_DEMO_ANALYSIS,
+    workflowGroups: typeof JACK_ROUTINE_DEMO_AI_JSON === 'string' ? JSON.parse(JACK_ROUTINE_DEMO_AI_JSON).groups : [],
     nodes: [
       { id: "jack",       label: "Jack",            initials: "J",  role: "person"   },
       { id: "bloomberg",  label: "Bloomberg T.",    initials: "BT", role: "external" },

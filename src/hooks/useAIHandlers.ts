@@ -209,35 +209,39 @@ export function useAIHandlers(
     if (!aiAnalysisIsDemo || demoAutoApplied.current || aiSuggestedNewNodes.length === 0) return;
     demoAutoApplied.current = true;
 
-    for (const node of aiSuggestedNewNodes) {
-      const nodeId = node.tempId; // use stable ID for demo so references stay consistent
-      put({ action: 'addNode', node: {
-        id: nodeId,
+    const newEdges = aiSuggestedNewNodes.flatMap(node => [
+      ...node.connectFrom.map(srcId => ({
+        id: `${srcId}-${node.tempId}-demo`, source: srcId, target: node.tempId,
+        sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+      })),
+      ...node.connectTo.map(tgtId => ({
+        id: `${node.tempId}-${tgtId}-demo`, source: node.tempId, target: tgtId,
+        sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+      })),
+    ]);
+
+    const newNodes = aiSuggestedNewNodes.map(node => ({
+        id: node.tempId,
         labelInitials: node.label.slice(0, 2).toUpperCase(),
         label: node.label,
         nodeType: 'neural' as const,
         role: node.role as 'person' | 'tool' | 'external' | 'output',
         source: 'ai-generated' as const,
-        position: { x: 0, y: 0 },
-      }}).then(() => put({ action: 'updateMetadata', id: nodeId, metadata: {
-        name: node.label, role: node.role, summary: node.summary,
-      }}));
+        position: { x: 0, y: 0 } as { x: number; y: number },
+    }));
 
-      for (const srcId of node.connectFrom) {
-        put({ action: 'addEdge', edge: {
-          id: `${srcId}-${nodeId}-demo`,
-          source: srcId, target: nodeId,
-          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
-        }});
+    (async () => {
+      for (const node of newNodes) {
+        await put({ action: 'addNode', node });
+        const summary = aiSuggestedNewNodes.find(n => n.tempId === node.id)?.summary;
+        await put({ action: 'updateMetadata', id: node.id, metadata: { name: node.label, role: node.role, summary: summary } });
       }
-      for (const tgtId of node.connectTo) {
-        put({ action: 'addEdge', edge: {
-          id: `${nodeId}-${tgtId}-demo`,
-          source: nodeId, target: tgtId,
-          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
-        }});
+      for (const edge of newEdges) {
+        await put({ action: 'addEdge', edge });
       }
-    }
+      await put({ action: 'incrementalLayout', nodeIds: newNodes.map(n => n.id) });
+      onCanvasMutation?.();
+    })();
 
     // Optimistic local state update
     setFullServerState(prev => {
@@ -274,9 +278,8 @@ export function useAIHandlers(
       };
     });
 
-    // Trigger incremental layout for the new node(s)
+    // Server layout is already triggered sequentially above; UI will catch up
     setTimeout(() => {
-      put({ action: 'incrementalLayout', nodeIds: aiSuggestedNewNodes.map(n => n.tempId) });
       onCanvasMutation?.();
     }, 300);
   // eslint-disable-next-line react-hooks/exhaustive-deps
