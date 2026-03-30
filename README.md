@@ -22,7 +22,7 @@
   <br/>
 
   <p>
-    <a href="https://workable-demo.vercel.app">
+    <a href="https://workable-kappa.vercel.app/">
       <img src="https://img.shields.io/badge/TRY_IT_NOW-LIVE_DEMO-6366F1?style=for-the-badge&logo=vercel" alt="Live Demo"/>
     </a>
   </p>
@@ -34,7 +34,7 @@
 
 Most workflow tools make you drag and drop from scratch. Workable flips that.
 
-You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. You get a living map of your workflow that you can refine, export, and share. **Try the [Live Demo](https://workable-demo.vercel.app) to see it in action.**
+You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. You get a living map of your workflow that you can refine, export, and share. **Try the [Live Demo](https://workable-kappa.vercel.app/) to see it in action.**
 
 ### 🖼️ App Preview
 
