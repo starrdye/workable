@@ -793,10 +793,10 @@ export function hierarchicalLayout(
   // Catches nodes that ended up too close across adjacent layers (different X
   // buckets) — e.g. two nodes both pulled to canvas-centre Y by the bottom-up
   // refinement pass that also happen to be in very close layers.
-  // We push overlapping pairs apart primarily in Y (preserving column X),
-  // iterating until no pair is closer than MIN_DIST or we exhaust passes.
-  const NODE_R   = 32; // px — node glyph radius + tight breathing room
-  const MIN_DIST = NODE_R * 2;
+  // We push overlapping pairs apart using an elliptical check rather than a strict
+  // circle to account for the text label rendered below the node glyph.
+  const MIN_DIST_X = 75;  // 32px glyph radius + horizontal breathing room
+  const MIN_DIST_Y = 110; // 32px glyph radius + ~50px label + vertical breathing
   const allIds   = Object.keys(positions);
   for (let pass = 0; pass < 8; pass++) {
     let moved = false;
@@ -807,16 +807,25 @@ export function hierarchicalLayout(
         if (!a || !b) continue;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < MIN_DIST && dist >= 0) {
-          const overlap = MIN_DIST - dist + 4;
-          // Resolve primarily in Y to preserve layer column identity.
-          // Fall back to both axes when nodes are directly on top of each other.
-          const nx = dist === 0 ? 0 : dx / dist;
-          const ny = dist === 0 ? 1 : dy / dist;
-          // Weight: 70 % Y, 30 % X so column order is mostly preserved
-          const fx = nx * overlap * 0.30;
-          const fy = (ny === 0 ? 1 : ny) * overlap * 0.70;
+        
+        // Elliptical distance ratio
+        const ratioX = dx / MIN_DIST_X;
+        const ratioY = dy / MIN_DIST_Y;
+        const distSq = ratioX * ratioX + ratioY * ratioY;
+        
+        if (distSq < 1 && distSq > 0) {
+          const dist = Math.sqrt(distSq);
+          const overlap = 1 - dist;
+          
+          // Normalized elliptical push directions point outward
+          const nx = ratioX / dist;
+          const ny = ratioY / dist;
+          
+          // Multiply back by the radii to get actual pixels, then apply the 
+          // overlap fraction, plus a tiny structural push to break total symmetry
+          const fx = nx * overlap * MIN_DIST_X * 0.30 + (dx === 0 ? 0.1 : 0);
+          const fy = ny * overlap * MIN_DIST_Y * 0.70 + (dy === 0 ? 1.0 : 0);
+          
           positions[allIds[i]] = {
             ...a,
             x: Math.round(Math.max(padX,           a.x - fx)),
@@ -825,6 +834,18 @@ export function hierarchicalLayout(
           positions[allIds[j]] = {
             ...b,
             x: Math.round(Math.min(canvasW - padX, b.x + fx)),
+            y: Math.round(Math.min(canvasH - padY, b.y + fy)),
+          };
+          moved = true;
+        } else if (distSq === 0) {
+          // Exactly identical positions — push apart manually
+          const fy = MIN_DIST_Y * 0.5;
+          positions[allIds[i]] = {
+            ...a,
+            y: Math.round(Math.max(padY, a.y - fy)),
+          };
+          positions[allIds[j]] = {
+            ...b,
             y: Math.round(Math.min(canvasH - padY, b.y + fy)),
           };
           moved = true;
