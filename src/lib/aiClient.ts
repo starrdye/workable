@@ -56,18 +56,6 @@ export interface ProviderMeta {
 
 export const PROVIDERS: ProviderMeta[] = [
   {
-    id: 'demo',
-    name: 'Demo',
-    label: 'Demo',
-    keyPlaceholder: '',
-    keyHint: 'No API key required — demo uses a built-in scripted workflow',
-    color: 'emerald',
-    defaultModel: 'demo-mock',
-    models: [
-      { id: 'demo-mock', label: 'Demo Mock', description: 'Built-in scripted workflow — no API call needed' },
-    ],
-  },
-  {
     id: 'anthropic',
     name: 'Anthropic',
     label: 'Claude',

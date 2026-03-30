@@ -388,13 +388,17 @@ export function StartScreen({
         const res = await fetch("/api/ai/parse-workflow", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt:   sentPrompt,
-            apiKey:   activeKey,
-            provider: cfg.provider,
-            model:    cfg.models[cfg.provider],
-            baseUrl:  cfg.baseUrls?.[cfg.provider] || undefined,
-          }),
+          body: JSON.stringify(
+            isDemoMode
+              ? { prompt: sentPrompt, apiKey: 'demo', provider: 'demo', model: 'demo-mock' }
+              : {
+                  prompt:   sentPrompt,
+                  apiKey:   activeKey,
+                  provider: cfg.provider,
+                  model:    cfg.models[cfg.provider],
+                  baseUrl:  cfg.baseUrls?.[cfg.provider] || undefined,
+                }
+          ),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -459,27 +463,29 @@ export function StartScreen({
               </p>
             </div>
 
-            {/* Active model / settings */}
-            <div className="flex items-center gap-2 mt-1 shrink-0">
-              {activeKey ? (
-                <span className="text-xs flex items-center gap-1.5 text-slate-500">
-                  <span className={`w-2 h-2 rounded-full ${DOT[activeProvider]}`} />
-                  {activeMeta.name} · {activeModelLabel}
-                </span>
-              ) : (
-                <span className="text-xs flex items-center gap-1 text-amber-600">
-                  <AlertCircle className="w-3 h-3" />
-                  No API key
-                </span>
-              )}
-              <button
-                onClick={onOpenSettings}
-                title="AI Settings"
-                className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-            </div>
+            {/* Active model / settings — hidden in demo mode (provider choice is irrelevant) */}
+            {!isDemoMode && (
+              <div className="flex items-center gap-2 mt-1 shrink-0">
+                {activeKey ? (
+                  <span className="text-xs flex items-center gap-1.5 text-slate-500">
+                    <span className={`w-2 h-2 rounded-full ${DOT[activeProvider]}`} />
+                    {activeMeta?.name} · {activeModelLabel}
+                  </span>
+                ) : (
+                  <span className="text-xs flex items-center gap-1 text-amber-600">
+                    <AlertCircle className="w-3 h-3" />
+                    No API key
+                  </span>
+                )}
+                <button
+                  onClick={onOpenSettings}
+                  title="AI Settings"
+                  className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 transition-colors"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="px-10 pb-9 flex flex-col gap-5">

@@ -39,8 +39,8 @@ export function loadAIConfig(): AIConfig {
 }
 
 function makeDefaultConfig(): AIConfig {
-  const models = {} as Record<AIProvider, string>;
-  const keys   = {} as Record<AIProvider, string>;
+  const models = { demo: 'demo-mock' } as Record<AIProvider, string>;
+  const keys   = { demo: '' }         as Record<AIProvider, string>;
   for (const p of PROVIDERS) {
     models[p.id] = p.defaultModel;
     keys[p.id]   = "";
@@ -120,6 +120,74 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
 
   if (!isOpen) return null;
 
+  // ── Demo mode: show a simple info panel instead of provider/key settings ───
+  if (isDemoMode) {
+    return (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-settings-title"
+          className="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col relative border border-slate-100 overflow-hidden">
+
+          {/* Header */}
+          <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100">
+            <div>
+              <h2 id="ai-settings-title" className="text-lg font-bold text-slate-800">AI Settings</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Demo mode — pre-configured</p>
+            </div>
+            <button onClick={onClose}
+              className="p-1.5 rounded-full hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="px-8 py-8 flex flex-col items-center gap-5">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center">
+              <span className="text-3xl select-none">🎭</span>
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-emerald-800">Demo Mode Active</h3>
+              <p className="text-sm text-slate-500 mt-1 leading-relaxed max-w-xs">
+                This is a scripted demo of Jack's daily reconciliation workflow. No AI key is needed — all AI features run on built-in mock data.
+              </p>
+            </div>
+
+            {/* Feature availability */}
+            <div className="w-full bg-slate-50 rounded-xl divide-y divide-slate-100 border border-slate-100">
+              {[
+                { label: "Export PNG",          available: true  },
+                { label: "Export CSV",          available: true  },
+                { label: "Data Flow view",      available: true  },
+                { label: "Canvas interactions", available: true  },
+                { label: "AI Analyze",          available: true  },
+                { label: "AI Update",           available: true  },
+                { label: "Custom API key",      available: false },
+              ].map(({ label, available }) => (
+                <div key={label} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                  <span className={available ? "text-slate-700" : "text-slate-400"}>{label}</span>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    available
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-slate-100 text-slate-400"
+                  }`}>
+                    {available ? "✓ available" : "demo only"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-8 pb-7 pt-0 border-t border-slate-100">
+            <button onClick={onClose}
+              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors">
+              Got it
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const activeProvider = config.provider;
   const activeMeta     = PROVIDERS.find((p) => p.id === activeProvider)!;
   const activeColor    = COLORS[activeProvider];
@@ -165,17 +233,6 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
           </button>
         </div>
 
-        {/* ── Demo mode banner ────────────────────────────────────────────── */}
-        {isDemoMode && (
-          <div className="px-8 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-3 shrink-0">
-            <span className="text-xl select-none">🎭</span>
-            <div>
-              <p className="text-sm font-bold text-emerald-800 leading-tight">Demo Mode — read only</p>
-              <p className="text-xs text-emerald-600 leading-tight mt-0.5">Settings are pre-configured for the scripted Jack workflow. Export (PNG, CSV) and data flow are fully functional.</p>
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-7">
 
           {/* ── Section 1: Provider selection ─────────────────────────────── */}
@@ -191,13 +248,12 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
                 return (
                   <button
                     key={meta.id}
-                    onClick={() => !isDemoMode && setProvider(meta.id)}
-                    title={isDemoMode ? "Demo mode — no editing" : undefined}
+                    onClick={() => setProvider(meta.id)}
                     className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
                       isActive
                         ? `${c.bg} border-current ${c.text} ring-2 ${c.ring} ring-offset-1`
                         : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
-                    } ${isDemoMode ? "cursor-not-allowed" : ""}`}
+                    }`}
                   >
                     <ProviderMark meta={meta} />
                     <div className="text-center">
@@ -320,13 +376,12 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
                         return (
                           <button
                             key={m.id}
-                            onClick={() => !isDemoMode && setModel(activeProvider, m.id)}
-                            title={isDemoMode ? "Demo mode — no editing" : undefined}
+                            onClick={() => setModel(activeProvider, m.id)}
                             className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all flex items-start gap-3 ${
                               isSelected
                                 ? `${activeColor.bg} border-current ${activeColor.text}`
                                 : "border-slate-200 bg-white hover:border-slate-300 text-slate-700"
-                            } ${isDemoMode ? "cursor-not-allowed" : ""}`}
+                            }`}
                           >
                             <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
                               isSelected ? "border-current" : "border-slate-300"
@@ -349,15 +404,13 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
                       <input
                         type="text"
                         value={config.models[activeProvider] ?? ""}
-                        onChange={(e) => !isDemoMode && setModel(activeProvider, e.target.value.trim())}
-                        readOnly={isDemoMode}
-                        title={isDemoMode ? "Demo mode — no editing" : undefined}
+                        onChange={(e) => setModel(activeProvider, e.target.value.trim())}
                         placeholder={activeMeta.endpointPlaceholder}
                         className={`w-full bg-slate-50 border-2 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 transition-colors ${
                           config.models[activeProvider]
                             ? `border-current ${activeColor.text} focus:${activeColor.ring}`
                             : "border-slate-200 focus:border-violet-400 focus:ring-violet-400"
-                        } ${isDemoMode ? "cursor-not-allowed opacity-70" : ""}`}
+                        }`}
                       />
                       <p className="text-[11px] text-slate-400 leading-relaxed">
                         {activeMeta.endpointHint}
@@ -419,15 +472,13 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
                       <input
                         type={isShow ? "text" : "password"}
                         value={key}
-                        onChange={(e) => !isDemoMode && setKey(meta.id, e.target.value)}
-                        readOnly={isDemoMode}
-                        title={isDemoMode ? "Demo mode — no editing" : undefined}
+                        onChange={(e) => setKey(meta.id, e.target.value)}
                         placeholder={meta.keyPlaceholder}
                         className={`w-full bg-slate-50 border rounded-xl px-4 py-2.5 pr-11 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 font-mono transition-colors ${
                           config.provider === meta.id
                             ? `border-current ${c.text} focus:${c.ring}`
                             : "border-slate-200 focus:border-indigo-400 focus:ring-indigo-400"
-                        } ${isDemoMode ? "cursor-not-allowed opacity-70" : ""}`}
+                        }`}
                       />
                       <button
                         type="button"
@@ -474,13 +525,12 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => !isDemoMode && setEngineMode(opt.value)}
-                    title={isDemoMode ? "Demo mode — no editing" : undefined}
+                    onClick={() => setEngineMode(opt.value)}
                     className={`relative flex flex-col items-start gap-1.5 p-4 rounded-2xl border-2 transition-all text-left ${
                       isActive
                         ? `${opt.activeBg} ring-2 ${opt.activeRing} ring-offset-1`
                         : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                    } ${isDemoMode ? "cursor-not-allowed" : ""}`}
+                    }`}
                   >
                     <div className="flex items-center gap-2 w-full">
                       <span className="font-bold text-sm">{opt.label}</span>
@@ -506,7 +556,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemo
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
         <div className="px-8 pb-7 pt-4 border-t border-slate-100 space-y-2 shrink-0">
-          {!hasKeyForActive && !isDemoMode && (
+          {!hasKeyForActive && (
             <p className="text-xs text-amber-600 text-center">
               Add an API key for <strong>{activeMeta.name}</strong> to enable AI features.
             </p>

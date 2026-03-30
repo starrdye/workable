@@ -193,11 +193,8 @@ export default function Home() {
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
 
   // ── Demo mode ──────────────────────────────────────────────────────────────
-  // True when the selected AI provider is "demo" OR when the canvas has the Jack
-  // scripted workflow loaded (templateId = 'demo-jack').
-  const isDemoMode =
-    aiConfig.provider === 'demo' ||
-    fullServerState?.settings?.templateId === 'demo-jack';
+  // This branch is permanently demo mode — no user selection needed.
+  const isDemoMode = true;
 
   // ── Workflow cache + tooltip ───────────────────────────────────────────────
   useEffect(() => {
