@@ -18,6 +18,14 @@
     <a href="#-templates">Templates</a> ·
     <a href="#-how-it-works">How It Works</a>
   </p>
+
+  <br/>
+
+  <p>
+    <a href="https://workable-demo.vercel.app">
+      <img src="https://img.shields.io/badge/TRY_IT_NOW-LIVE_DEMO-6366F1?style=for-the-badge&logo=vercel" alt="Live Demo"/>
+    </a>
+  </p>
 </div>
 
 ---
@@ -26,16 +34,16 @@
 
 Most workflow tools make you drag and drop from scratch. Workable flips that.
 
-You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. You get a living map of your workflow that you can refine, export, and share.
+You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. You get a living map of your workflow that you can refine, export, and share. **Try the [Live Demo](https://workable-demo.vercel.app) to see it in action.**
 
-```
-"Jack logs into Bloomberg at 9 AM, downloads the CSV, runs it through
- the Python reconciliation script, and Slacks exceptions to Sarah..."
-                            ↓  ~5 seconds
- [Bloomberg] → [Jack] → [Python Script] → [PostgreSQL] → [Ternary Dashboard]
-                                 ↓ exception path
-                              [Slack] → [Sarah] ⟳ [Jack]
-```
+### 🖼️ App Preview
+
+<div align="center">
+  <img src="./public/demo/start_screen.png" alt="Workable Start Screen" width="450px" style="border-radius: 12px; border: 1px solid #E2E8F0; margin-right: 12px;"/>
+  <img src="./public/demo/graph_canvas.png" alt="Workable Graph View" width="450px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <br/>
+  <i>(Left: Landing page with template & text-to-graph input | Right: Interactive group-aware process map)</i>
+</div>
 
 ---
 
