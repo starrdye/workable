@@ -47,17 +47,13 @@ You write (or paste) a plain-English description of how work actually flows — 
 Transform a paragraph of text into a complete, structured process map in seconds.
 
 <div align="center">
-  <table>
-    <tr>
-      <td width="50%" align="center"><b>1. Describe your workflow</b></td>
-      <td width="50%" align="center"><b>2. AI generates the graph</b></td>
-    </tr>
-    <tr>
-      <td><img src="./public/demo/ai_generation.png" alt="Input Prompt" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
-      <td><img src="./public/demo/graph_canvas.png" alt="Generated Graph" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
-    </tr>
-  </table>
-  <p><i>The AI identifies nodes, roles, directed edges, and logical workflow groups automatically.</i></p>
+  <img src="./public/demo/ai_generation.png" alt="Input Prompt" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>1. Describe your workflow</b>: Input your process in plain English — no technical syntax required.</p>
+  
+  <br/>
+
+  <img src="./public/demo/graph_canvas.png" alt="Generated Graph" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>2. AI generates the graph</b>: The engine automatically identifies nodes, roles, directed edges, and logical groups.</p>
 </div>
 
 ---
@@ -66,17 +62,13 @@ Transform a paragraph of text into a complete, structured process map in seconds
 Stop guessing where your process is failing. Run the optimizer to see structural risk.
 
 <div align="center">
-  <table>
-    <tr>
-      <td width="50%" align="center"><b>Spot structural weaknesses</b></td>
-      <td width="50%" align="center"><b>Get suggested actions</b></td>
-    </tr>
-    <tr>
-      <td><img src="./public/demo/bottleneck_analysis.png" alt="Structural Findings" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
-      <td><img src="./public/demo/analysis_result_suggested_actions.png" alt="AI Recommendations" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
-    </tr>
-  </table>
-  <p><i>The engine flags "Single point of failures" and suggests specific fixes to optimize throughput.</i></p>
+  <img src="./public/demo/bottleneck_analysis.png" alt="Structural Findings" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>Spot structural weaknesses</b>: The AI identifies "single points of failure" and structural risks in your workflow.</p>
+
+  <br/>
+
+  <img src="./public/demo/analysis_result_suggested_actions.png" alt="AI Recommendations" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>Get suggested actions</b>: Receive specific, actionable recommendations to optimise throughput and reduce risk.</p>
 </div>
 
 ---
@@ -85,17 +77,13 @@ Stop guessing where your process is failing. Run the optimizer to see structural
 Modify your workflow by just describing the change. No need to rebuild from scratch.
 
 <div align="center">
-  <table>
-    <tr>
-      <td width="50%" align="center"><b>Review the proposed change</b></td>
-      <td width="50%" align="center"><b>Apply the update instantly</b></td>
-    </tr>
-    <tr>
-      <td><img src="./public/demo/ai_update.png" alt="Update Patch Preview" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
-      <td><img src="./public/demo/ai_update_modified_chart.png" alt="Updated Graph Result" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
-    </tr>
-  </table>
-  <p><i>Review precise patches (additions, updates, removals) before applying them to your canvas.</i></p>
+  <img src="./public/demo/ai_update.png" alt="Update Patch Preview" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>Review the proposed change</b>: See a precise preview of additions, removals, and updates before committing them.</p>
+
+  <br/>
+
+  <img src="./public/demo/ai_update_modified_chart.png" alt="Updated Graph Result" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>Apply the update instantly</b>: The workflow reflows automatically to incorporate your changes without a full rebuild.</p>
 </div>
 
 ---
@@ -104,12 +92,13 @@ Modify your workflow by just describing the change. No need to rebuild from scra
 Click any node to reveal its deep-dive profile, constraints, and assigned tasks. Task dots orbit each node — click one for a quick-view popup with status, priority, and description.
 
 <div align="center">
-  <table>
-    <tr>
-      <td width="50%" align="center"><img src="./public/demo/sidebar.png" alt="Analysis Sidebar" style="border-radius: 8px; border: 1px solid #E2E8F0;"/><br/><b>Deep-dive analysis</b></td>
-      <td width="50%" align="center"><img src="./public/demo/tasknode.png" alt="Task Dot Popup" style="border-radius: 8px; border: 1px solid #E2E8F0;"/><br/><b>Task dot pop-up</b></td>
-    </tr>
-  </table>
+  <img src="./public/demo/sidebar.png" alt="Analysis Sidebar" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>Deep-dive analysis</b>: Access entity profiles, constraints, and connection summaries in a persistent panel.</p>
+
+  <br/>
+
+  <img src="./public/demo/tasknode.png" alt="Task Dot Popup" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  <p><b>Actionable task lists</b>: Manage TODOs directly on the canvas or via node-specific task drawers.</p>
 </div>
 
 ---
