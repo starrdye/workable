@@ -35,107 +35,92 @@
 
 ## What is Workable?
 
-Most workflow tools make you drag and drop from scratch. Workable flips that.
+Most workflow tools make you drag and drop from scratch. Workable flips that. 
 
-You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. You get a living map of your workflow that you can refine, export, and share. **Try the [Live Demo](https://workable-kappa.vercel.app/) to see it in action.**
-
-### 🖼️ App Preview
-
-<div align="center">
-  <img src="./public/demo/start_screen.png" alt="Workable Start Screen" width="450px" style="border-radius: 12px; border: 1px solid #E2E8F0; margin-right: 12px;"/>
-  <img src="./public/demo/graph_canvas.png" alt="Workable Graph View" width="450px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
-  <br/>
-  <i>(Left: Landing page with template & text-to-graph input | Right: Interactive group-aware process map)</i>
-</div>
+You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. Try the [Live Demo](https://workable-kappa.vercel.app/) to see it in action.
 
 ---
 
 ## ✨ Features
 
 ### 🧠 AI-Powered Graph Generation
-Describe your workflow in plain English — names, tools, handoffs, blockers, all of it. The AI infers:
-- **Nodes** with roles (`person`, `tool`, `external source`, `output`)
-- **Directed edges** with descriptive connection names
-- **Workflow groups** (phases like "Data Ingestion" or "Review & Approval")
-- **Tasks** per node with priority and status
-- **Constraints** (GDPR limits, manual approvals, rate caps)
-
-### 🗺️ Dual-View Canvas
+Transform a paragraph of text into a complete, structured process map in seconds.
 
 <div align="center">
-  <img src="./public/demo/ecosystem.png" alt="Ecosystem Hub Radial View" width="700px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <table>
+    <tr>
+      <td width="50%" align="center"><b>1. Describe your workflow</b></td>
+      <td width="50%" align="center"><b>2. AI generates the graph</b></td>
+    </tr>
+    <tr>
+      <td><img src="./public/demo/ai_generation.png" alt="Input Prompt" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
+      <td><img src="./public/demo/graph_canvas.png" alt="Generated Graph" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
+    </tr>
+  </table>
+  <p><i>The AI identifies nodes, roles, directed edges, and logical workflow groups automatically.</i></p>
 </div>
 
-| Baseline Process Map | Ecosystem Hub |
-|---|---|
-| Left-to-right hierarchical flow | Radial web-map centred on the most-connected node |
-| Clear sequence and handoffs | Visualise influence, coupling, and dependency rings |
-| Great for process documentation | Great for spotting architectural smells |
-
-Toggle instantly with no data loss using the **Mono/Dist** and **Ecosystem** toggles in the toolbar.
-
-### 🔬 Analysis Sidebar
-
-<div align="right">
-  <img src="./public/demo/sidebar.png" alt="Node Analysis Sidebar" width="400px" style="float: right; margin-left: 20px; border-radius: 12px; border: 1px solid #E2E8F0;"/>
-</div>
-
-Click any node or edge to open a deep-dive panel:
-- **Entity name**, role badge, and AI-generated vs user-added origin
-- **Summary** — concise description of the node's role in the workflow
-- **Assigned Workflows** — which phases/groups this node belongs to
-- **Direct Connections** — all neighbouring nodes (both directions)
-- **Constraints** — operational, compliance, or technical limits
-- **Tasks** — inline task list with status, priority, due date, and notes
-
-For edges:
-- **Data Flow Direction** — From → To pill with node names
-- **Connection Name** — the actual named handoff (e.g. "Send Exception File for review")
-- **Auto-generated summary** — what flows along this edge and why
-
-<br clear="both"/>
-
-### 🧩 Workflow Groups & Nested Phases
-Colour-coded bounding regions that organise nodes into named phases. Supports:
-- **Top-level groups** (e.g. "Daily Price Reconciliation")
-- **Sub-groups** nested inside parent phases (e.g. "Automated Processing" inside the reconciliation group)
-- **Group-aware physics layout** — groups cluster intelligently without overlap, sharing nodes pull related groups together
-
-### ✅ Task Management
-Every node can own a task list with:
-- Status: `todo` / `in-progress` / `review` / `blocked` / `done`
-- Priority: `low` / `medium` / `high`
-- Due date + free-form notes
-- Visual progress counters (`3/5 open`)
+---
 
 ### 🔍 AI Bottleneck Analysis
-Run the optimiser on any graph to get a structured report:
-- **Workflow Summary** — two-sentence executive overview
-- **Bottlenecks Identified** — specific nodes and edges by name
-- **Constraint Analysis** — flags nodes with constraints that could propagate risk
-- **Quick Wins** — highest impact-to-effort improvements with suggested new connections
+Stop guessing where your process is failing. Run the optimizer to see structural risk.
 
-### 🔀 AI Update
-Describe any change in plain English and apply it as a precise patch — no rebuild from scratch:
-- **Add** new people, tools, systems, or entire sub-workflows
-- **Update** roles, summaries, constraints, and group memberships
-- **Remove** departed team members or replaced tools (edges cascade automatically)
-- Preview a colour-coded diff (**green** add / **amber** update / **red** remove) before committing
-- Layout reflows automatically after every patch
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center"><b>Spot structural weaknesses</b></td>
+      <td width="50%" align="center"><b>Get suggested actions</b></td>
+    </tr>
+    <tr>
+      <td><img src="./public/demo/bottleneck_analysis.png" alt="Structural Findings" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
+      <td><img src="./public/demo/analysis_result_suggested_actions.png" alt="AI Recommendations" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
+    </tr>
+  </table>
+  <p><i>The engine flags "Single point of failures" and suggests specific fixes to optimize throughput.</i></p>
+</div>
 
-### 🏗️ Distributed Reasoning (vb0.2)
-Specifically for large graphs (100+ nodes) where monolithic AI prompts would hit context limits:
-- **Ego-centric Analysis** — each node is analyzed as its own agent with local neighborhood context
-- **Message Broker** — agents communicate changes along real graph edges to simulate cascades
-- **Engine Toggle** — switch between Monolithic (fast/holistic) and Distributed (precise/scalable) on the fly
-- **Scalability** — reasoning remains sharp regardless of total graph size
+---
 
-### 📤 Export & Import
-| Format | What's included |
-|---|---|
-| **CSV** | All nodes, edges, positions, tasks, groups, settings |
-| **PNG** | Full canvas render at current zoom |
-| **CSV import** | Restore any previously exported workflow |
+### 🔀 AI Update & Patching
+Modify your workflow by just describing the change. No need to rebuild from scratch.
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center"><b>Review the proposed change</b></td>
+      <td width="50%" align="center"><b>Apply the update instantly</b></td>
+    </tr>
+    <tr>
+      <td><img src="./public/demo/ai_update.png" alt="Update Patch Preview" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
+      <td><img src="./public/demo/ai_update_modified_chart.png" alt="Updated Graph Result" style="border-radius: 8px; border: 1px solid #E2E8F0;"/></td>
+    </tr>
+  </table>
+  <p><i>Review precise patches (additions, updates, removals) before applying them to your canvas.</i></p>
+</div>
+
+---
+
+### 🔬 Interactive Exploration & Tasks
+Click any node to reveal its deep-dive profile, constraints, and assigned tasks.
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center"><img src="./public/demo/sidebar.png" alt="Analysis Sidebar" style="border-radius: 8px; border: 1px solid #E2E8F0;"/><br/><b>Deep-dive analysis</b></td>
+      <td width="50%" align="center"><img src="./public/demo/task_management.png" alt="Task Drawer" style="border-radius: 8px; border: 1px solid #E2E8F0;"/><br/><b>Actionable task lists</b></td>
+    </tr>
+  </table>
+</div>
+
+---
+
+### 🗺️ Flexible Canvas Views
+Toggle between the standard **Process Map** (hierarchical flow) and the **Ecosystem Hub** (radial dependency web).
+
+<div align="center">
+  <img src="./public/demo/ecosystem.png" alt="Ecosystem Hub View" width="800px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <p><i>Quickly spot influence hubs and dependency rings that regular charts hide.</i></p>
+</div>
 
 ---
 
@@ -151,52 +136,16 @@ npm install
 npm run dev
 # → http://localhost:3000
 ```
-
-That's it. No `.env` file. No database. No signup.
-
-**To enable AI features:**
-1. Click **AI Settings** (gear icon) in the header
-2. Pick your provider (Anthropic, Gemini, or ByteDance Doubao)
-3. Paste your API key — it stays in your browser's `localStorage`, never hits a server
-4. Describe your workflow and hit **Generate**
+**AI Setup:** Click the gear icon in the header, select your provider (Claude, Gemini, or Doubao), and paste your API key (stored locally in your browser).
 
 ---
 
 ## 🤖 AI Providers
 
-Workable is provider-agnostic. Swap between them any time in AI Settings.
-
-| Provider | Models | Notes |
-|---|---|---|
-| **Anthropic Claude** | `claude-sonnet-4-6` (default), `claude-opus-4-6`, `claude-haiku-4-5` | Best overall reasoning and JSON fidelity |
-| **Google Gemini** | `gemini-2.0-flash` (default), `gemini-1.5-pro`, `gemini-1.5-flash` | Fast, generous free tier |
-| **ByteDance Doubao** | Your endpoint ID (e.g. `ep-20260318…`) | OpenAI-compatible; supports Coding Plan base URL |
-
-**Detailed technical documentation can be found in the [Development Guide](./docs/README.md).**
-
----
-
-## 🧩 Templates
-
-Templates ship with full metadata — tasks, summaries, constraints, and workflow groups — so you get a rich, ready-to-explore graph the moment you pick one.
-
-### Morning Routine (7 nodes)
-```
-[Email / Inbox] ──┐
-                  ├──▶ [You] ──▶ [Notes] ──▶ [Stand-up] ──▶ [Deep Work]
-[Calendar]     ──┘           └──▶ [Task List] ──────────────────────────▶ ▲
-```
-Groups: Morning Inputs · Planning Layer · Execution
-
-### Project Workflow (14 nodes)
-Idea → Research → Outline → Draft → (Reviewer A + Reviewer B) → Feedback → Publish → Analytics → Archive
-
-Groups: Discovery · Production · Review Loop · Distribution
-
-### Full Work Week (22 nodes)
-Five external input streams → capture + planning → you (hub) → deep work blocks + collaboration → deliverables + published content + weekly KPIs
-
-Groups: External Inputs · Capture & Plan · Deep Focus · Collaboration · Outputs & Review
+Workable is provider-agnostic. Swap between them any time to compare results.
+- **Anthropic Claude**: Best overall reasoning and JSON fidelity (`claude-3-5-sonnet`).
+- **Google Gemini**: Fast, reliable, and generous free tier (`gemini-1.5-pro`).
+- **ByteDance Doubao**: High-performance models with local server endpoints.
 
 ---
 
