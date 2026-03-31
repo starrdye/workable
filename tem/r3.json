@@ -1,0 +1,291 @@
+{
+  "nodes": [
+    {
+      "id": "jack",
+      "name": "Jack (Financial Analyst)",
+      "initials": "J",
+      "role": "person",
+      "summary": "Owns end-to-end daily price reconciliation workflow and attends regular HR check-ins",
+      "constraints": "Blocked from proceeding after escalating discrepancies until Sarah approves overrides",
+      "tasks": [
+        {
+          "id": "t_ext001",
+          "title": "Log into Bloomberg Terminal at 9AM and extract raw EOD pricing CSV",
+          "status": "todo",
+          "priority": "high",
+          "note": "Starts the daily reconciliation workflow"
+        },
+        {
+          "id": "t_res001",
+          "title": "Process reconciliation output, escalate discrepancies or upload clean reports",
+          "status": "todo",
+          "priority": "high"
+        },
+        {
+          "id": "t_meet001",
+          "title": "Attend weekly well-being and monthly performance check-ins",
+          "status": "todo",
+          "priority": "medium"
+        }
+      ]
+    },
+    {
+      "id": "sarah",
+      "name": "Sarah (Portfolio Manager)",
+      "initials": "SPM",
+      "role": "person",
+      "summary": "Reviews discrepancy exceptions and participates in Jack's performance reviews",
+      "tasks": [
+        {
+          "id": "t_rev001",
+          "title": "Manually review discrepancy exception files and approve overrides",
+          "status": "todo",
+          "priority": "high"
+        },
+        {
+          "id": "t_perf001",
+          "title": "Discuss Jack's job performance with HR",
+          "status": "todo",
+          "priority": "medium"
+        }
+      ]
+    },
+    {
+      "id": "mary",
+      "name": "Mary (HR Representative)",
+      "initials": "MHR",
+      "role": "person",
+      "summary": "Leads regular well-being and performance check-ins for Jack",
+      "tasks": [
+        {
+          "id": "t_well001",
+          "title": "Conduct weekly 1:1 to evaluate Jack's mental well-being",
+          "status": "todo",
+          "priority": "medium"
+        },
+        {
+          "id": "t_perf002",
+          "title": "Discuss Jack's performance with Sarah and report to Jason",
+          "status": "todo",
+          "priority": "medium"
+        },
+        {
+          "id": "t_mont001",
+          "title": "Lead monthly joint review with Jack and Jason",
+          "status": "todo",
+          "priority": "low"
+        }
+      ]
+    },
+    {
+      "id": "jason",
+      "name": "Jason (HR Supervisor)",
+      "initials": "JHS",
+      "role": "person",
+      "summary": "Attends monthly joint reviews of Jack's performance and well-being",
+      "tasks": [
+        {
+          "id": "t_mont002",
+          "title": "Join monthly joint review meeting with Mary and Jack",
+          "status": "todo",
+          "priority": "low"
+        }
+      ]
+    },
+    {
+      "id": "bloomberg_terminal",
+      "name": "Bloomberg Terminal",
+      "initials": "BT",
+      "role": "tool",
+      "summary": "Source of raw end-of-day market pricing data",
+      "tasks": [
+        {
+          "id": "t_prov001",
+          "title": "Provide raw EOD pricing data upon Jack's request",
+          "status": "todo",
+          "priority": "high"
+        }
+      ]
+    },
+    {
+      "id": "python_reconciliation",
+      "name": "Python Reconciliation Script",
+      "initials": "PRS",
+      "role": "tool",
+      "summary": "Automates comparison of Bloomberg data against internal pricing data",
+      "tasks": [
+        {
+          "id": "t_comp001",
+          "title": "Compare Bloomberg CSV data against internal PostgreSQL pricing data",
+          "status": "todo",
+          "priority": "high"
+        },
+        {
+          "id": "t_outp001",
+          "title": "Generate Match Report for clean runs or Exception File for discrepancies",
+          "status": "todo",
+          "priority": "high"
+        }
+      ]
+    },
+    {
+      "id": "postgresql_db",
+      "name": "Internal PostgreSQL Database",
+      "initials": "PDB",
+      "role": "tool",
+      "summary": "Stores internal pricing data for reconciliation",
+      "tasks": [
+        {
+          "id": "t_shar001",
+          "title": "Provide stored internal pricing data for comparison",
+          "status": "todo",
+          "priority": "high"
+        },
+        {
+          "id": "t_upd001",
+          "title": "Accept corrected pricing updates after discrepancy resolution",
+          "status": "todo",
+          "priority": "high"
+        }
+      ]
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "initials": "SL",
+      "role": "tool",
+      "summary": "Communication platform for sharing discrepancy files",
+      "tasks": [
+        {
+          "id": "t_comm001",
+          "title": "Transmit Exception File from Jack to Sarah",
+          "status": "todo",
+          "priority": "medium"
+        }
+      ]
+    },
+    {
+      "id": "ternary_dashboard",
+      "name": "Ternary Client Dashboard",
+      "initials": "TCD",
+      "role": "output",
+      "summary": "Final destination for reconciled pricing data and reports",
+      "tasks": [
+        {
+          "id": "t_rec001",
+          "title": "Receive clean match reports and corrected pricing data",
+          "status": "todo",
+          "priority": "high"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_jack_bloomberg",
+      "source": "jack",
+      "target": "bloomberg_terminal",
+      "name": "Request EOD pricing data"
+    },
+    {
+      "id": "e_bloomberg_jack",
+      "source": "bloomberg_terminal",
+      "target": "jack",
+      "name": "Deliver raw EOD pricing CSV"
+    },
+    {
+      "id": "e_jack_python",
+      "source": "jack",
+      "target": "python_reconciliation",
+      "name": "Input downloaded CSV to reconciliation script"
+    },
+    {
+      "id": "e_python_postgres",
+      "source": "python_reconciliation",
+      "target": "postgresql_db",
+      "name": "Request internal stored pricing data"
+    },
+    {
+      "id": "e_postgres_python",
+      "source": "postgresql_db",
+      "target": "python_reconciliation",
+      "name": "Deliver internal pricing data for comparison"
+    },
+    {
+      "id": "e_python_jack",
+      "source": "python_reconciliation",
+      "target": "jack",
+      "name": "Output reconciliation report (match or exception)"
+    },
+    {
+      "id": "e_jack_ternary_clean",
+      "source": "jack",
+      "target": "ternary_dashboard",
+      "name": "Upload clean Match Report"
+    },
+    {
+      "id": "e_jack_slack_except",
+      "source": "jack",
+      "target": "slack",
+      "name": "Send Exception File for discrepancies"
+    },
+    {
+      "id": "e_slack_sarah_except",
+      "source": "slack",
+      "target": "sarah",
+      "name": "Deliver Exception File to Sarah"
+    },
+    {
+      "id": "e_sarah_jack_approve",
+      "source": "sarah",
+      "target": "jack",
+      "name": "Send approved overrides to Jack"
+    },
+    {
+      "id": "e_jack_postgres_update",
+      "source": "jack",
+      "target": "postgresql_db",
+      "name": "Update database with corrected pricing data"
+    },
+    {
+      "id": "e_jack_ternary_correct",
+      "source": "jack",
+      "target": "ternary_dashboard",
+      "name": "Push corrected pricing data to dashboard"
+    },
+    {
+      "id": "e_mary_jack_weekly",
+      "source": "mary",
+      "target": "jack",
+      "name": "Conduct weekly well-being check-in"
+    },
+    {
+      "id": "e_mary_sarah_perf",
+      "source": "mary",
+      "target": "sarah",
+      "name": "Discuss Jack's performance"
+    },
+    {
+      "id": "e_mary_jason_monthly",
+      "source": "mary",
+      "target": "jason",
+      "name": "Invite to monthly joint review meeting"
+    }
+  ],
+  "groups": [
+    {
+      "id": "grp_daily_reconciliation",
+      "name": "Daily Price Reconciliation Workflow",
+      "color": "#6366F1",
+      "nodeIds": ["jack", "bloomberg_terminal", "python_reconciliation", "postgresql_db", "sarah", "slack", "ternary_dashboard"],
+      "parentGroupId": null
+    },
+    {
+      "id": "grp_hr_checkins",
+      "name": "Regular HR Check-Ins & Reviews",
+      "color": "#8B5CF6",
+      "nodeIds": ["mary", "jason"],
+      "parentGroupId": null
+    }
+  ]
+}

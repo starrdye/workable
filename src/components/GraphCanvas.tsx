@@ -415,38 +415,182 @@ function parseCsvImport(text: string): {
 }
 
 // ─── PNG export ───────────────────────────────────────────────────────────────
-function buildSvgExport(nodes: CanvasNode[], edges: CanvasEdge[]): string {
-  const W = 1200, H = 700;
+const EXPORT_TASK_COLORS: Record<string, string> = {
+  "todo": "#94A3B8", "in-progress": "#3B82F6", "done": "#10B981",
+  "blocked": "#EF4444", "review": "#A855F7",
+};
+
+function buildSvgExport(
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  serverState?: WorkflowApiState | null,
+): { svg: string; width: number; height: number } {
+  if (!nodes.length) {
+    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" style="background:#F8FAFC;font-family:Inter,sans-serif;"><rect width="1200" height="700" fill="#F8FAFC"/></svg>`, width: 1200, height: 700 };
+  }
+
+  const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  const allGroups = serverState?.settings?.workflowGroups ?? [];
+  const metaOverrides = serverState?.settings?.metadataOverrides ?? {};
+
+  // ── Compute content bounding box ──────────────────────────────────────────
+  const OUTER_PAD = 80;
+  const xs = nodes.map((n) => n.x + R);
+  const ys = nodes.map((n) => n.y + R);
+  const rawMinX = Math.min(...xs) - R - OUTER_PAD;
+  const rawMaxX = Math.max(...xs) + R + OUTER_PAD;
+  const rawMinY = Math.min(...ys) - R - OUTER_PAD;
+  const rawMaxY = Math.max(...ys) + R + OUTER_PAD;
+  const contentW = rawMaxX - rawMinX;
+  const contentH = rawMaxY - rawMinY;
+
+  // Scale to fit ≤2400×1400 (clear without being excessive)
+  const MAX_W = 2400, MAX_H = 1400;
+  const scale = Math.min(MAX_W / contentW, MAX_H / contentH, 2.5);
+  const W = Math.round(Math.max(1200, contentW * scale));
+  const H = Math.round(Math.max(700, contentH * scale));
+
+  // Coordinate transform helpers (raw node-space → SVG pixel)
+  const cx = (x: number) => (x - rawMinX) * scale;
+  const cy = (y: number) => (y - rawMinY) * scale;
+  const sr = R * scale; // scaled node radius
+
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:#F8FAFC;font-family:Inter,sans-serif;">`,
-    `<defs><pattern id="g" width="24" height="24" patternUnits="userSpaceOnUse">`,
-    `<circle cx="1" cy="1" r="1" fill="#CBD5E1"/></pattern></defs>`,
+    `<defs>`,
+    `<pattern id="g" width="${24 * scale}" height="${24 * scale}" patternUnits="userSpaceOnUse">`,
+    `<circle cx="${scale}" cy="${scale}" r="${scale}" fill="#CBD5E1"/></pattern>`,
+    `</defs>`,
     `<rect width="${W}" height="${H}" fill="url(#g)"/>`,
   ];
-  const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
+
+  // ── Workflow group bounding boxes ────────────────────────────────────────
+  const GROUP_PAD = 34;
+  const allNodeIds = (groupId: string): string[] => {
+    const grp = allGroups.find((g) => g.id === groupId);
+    if (!grp) return [];
+    return [
+      ...grp.nodeIds,
+      ...allGroups.filter((g) => g.parentGroupId === groupId).flatMap((child) => allNodeIds(child.id)),
+    ];
+  };
+  const bboxOf = (nodeIds: string[]) => {
+    const members = nodeIds.map((id) => nodeMap[id]).filter(Boolean);
+    if (!members.length) return null;
+    const mxs = members.map((n) => n.x + R);
+    const mys = members.map((n) => n.y + R);
+    return {
+      minX: Math.min(...mxs) - GROUP_PAD - R,
+      maxX: Math.max(...mxs) + GROUP_PAD + R,
+      minY: Math.min(...mys) - GROUP_PAD - R,
+      maxY: Math.max(...mys) + GROUP_PAD + R,
+      count: members.length,
+    };
+  };
+  const renderGroupSvg = (group: { id: string; name: string; color: string; nodeIds: string[]; parentGroupId?: string }, isSubgroup: boolean) => {
+    const ids = isSubgroup ? group.nodeIds : allNodeIds(group.id);
+    const b = bboxOf(ids);
+    if (!b) return "";
+    const { minX, maxX, minY, maxY, count } = b;
+    const gx = cx(minX), gy = cy(minY);
+    const gw = (maxX - minX) * scale, gh = (maxY - minY) * scale;
+    const fill = group.color + (isSubgroup ? "20" : "10");
+    const stroke = group.color + (isSubgroup ? "88" : "55");
+    const sw = 1.5 * scale;
+    const dash = isSubgroup ? "" : `stroke-dasharray="${8 * scale} ${4 * scale}"`;
+    const rx = (isSubgroup ? 12 : 18) * scale;
+    const labelText = `${group.name} · ${count}`;
+    const labelSize = (isSubgroup ? 9 : 11) * scale;
+    const charW = labelSize * 0.58;
+    const pillPadX = (isSubgroup ? 8 : 10) * scale;
+    const pillPadY = (isSubgroup ? 4 : 5) * scale;
+    const pillW = labelText.length * charW + pillPadX * 2;
+    const pillH = labelSize + pillPadY * 2;
+    const pillX = gx + (isSubgroup ? 10 : 14) * scale - pillPadX;
+    const pillY = gy + (isSubgroup ? 14 : 16) * scale - labelSize - pillPadY;
+    return [
+      `<rect x="${gx}" y="${gy}" width="${gw}" height="${gh}" rx="${rx}" ry="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" ${dash}/>`,
+      `<rect x="${pillX}" y="${pillY}" width="${pillW}" height="${pillH}" rx="${pillH / 2}" ry="${pillH / 2}" fill="${group.color}18" stroke="${group.color}77" stroke-width="1"/>`,
+      `<text x="${gx + (isSubgroup ? 10 : 14) * scale}" y="${gy + (isSubgroup ? 14 : 16) * scale}" font-size="${labelSize}" font-weight="700" fill="${group.color}">${labelText}</text>`,
+    ].join("");
+  };
+  // Render parent groups first (background), subgroups on top
+  allGroups.filter((g) => !g.parentGroupId).forEach((g) => parts.push(renderGroupSvg(g, false)));
+  allGroups.filter((g) => !!g.parentGroupId).forEach((g) => parts.push(renderGroupSvg(g, true)));
+
+  // ── Arrowhead marker defs ───────────────────────────────────────────────
+  parts.push("<defs>");
+  edges.forEach((e) => {
+    const stroke = e.isUpgraded ? "#10B981" : "#94A3B8";
+    const op = e.isDeprecated ? 0.3 : 0.7;
+    const mid = e.id.replace(/[^a-zA-Z0-9]/g, "_");
+    parts.push(`<marker id="arr-${mid}" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L0,5 L7,2.5 z" fill="${stroke}" opacity="${op}"/></marker>`);
+  });
+  parts.push("</defs>");
+
+  // ── Edges with quadratic bezier curves ──────────────────────────────────
   edges.forEach((e) => {
     const s = nodeMap[e.source], t = nodeMap[e.target];
     if (!s || !t) return;
-    const stroke = e.isUpgraded ? "#10B981" : "#CBD5E1";
-    parts.push(`<line x1="${s.x + R}" y1="${s.y + R}" x2="${t.x + R}" y2="${t.y + R}" stroke="${stroke}" stroke-width="2" opacity="${e.isDeprecated ? 0.15 : 1}"/>`);
+    const x1 = cx(s.x + R), y1 = cy(s.y + R);
+    const x2 = cx(t.x + R), y2 = cy(t.y + R);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    const curvature = Math.min(len * 0.28, 90 * scale);
+    const cpx = mx - (dy / Math.max(len, 1)) * curvature;
+    const cpy = my + (dx / Math.max(len, 1)) * curvature;
+    const d = `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`;
+    const stroke = e.isUpgraded ? "#10B981" : "#94A3B8";
+    const op = e.isDeprecated ? 0.08 : (e.isUpgraded ? 0.9 : 0.45);
+    const sw = 1.5 * scale;
+    const mid = e.id.replace(/[^a-zA-Z0-9]/g, "_");
+    const glowFilter = e.isUpgraded ? ` filter="drop-shadow(0 0 ${4 * scale}px rgba(16,185,129,0.55))"` : "";
+    parts.push(`<path d="${d}" stroke="${stroke}" stroke-width="${sw}" fill="none" opacity="${op}" marker-end="url(#arr-${mid})"${glowFilter}/>`);
   });
+
+  // ── Task dots orbiting nodes ────────────────────────────────────────────
+  nodes.forEach((n) => {
+    if (n.isDeprecated) return;
+    const tasks = (metaOverrides[n.id]?.tasks ?? []) as Array<{ id: string; status: string; priority?: string }>;
+    if (!tasks.length) return;
+    const ncx = cx(n.x + R), ncy = cy(n.y + R);
+    const taskR = 42 * scale;
+    tasks.slice(0, 8).forEach((task, i) => {
+      const angle = (i / Math.min(tasks.length, 8)) * Math.PI * 2 - Math.PI / 2;
+      const tx = ncx + taskR * Math.cos(angle);
+      const ty = ncy + taskR * Math.sin(angle);
+      const color = EXPORT_TASK_COLORS[task.status] ?? "#94A3B8";
+      parts.push(`<line x1="${ncx}" y1="${ncy}" x2="${tx}" y2="${ty}" stroke="${color}" stroke-width="${0.8 * scale}" opacity="0.25"/>`);
+      parts.push(`<circle cx="${tx}" cy="${ty}" r="${5 * scale}" fill="${color}" stroke="white" stroke-width="${1.5 * scale}"/>`);
+    });
+  });
+
+  // ── Nodes ───────────────────────────────────────────────────────────────
   nodes.forEach((n) => {
     const op = n.isDeprecated ? 0.3 : 1;
-    parts.push(`<circle cx="${n.x + R}" cy="${n.y + R}" r="${R}" fill="white" stroke="${n.borderColor}" stroke-width="2" opacity="${op}"/>`);
-    parts.push(`<text x="${n.x + R}" y="${n.y + R + 5}" text-anchor="middle" font-size="13" font-weight="700" fill="${n.textColor}" opacity="${op}">${n.initials}</text>`);
-    parts.push(`<text x="${n.x + R}" y="${n.y + 72}" text-anchor="middle" font-size="10" fill="#334155">${n.label}</text>`);
+    const ncx = cx(n.x + R), ncy = cy(n.y + R);
+    const shadowFilter = n.isDeprecated ? "" : ` filter="drop-shadow(0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,0.08))"`;
+    parts.push(`<circle cx="${ncx}" cy="${ncy}" r="${sr}" fill="white" stroke="${n.borderColor}" stroke-width="${2 * scale}" opacity="${op}"${shadowFilter}/>`);
+    parts.push(`<text x="${ncx}" y="${ncy + 5 * scale}" text-anchor="middle" font-size="${13 * scale}" font-weight="700" fill="${n.textColor}" opacity="${op}">${n.initials}</text>`);
+    parts.push(`<text x="${ncx}" y="${ncy + sr + 16 * scale}" text-anchor="middle" font-size="${10 * scale}" fill="#334155" opacity="${op}">${n.label}</text>`);
   });
+
   parts.push("</svg>");
-  return parts.join("");
+  return { svg: parts.join(""), width: W, height: H };
 }
-function downloadSvgAsPng(svg: string) {
+
+function downloadSvgAsPng(svgResult: { svg: string; width: number; height: number }) {
+  const { svg, width, height } = svgResult;
   const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const img = new window.Image();
   img.onload = () => {
-    const c = document.createElement("canvas"); c.width = 1200; c.height = 700;
+    const c = document.createElement("canvas");
+    c.width = width; c.height = height;
     const ctx = c.getContext("2d")!;
-    ctx.fillStyle = "#F8FAFC"; ctx.fillRect(0, 0, 1200, 700); ctx.drawImage(img, 0, 0);
+    ctx.fillStyle = "#F8FAFC"; ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
     URL.revokeObjectURL(url);
     const a = document.createElement("a"); a.href = c.toDataURL("image/png");
     a.download = "workflow-graph.png"; a.click();
@@ -802,7 +946,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     });
 
     useImperativeHandle(ref, () => ({
-      exportPng: () => downloadSvgAsPng(buildSvgExport(nodes, edges)),
+      exportPng: () => downloadSvgAsPng(buildSvgExport(nodes, edges, serverState)),
       exportCsv: () => {
         if (!serverState) return;
         const csv = buildCsvExport(

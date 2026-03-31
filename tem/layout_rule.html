@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strict Bounding Box Layout</title>
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #F8FAFC; color: #334155; 
+            font-family: 'Inter', system-ui, sans-serif;
+            overflow: hidden; display: flex; flex-direction: column; height: 100vh;
+        }
+        header { padding: 15px 25px; border-bottom: 1px solid #E2E8F0; background-color: #FFFFFF; display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; font-size: 16px; font-weight: 700; color: #0F172A;}
+        
+        canvas { flex-grow: 1; display: block; background-image: radial-gradient(#CBD5E1 1px, transparent 1px); background-size: 24px 24px; }
+
+        #controls {
+            position: absolute; top: 80px; right: 25px;
+            width: 280px; padding: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px; border: 1px solid #E2E8F0;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            font-size: 13px;
+        }
+        .btn-primary {
+            width: 100%; padding: 12px; border-radius: 8px; margin-bottom: 10px;
+            background-color: #4F46E5; color: white;
+            border: none; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-primary:hover { background-color: #4338CA; }
+        
+        .btn-secondary {
+            width: 100%; padding: 10px; border-radius: 8px; margin-bottom: 8px;
+            background-color: #F1F5F9; color: #475569;
+            border: 1px solid #CBD5E1; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-secondary:hover { background-color: #E2E8F0; }
+        
+        .divider { height: 1px; background-color: #E2E8F0; margin: 15px 0; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>Strict Node Containment Layout</h1>
+            <div style="font-size: 11px; color: #64748B; margin-top: 4px;">Exclusive: Group Color | Shared: White | Unassigned: Black. Strict boundary enforcement.</div>
+        </div>
+    </header>
+
+    <div id="controls">
+        <button id="generate" class="btn-primary">Generate Entirely New Layout</button>
+        
+        <div class="divider"></div>
+        
+        <button id="add-exclusive" class="btn-secondary" style="border-left: 4px solid #3B82F6;">+ Add Exclusive Node</button>
+        <button id="add-shared" class="btn-secondary" style="border-left: 4px solid #CBD5E1; background: white;">+ Add Shared Node</button>
+        <button id="add-orphan" class="btn-secondary" style="border-left: 4px solid #0F172A; background: #334155; color: white;">+ Add Unassigned Node</button>
+
+        <div style="margin-top: 15px; font-size: 12px; color: #64748B; line-height: 1.5;">
+            <strong>Engine Status:</strong> <span id="node-count">30</span> Nodes Active.<br><br>
+            Constraint solver ensures exclusive nodes are physically pushed out of foreign bounding boxes during calculation.
+        </div>
+    </div>
+
+    <canvas id="layoutCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('layoutCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let nodes = [];
+    let groups = [];
+    let centerX, centerY;
+    let nodeCounter = 0;
+
+    const groupColors = [
+        { border: '#3B82F6', fill: 'rgba(59, 130, 246, 0.1)' }, // Blue
+        { border: '#10B981', fill: 'rgba(16, 185, 129, 0.1)' }, // Emerald
+        { border: '#8B5CF6', fill: 'rgba(139, 92, 246, 0.1)' }, // Violet
+        { border: '#F59E0B', fill: 'rgba(245, 158, 11, 0.1)' }, // Amber
+        { border: '#EC4899', fill: 'rgba(236, 72, 153, 0.1)' }  // Pink
+    ];
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        centerX = canvas.width / 2;
+        centerY = (canvas.height - 70) / 2 + 70;
+    }
+
+    // --- 1. Data Generation ---
+    function generateData() {
+        nodes = [];
+        groups = [];
+        nodeCounter = 0;
+        
+        for(let i=0; i<30; i++) {
+            nodes.push({ id: `N${nodeCounter++}`, x: 0, y: 0, vx: 0, vy: 0, groups: [] });
+        }
+
+        for(let i=0; i<5; i++) {
+            const groupNodes = [];
+            const numNodes = 5 + Math.floor(Math.random() * 4);
+            for(let j=0; j<numNodes; j++) {
+                const randomNode = nodes[Math.floor(Math.random() * nodes.length)];
+                if(!groupNodes.includes(randomNode.id)) {
+                    groupNodes.push(randomNode.id);
+                    randomNode.groups.push(`G${i}`);
+                }
+            }
+            groups.push({ id: `G${i}`, color: groupColors[i], nodeIds: groupNodes });
+        }
+
+        // Add a couple of unassigned nodes purely for demonstration
+        addOrphanNode();
+        addOrphanNode();
+        
+        updateUI();
+    }
+
+    // --- 2. Add Specific Node Types ---
+    function addExclusiveNode() {
+        const targetGroup = groups[Math.floor(Math.random() * groups.length)];
+        const newNode = { id: `N${nodeCounter++}`, x: 0, y: 0, vx: 0, vy: 0, groups: [targetGroup.id] };
+        nodes.push(newNode);
+        targetGroup.nodeIds.push(newNode.id);
+        recalculateAndRender();
+    }
+
+    function addSharedNode() {
+        const numGroups = 2 + Math.floor(Math.random() * 2); 
+        const shuffledGroups = [...groups].sort(() => 0.5 - Math.random());
+        const selectedGroups = shuffledGroups.slice(0, numGroups);
+        const newNode = { id: `N${nodeCounter++}`, x: 0, y: 0, vx: 0, vy: 0, groups: selectedGroups.map(g => g.id) };
+        nodes.push(newNode);
+        selectedGroups.forEach(g => g.nodeIds.push(newNode.id));
+        recalculateAndRender();
+    }
+
+    function addOrphanNode() {
+        nodes.push({ id: `N${nodeCounter++}`, x: 0, y: 0, vx: 0, vy: 0, groups: [] });
+        recalculateAndRender();
+    }
+
+    function updateUI() {
+        document.getElementById('node-count').innerText = nodes.length;
+    }
+
+    // --- 3. Strict Constraint Layout Engine ---
+    function calculateLayout() {
+        // Reset all nodes to center scatter
+        nodes.forEach(n => {
+            n.x = centerX + (Math.random() - 0.5) * 150;
+            n.y = centerY + (Math.random() - 0.5) * 150;
+            n.vx = 0; n.vy = 0;
+        });
+
+        const ITERATIONS = 500;
+        const REPULSION = 2500;  
+        const ATTRACTION = 0.08; 
+        const GRAVITY = 0.005;    
+        const PADDING = 25; // Region padding
+
+        let temperature = 1.0;
+
+        for(let step = 0; step < ITERATIONS; step++) {
+            
+            // A. Temporary Bounding Box Calculation (for strict constraint checks)
+            let currentAABBs = {};
+            groups.forEach(g => {
+                let gNodes = nodes.filter(n => g.nodeIds.includes(n.id));
+                if(gNodes.length === 0) return;
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                gNodes.forEach(n => {
+                    if(n.x < minX) minX = n.x; if(n.y < minY) minY = n.y;
+                    if(n.x > maxX) maxX = n.x; if(n.y > maxY) maxY = n.y;
+                });
+                currentAABBs[g.id] = {
+                    minX: minX - PADDING, minY: minY - PADDING, 
+                    maxX: maxX + PADDING, maxY: maxY + PADDING,
+                    cx: (minX + maxX)/2, cy: (minY + maxY)/2
+                };
+            });
+
+            // B. STRICT CONSTRAINT: Foreign Bounding Box Expulsion
+            nodes.forEach(n => {
+                const isExclusive = n.groups.length === 1;
+                const isOrphan = n.groups.length === 0;
+
+                if (isExclusive || isOrphan) {
+                    const myGroup = isExclusive ? n.groups[0] : null;
+
+                    groups.forEach(g => {
+                        if (g.id !== myGroup && currentAABBs[g.id]) {
+                            let box = currentAABBs[g.id];
+                            
+                            // If node is inside a foreign box, push it out
+                            if (n.x > box.minX && n.x < box.maxX && n.y > box.minY && n.y < box.maxY) {
+                                // Find shortest path out
+                                let dLeft = n.x - box.minX;
+                                let dRight = box.maxX - n.x;
+                                let dTop = n.y - box.minY;
+                                let dBottom = box.maxY - n.y;
+                                let minDist = Math.min(dLeft, dRight, dTop, dBottom);
+
+                                let force = 8 * temperature; // Strong immediate push
+                                if (minDist === dLeft) n.vx -= force;
+                                else if (minDist === dRight) n.vx += force;
+                                else if (minDist === dTop) n.vy -= force;
+                                else if (minDist === dBottom) n.vy += force;
+                            }
+                        }
+                    });
+                }
+            });
+
+            // C. General Node Repulsion
+            for(let i=0; i<nodes.length; i++) {
+                for(let j=i+1; j<nodes.length; j++) {
+                    let dx = nodes[i].x - nodes[j].x;
+                    let dy = nodes[i].y - nodes[j].y;
+                    let distSq = dx*dx + dy*dy || 1;
+                    
+                    if(distSq < 20000) { 
+                        let force = (REPULSION / distSq) * temperature;
+                        nodes[i].vx += (dx / Math.sqrt(distSq)) * force;
+                        nodes[i].vy += (dy / Math.sqrt(distSq)) * force;
+                        nodes[j].vx -= (dx / Math.sqrt(distSq)) * force;
+                        nodes[j].vy -= (dy / Math.sqrt(distSq)) * force;
+                    }
+                }
+            }
+
+            // D. Group Attraction
+            groups.forEach(g => {
+                let gNodes = nodes.filter(n => g.nodeIds.includes(n.id));
+                if(gNodes.length === 0) return;
+                let cx = 0, cy = 0;
+                gNodes.forEach(n => { cx += n.x; cy += n.y; });
+                cx /= gNodes.length; cy /= gNodes.length;
+
+                gNodes.forEach(n => {
+                    n.vx += (cx - n.x) * ATTRACTION * temperature;
+                    n.vy += (cy - n.y) * ATTRACTION * temperature;
+                });
+            });
+
+            // E. Gravity & Apply
+            nodes.forEach(n => {
+                n.vx += (centerX - n.x) * GRAVITY * temperature;
+                n.vy += (centerY - n.y) * GRAVITY * temperature;
+                n.vx *= 0.8; n.vy *= 0.8;
+                n.x += n.vx; n.y += n.vy;
+            });
+
+            temperature *= 0.99; 
+        }
+    }
+
+    // --- 4. Render Engine ---
+    function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const PADDING = 30; 
+
+        // 1. Draw Regions
+        groups.forEach(g => {
+            let gNodes = nodes.filter(n => g.nodeIds.includes(n.id));
+            if(gNodes.length === 0) return;
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            gNodes.forEach(n => {
+                if(n.x < minX) minX = n.x; if(n.y < minY) minY = n.y;
+                if(n.x > maxX) maxX = n.x; if(n.y > maxY) maxY = n.y;
+            });
+
+            let boxX = minX - PADDING; let boxY = minY - PADDING;
+            let boxWidth = (maxX - minX) + (PADDING * 2); let boxHeight = (maxY - minY) + (PADDING * 2);
+
+            ctx.fillStyle = g.color.fill; ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+            ctx.strokeStyle = g.color.border; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); 
+            ctx.strokeRect(boxX, boxY, boxWidth, boxHeight); ctx.setLineDash([]); 
+
+            ctx.fillStyle = g.color.border; ctx.font = 'bold 12px Inter';
+            ctx.fillText(g.id, boxX + 8, boxY + 18);
+        });
+
+        // 2. Draw Nodes (Strict Color Coding)
+        nodes.forEach(n => {
+            let bgColor, strokeColor, textColor;
+
+            if (n.groups.length === 0) {
+                // UNASSIGNED / ORPHAN: Black
+                bgColor = '#0F172A';
+                strokeColor = '#0F172A';
+                textColor = '#FFFFFF';
+            } else if (n.groups.length === 1) {
+                // EXCLUSIVE: Inherit solid group color
+                const parentGroup = groups.find(g => g.id === n.groups[0]);
+                bgColor = parentGroup ? parentGroup.color.border : '#333';
+                strokeColor = bgColor;
+                textColor = '#FFFFFF'; 
+            } else {
+                // SHARED: White bridge
+                bgColor = '#FFFFFF';
+                strokeColor = '#475569';
+                textColor = '#0F172A';
+            }
+            
+            // Draw Circle
+            ctx.fillStyle = bgColor;
+            ctx.beginPath(); ctx.arc(n.x, n.y, 11, 0, Math.PI*2); ctx.fill();
+
+            // Draw Border
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = (n.groups.length > 1) ? 2 : 1;
+            ctx.stroke();
+
+            // Draw Label
+            ctx.fillStyle = textColor;
+            ctx.font = 'bold 9px Inter';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(n.id, n.x, n.y);
+        });
+    }
+
+    // --- Pipeline Controller ---
+    function recalculateAndRender() {
+        updateUI();
+        calculateLayout();
+        render();
+    }
+
+    // --- Listeners ---
+    document.getElementById('generate').addEventListener('click', () => { generateData(); recalculateAndRender(); });
+    document.getElementById('add-exclusive').addEventListener('click', addExclusiveNode);
+    document.getElementById('add-shared').addEventListener('click', addSharedNode);
+    document.getElementById('add-orphan').addEventListener('click', addOrphanNode);
+    window.addEventListener('resize', () => { resize(); render(); });
+    
+    // Boot
+    resize(); generateData(); recalculateAndRender();
+
+</script>
+</body>
+</html>

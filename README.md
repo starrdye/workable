@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript"/>
     <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
     <img src="https://img.shields.io/badge/AI-Multi--provider-8B5CF6" alt="AI"/>
-    <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"/>
+    <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="AGPL-3.0 License"/>
   </p>
   <p align="center">
     <strong>Workable</strong> is a personal workflow engine that uses AI to transform your mental notes into structured, interactive process maps. 
@@ -18,7 +18,7 @@
   <p>
     <a href="#-features">Features</a> ·
     <a href="#-ai-providers">AI Providers</a> ·
-    <a href="#-templates">Templates</a> ·
+    <a href="#-quick-start">Quick Start</a> ·
     <a href="./docs/README.md">Development Guide</a>
   </p>
 
@@ -101,15 +101,25 @@ Modify your workflow by just describing the change. No need to rebuild from scra
 ---
 
 ### 🔬 Interactive Exploration & Tasks
-Click any node to reveal its deep-dive profile, constraints, and assigned tasks.
+Click any node to reveal its deep-dive profile, constraints, and assigned tasks. Task dots orbit each node — click one for a quick-view popup with status, priority, and description.
 
 <div align="center">
   <table>
     <tr>
       <td width="50%" align="center"><img src="./public/demo/sidebar.png" alt="Analysis Sidebar" style="border-radius: 8px; border: 1px solid #E2E8F0;"/><br/><b>Deep-dive analysis</b></td>
-      <td width="50%" align="center"><img src="./public/demo/task_management.png" alt="Task Drawer" style="border-radius: 8px; border: 1px solid #E2E8F0;"/><br/><b>Actionable task lists</b></td>
+      <td width="50%" align="center"><img src="./public/demo/tasknode.png" alt="Task Dot Popup" style="border-radius: 8px; border: 1px solid #E2E8F0;"/><br/><b>Task dot pop-up</b></td>
     </tr>
   </table>
+</div>
+
+---
+
+### ✅ Optimised Workflow View
+Toggle between the **Current Workflow** and **Optimised Workflow** to see AI-suggested improvements overlaid on your canvas. New connections appear as dashed emerald arcs; deprecated ones fade out.
+
+<div align="center">
+  <img src="./public/demo/optimised_workflow.png" alt="Optimised Workflow View" width="800px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <p><i>Switch views without losing your original — the optimised overlay is non-destructive until you apply it.</i></p>
 </div>
 
 ---
@@ -120,6 +130,36 @@ Toggle between the standard **Process Map** (hierarchical flow) and the **Ecosys
 <div align="center">
   <img src="./public/demo/ecosystem.png" alt="Ecosystem Hub View" width="800px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
   <p><i>Quickly spot influence hubs and dependency rings that regular charts hide.</i></p>
+</div>
+
+---
+
+### 🔎 Search & Role Filters
+Search by node name or filter the canvas by role type (Person, Tool, External, Output) and workflow group. Non-matching nodes dim, so your focus stays sharp.
+
+<div align="center">
+  <img src="./public/demo/filter_by_role.png" alt="Filter by Role" width="800px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <p><i>Combine role and group filters to isolate any slice of your process instantly.</i></p>
+</div>
+
+---
+
+### 🖱️ Right-Click Node Editing
+Right-click any node to set output delay, assign it to workflow groups, add manual connections, or delete it. The analysis panel stays open beside you.
+
+<div align="center">
+  <img src="./public/demo/node_editing.png" alt="Node Context Menu and Group Assignment" width="800px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <p><i>Every structural edit is reflected immediately — no save button, no page reload.</i></p>
+</div>
+
+---
+
+### 💾 Workflow Library
+Name and save any canvas state to the built-in Workflow Library. Load it back instantly, or delete old versions you no longer need.
+
+<div align="center">
+  <img src="./public/demo/workflow_library.png" alt="Workflow Library" width="600px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <p><i>Snapshots are stored locally in your browser — no account or cloud sync required.</i></p>
 </div>
 
 ---
@@ -143,15 +183,15 @@ npm run dev
 ## 🤖 AI Providers
 
 Workable is provider-agnostic. Swap between them any time to compare results.
-- **Anthropic Claude**: Best overall reasoning and JSON fidelity (`claude-3-5-sonnet`).
-- **Google Gemini**: Fast, reliable, and generous free tier (`gemini-1.5-pro`).
-- **ByteDance Doubao**: High-performance models with local server endpoints.
+- **Anthropic Claude**: Best overall reasoning and JSON fidelity. Supports `claude-opus-4-6`, `claude-sonnet-4-6` (recommended), and `claude-haiku-4-5`.
+- **Google Gemini**: Fast, reliable, and generous free tier. Supports `gemini-2.0-flash`, `gemini-1.5-pro`, and `gemini-1.5-flash`.
+- **ByteDance Doubao**: High-performance models via standard pay-per-use endpoints or the Coding Plan (`doubao-seed-2.0`, `doubao-pro-32k`, and more).
 
 ---
 
 ## 📄 License
 
-MIT © 2026 — do whatever you want, just don't blame us when your workflow still has bottlenecks.
+GNU Affero General Public License v3.0 (AGPL-3.0) © 2026 — share and share alike, even in the cloud.
 
 ---
 
