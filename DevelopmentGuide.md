@@ -4,7 +4,7 @@
   <em>Personal Workflow Mapper · Next.js 16 · React 19 · TypeScript 5 · Multi-provider AI</em>
 </p>
 
-> **Current branch:** `vb0.2`
+> **Current branch:** `main`
 
 > This guide covers the current production architecture. The original prototype (`prototype.html`) is kept for historical reference only — all active development happens in `src/`.
 
@@ -125,7 +125,7 @@ src/
 └── lib/
     ├── aiClient.ts                 # Provider-agnostic generateText()
     │                               #   Anthropic · Google Gemini · ByteDance Doubao
-    ├── layout.ts                   # hierarchicalLayout + groupAwareLayout
+    ├── layout.ts                   # hierarchicalLayout + forceDirectedLayout + groupAwareLayout
     ├── serverState.ts              # In-memory singleton + all mutation helpers
     ├── templates.ts                # Pre-built workflow templates with full metadata
     └── constants.ts                # Core node IDs, role colours, PROVIDERS list
@@ -624,7 +624,14 @@ This guarantees that the positions the user sees on first load are identical to 
 
 ## Roadmap
 
-### In progress (vb0.1)
+### 🚀 Launch & Core Systems (Completed)
+
+- [x] **GitHub Launch** — Repository is live and ready for clones
+- [x] **Real-time synchronization** — Server-Sent Events (SSE) for instant multi-tab sync
+- [x] **Distributed Reasoning** — Node-agent architecture for 100+ node scalability
+- [/] **Persistent storage** — localStorage auto-save + named snapshots in production
+
+### In progress (vb0.1 / vb0.2)
 
 - **SQLite persistence** — `src/lib/db/` has the full schema and adapter ready; wire up by swapping `getGraphState` / `importState` in `serverState.ts` to call the adapter when `WORKABLE_USE_DB=true`
 - **Distributed analysis UI** — frontend controls for triggering node-agent orchestration and displaying per-node results (the API routes exist; no UI yet)
