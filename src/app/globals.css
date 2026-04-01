@@ -41,3 +41,12 @@ body {
 /* React Flow overrides — hide default attribution + scrollbars */
 .react-flow__attribution { display: none !important; }
 .react-flow__renderer { overflow: hidden; }
+
+/* Hide scrollbar while keeping scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
