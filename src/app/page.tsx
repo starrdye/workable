@@ -239,7 +239,7 @@ export default function Home() {
     GROUP_COLORS,
   } = useWorkflowGroups(fullServerState, setFullServerState, setGroupFilters, pushSnapshot);
 
-  const { language } = useLanguage();
+  const { lang: language } = useLanguage();
 
   const {
     aiConfig, handleSaveAiConfig, activeApiKey,

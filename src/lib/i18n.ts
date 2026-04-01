@@ -362,6 +362,7 @@ export const translations = {
     'graphCanvas.task.priority.high':          '↑ High',
 
     // ── Demo Mode ─────────────────────────────────────────────────────────
+    'demo.badge.title':             'About this demo',
     'demo.badge.label':             'Demo Mode',
     'demo.badge.sublabel':          'Click to learn more',
     'demo.story.title':             'Demo — Jack\'s Daily Routine',
@@ -741,6 +742,7 @@ export const translations = {
     'graphCanvas.task.priority.medium':        '→ 中',
     'graphCanvas.task.priority.high':          '↑ 高',
 
+    'demo.badge.title':             '关于此演示',
     'demo.badge.label':             '演示模式',
     'demo.badge.sublabel':          '点击了解更多',
     'demo.story.title':             '演示项目 — Jack 的日常流程',
