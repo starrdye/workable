@@ -11,7 +11,7 @@ import { KeyboardHelpModal } from "@/components/KeyboardHelpModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
-  Undo2, Redo2, BookOpen, Keyboard, Clock,
+  Undo2, Redo2, BookOpen, Keyboard, Clock, PanelLeft,
 } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
 
@@ -43,9 +43,10 @@ export default function Home() {
   /** Track 15a: true while AI is generating a workflow — overlay shown over empty canvas */
   const [isGeneratingWorkflow,  setIsGeneratingWorkflow]  = useState(false);
   const [workflowGenerationError, setWorkflowGenerationError] = useState<string | null>(null);
-  const [showImprovements, setShowImprovements] = useState(false);
-  const [showDataFlow,     setShowDataFlow]     = useState(false);
-  const [highContrast,     setHighContrast]     = useState(false);
+  const [showImprovements,  setShowImprovements]  = useState(false);
+  const [showDataFlow,      setShowDataFlow]      = useState(false);
+  const [highContrast,      setHighContrast]      = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [selectedId,   setSelectedId]    = useState<string | null>(null);
   const [selectedType, setSelectedType]  = useState<"node" | "edge" | null>(null);
   const [analysisData, setAnalysisData]  = useState<AnalysisData | null>(null);
@@ -428,7 +429,7 @@ export default function Home() {
 
   // ── Canvas app shell ────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-dvh md:h-screen relative bg-[#F8FAFC] overflow-hidden font-[var(--font-inter)] text-slate-800 antialiased">
+    <div className="flex flex-col h-dvh relative bg-[#F8FAFC] overflow-hidden font-[var(--font-inter)] text-slate-800 antialiased">
 
       {/* ── Header ── */}
       <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between z-50 shadow-sm relative shrink-0 min-w-0">
@@ -441,6 +442,14 @@ export default function Home() {
           <h1 className="text-xl font-bold tracking-tight hidden sm:block">
             <span className="text-indigo-600">Workable</span>
           </h1>
+          {/* Mobile sidebar toggle — only visible on small screens */}
+          <button
+            onClick={() => setShowMobileSidebar(v => !v)}
+            title="Toggle sidebar"
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+          >
+            <PanelLeft className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3 overflow-x-auto min-w-0 scrollbar-hide">
@@ -553,10 +562,25 @@ export default function Home() {
       </header>
 
       {/* ── Body ── */}
-      <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden relative">
+      <div className="flex flex-1 overflow-hidden relative">
+
+        {/* Mobile sidebar backdrop */}
+        {showMobileSidebar && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            onClick={() => setShowMobileSidebar(false)}
+          />
+        )}
 
         {/* ── Left sidebar ── */}
-        <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col z-40 relative shadow-sm md:overflow-y-auto">
+        <aside className={`
+          fixed md:relative inset-y-0 left-0 z-50 md:z-40
+          w-4/5 max-w-xs md:w-80
+          bg-white border-r border-slate-200
+          flex flex-col shadow-sm overflow-y-auto
+          transform transition-transform duration-300 ease-in-out
+          ${showMobileSidebar ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+        `}>
 
           {/* View Mode */}
           <div className="p-5 border-b border-slate-100">
@@ -886,7 +910,7 @@ export default function Home() {
         </aside>
 
         {/* ── Main canvas ── */}
-        <main className="flex-1 relative bg-[#F8FAFC] overflow-hidden min-h-[70vh] md:min-h-0">
+        <main className="flex-1 relative bg-[#F8FAFC] overflow-hidden">
 
           {/* Track 15a — Skeleton placeholder nodes while AI is generating */}
           {isGeneratingWorkflow && <SkeletonCanvas />}
@@ -905,7 +929,7 @@ export default function Home() {
             highContrast={highContrast}
             selectedId={selectedId}
             selectedType={selectedType}
-            onSelectNode={(id, type) => { setSelectedId(id); setSelectedType(type); }}
+            onSelectNode={(id, type) => { setSelectedId(id); setSelectedType(type); setShowMobileSidebar(false); }}
             onDeselect={() => { setSelectedId(null); setSelectedType(null); }}
             onHover={(name, summary) => setTooltip((t) => ({ ...t, name, summary, visible: true }))}
             onHoverEnd={() => setTooltip((t) => ({ ...t, visible: false }))}
