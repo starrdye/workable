@@ -513,7 +513,23 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
   const nodeTasks: NodeTask[] = (data?.id && metadataOverrides?.[data.id]?.tasks) ? metadataOverrides[data.id].tasks! : [];
 
   return (
-    <aside className={`absolute right-0 top-0 w-80 h-full bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}>
+    <aside className={`
+      fixed md:absolute
+      inset-x-0 bottom-0 md:inset-x-auto md:right-0 md:top-0 md:bottom-auto
+      w-full md:w-80
+      max-h-[80vh] md:max-h-none md:h-full
+      bg-white border-t md:border-t-0 md:border-l border-gray-200 shadow-2xl z-50
+      flex flex-col
+      transform transition-transform duration-300
+      ${isOpen ? "translate-y-0 md:translate-x-0" : "translate-y-full md:translate-x-full"}
+    `}
+      style={{ borderRadius: "16px 16px 0 0" }}
+    >
+      {/* Mobile drag-handle pill */}
+      <div className="md:hidden flex justify-center pt-2.5 pb-1 shrink-0 bg-white rounded-t-2xl">
+        <div className="w-10 h-1 rounded-full bg-slate-300" />
+      </div>
+
       {/* Header */}
       <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-slate-50 shrink-0">
         <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">

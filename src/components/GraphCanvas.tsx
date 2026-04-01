@@ -693,6 +693,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     const panRef = useRef<{ sx: number; sy: number; svx: number; svy: number } | null>(null);
     const isPanningRef = useRef(false);
     const touchRef = useRef<{ pinchDist?: number } | null>(null);
+    const touchStartTimeRef = useRef(0);
 
     useEffect(() => { vtRef.current = viewTransform; }, [viewTransform]);
 
@@ -726,7 +727,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       if (!el) return;
 
       const onTouchStart = (e: TouchEvent) => {
-        e.preventDefault();
+        // Do NOT call preventDefault() here — taps must still fire the
+        // synthetic click event so handlePaneClick / node-click work on mobile.
+        touchStartTimeRef.current = Date.now();
         const touches = e.touches;
         if (touches.length === 1) {
           const t0 = touches[0];
@@ -743,19 +746,20 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       };
 
       const onTouchMove = (e: TouchEvent) => {
-        e.preventDefault();
         const touches = e.touches;
         if (touches.length === 1 && panRef.current) {
           const t0 = touches[0];
           const p = panRef.current;
           const dx = t0.clientX - p.sx, dy = t0.clientY - p.sy;
-          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isPanningRef.current = true;
+          if (Math.abs(dx) > 4 || Math.abs(dy) > 4) isPanningRef.current = true;
           if (isPanningRef.current) {
+            e.preventDefault(); // prevent page scroll only once a real pan is detected
             const next = { x: p.svx + dx, y: p.svy + dy, scale: vtRef.current.scale };
             vtRef.current = next;
             setViewTransform(next);
           }
         } else if (touches.length >= 2 && touchRef.current?.pinchDist !== undefined) {
+          e.preventDefault(); // always prevent default for pinch
           const t0 = touches[0], t1 = touches[1];
           const newDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
           const ratio = newDist / touchRef.current.pinchDist;
