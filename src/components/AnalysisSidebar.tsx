@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { CORE_NODE_IDS as CORE_NODE_IDS_ARRAY } from "@/lib/constants";
 import type { NodeTask } from "@/lib/serverState";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export interface AnalysisData {
   id: string;
@@ -77,6 +78,7 @@ function nanoid() {
 // ─── Tasks section ──────────────────────────────────────────────────────────
 
 function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: NodeTask[] }) {
+  const { t } = useLanguage();
   const [tasks, setTasks] = useState<NodeTask[]>(initialTasks);
   const [adding, setAdding] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -163,7 +165,7 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
       {/* Section header */}
       <div className="flex items-center justify-between mb-3">
         <div className="text-[10px] text-indigo-400 uppercase font-bold tracking-widest flex items-center gap-1.5">
-          <Activity className="w-3 h-3" /> Tasks
+          <Activity className="w-3 h-3" /> {t('sidebar.tasks')}
           {tasks.length > 0 && (
             <span className="ml-1 bg-indigo-100 text-indigo-600 rounded-full px-1.5 py-px text-[9px] font-bold">
               {tasks.filter(t => t.status !== "done").length}/{tasks.length}
@@ -174,7 +176,7 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
           onClick={() => { setAdding(a => !a); setExpandedId(null); setEditingId(null); }}
           className="flex items-center gap-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:bg-indigo-50 px-2 py-1 rounded-lg transition-colors"
         >
-          <Plus className="w-3 h-3" /> Add Task
+          <Plus className="w-3 h-3" /> {t('sidebar.tasks.addTask')}
         </button>
       </div>
 
@@ -184,7 +186,7 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
           <input
             autoFocus
             type="text"
-            placeholder="Task title…"
+            placeholder={t('sidebar.tasks.title')}
             value={newTask.title}
             onChange={e => setNewTask(d => ({ ...d, title: e.target.value }))}
             onKeyDown={e => { if (e.key === "Enter") handleAddTask(); if (e.key === "Escape") setAdding(false); }}
@@ -206,7 +208,7 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
               className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-400 bg-white"
             >
               {PRIORITY_OPTIONS.map(p => (
-                <option key={p} value={p}>{p} priority</option>
+                <option key={p} value={p}>{t(('sidebar.priority.' + p) as any)}</option>
               ))}
             </select>
           </div>
@@ -218,7 +220,7 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
           />
           <textarea
             rows={2}
-            placeholder="Optional note…"
+            placeholder={t('sidebar.tasks.note')}
             value={newTask.note || ""}
             onChange={e => setNewTask(d => ({ ...d, note: e.target.value }))}
             className="w-full border border-indigo-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-400 bg-white resize-none"
@@ -227,19 +229,19 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
             <button
               onClick={() => setAdding(false)}
               className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-            >Cancel</button>
+            >{t('sidebar.tasks.cancel')}</button>
             <button
               onClick={handleAddTask}
               disabled={!newTask.title.trim()}
               className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1.5 rounded-lg transition-colors"
-            >Add</button>
+            >{t('sidebar.tasks.add')}</button>
           </div>
         </div>
       )}
 
       {/* Task list */}
       {tasks.length === 0 && !adding ? (
-        <div className="text-xs text-slate-400 italic py-1">No tasks yet — click "Add Task" to create one.</div>
+        <div className="text-xs text-slate-400 italic py-1">{t('sidebar.tasks.empty')}</div>
       ) : (
         <ul className="space-y-1.5">
           {tasks.map(task => {
@@ -302,7 +304,7 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
                         />
                         <textarea
                           rows={2}
-                          placeholder="Optional note…"
+                          placeholder={t('sidebar.tasks.note')}
                           value={draft.note || ""}
                           onChange={e => setEditDraft(d => d ? { ...d, note: e.target.value } : d)}
                           className="w-full border border-indigo-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none bg-white resize-none"
@@ -311,13 +313,13 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
                           <button
                             onClick={() => { setEditingId(null); setEditDraft(null); }}
                             className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-                          >Cancel</button>
+                          >{t('sidebar.tasks.cancel')}</button>
                           <button
                             onClick={handleSaveEdit}
                             disabled={!draft.title.trim()}
                             className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
                           >
-                            <Check className="w-3 h-3" /> Save
+                            <Check className="w-3 h-3" /> {t('sidebar.tasks.save')}
                           </button>
                         </div>
                       </>
@@ -340,11 +342,11 @@ function TasksSection({ nodeId, initialTasks }: { nodeId: string; initialTasks: 
                           <button
                             onClick={(e) => { e.stopPropagation(); startEdit(task); }}
                             className="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1 rounded-lg hover:bg-indigo-50 transition-colors border border-indigo-100"
-                          >Edit</button>
+                          >{t('sidebar.tasks.edit')}</button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
                             className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors border border-red-100"
-                          >Delete</button>
+                          >{t('sidebar.tasks.delete')}</button>
                         </div>
                       </>
                     )}
@@ -400,6 +402,7 @@ function EditableList({
 }: {
   label: string; items: string[]; editing: boolean; onChange: (v: string[]) => void;
 }) {
+  const { t } = useLanguage();
   if (!editing) {
     return (
       <div className="mb-4">
@@ -418,7 +421,7 @@ function EditableList({
   return (
     <div className="mb-4">
       <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest mb-1 border-b border-slate-100 pb-1">{label}</div>
-      <div className="text-[10px] text-slate-400 mb-1">One item per line</div>
+      <div className="text-[10px] text-slate-400 mb-1">{t('sidebar.editItems')}</div>
       <textarea rows={Math.max(3, items.length + 1)} value={items.join("\n")}
         onChange={e => onChange(e.target.value.split("\n"))}
         className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 resize-none bg-indigo-50/30 font-mono" />
@@ -429,6 +432,7 @@ function EditableList({
 // ─── Main sidebar ────────────────────────────────────────────────────────────
 
 export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverrides, nodeSources }: AnalysisSidebarProps) {
+  const { t } = useLanguage();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<AnalysisData | null>(null);
   const [saving, setSaving] = useState(false);
@@ -516,7 +520,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
           {displayed?.type === "node"
             ? <Zap className="w-4 h-4 text-indigo-600" />
             : <LinkIcon className="w-4 h-4 text-indigo-600" />}
-          {displayed?.type === "node" ? "Node Analysis" : "Relation Analysis"}
+          {displayed?.type === "node" ? t('sidebar.analysis.nodeTitle') : t('sidebar.analysis.edgeTitle')}
         </h3>
         <div className="flex items-center gap-2">
           {displayed && (
@@ -527,7 +531,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
                 className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 border border-emerald-200 hover:bg-emerald-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
               >
                 <Check className="w-3.5 h-3.5" />
-                {saving ? "Saving…" : "Save"}
+                {saving ? t('sidebar.analysis.saving') : t('sidebar.analysis.save')}
               </button>
             ) : (
               <button
@@ -548,7 +552,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
       {/* Body */}
       <div className="p-5 overflow-y-auto flex-1">
         {!current ? (
-          <div className="text-sm text-slate-400 italic mt-2">Select a node or connection to view details.</div>
+          <div className="text-sm text-slate-400 italic mt-2">{t('sidebar.analysis.empty')}</div>
         ) : (
           <>
             {/* Origin badge — shown for nodes only, never for edges */}
@@ -564,7 +568,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
                       : "bg-sky-50 border-sky-200 text-sky-600"
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${isAI ? "bg-violet-500" : "bg-sky-500"}`} />
-                    {isAI ? "AI Generated" : "User Added"}
+                    {isAI ? t('sidebar.analysis.aiGenerated') : t('sidebar.analysis.userAdded')}
                   </span>
                 </div>
               );
@@ -572,43 +576,43 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
 
             {editing && (
               <div className="mb-4 text-xs text-indigo-500 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 font-medium">
-                ✏️ Editing — changes are saved to the server session. Export CSV to persist permanently.
+                {t('sidebar.analysis.editingHint')}
               </div>
             )}
 
             {/* Direction row — edges only, always visible */}
             {current.type === "edge" && (current.edgeSourceLabel || current.edgeTargetLabel) && (
               <div className="mb-4">
-                <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest mb-2">Data Flow Direction</div>
+                <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest mb-2">{t('sidebar.analysis.dataFlow')}</div>
                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
                   <div className="flex-1 min-w-0">
-                    <div className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">From</div>
+                    <div className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">{t('sidebar.analysis.from')}</div>
                     <div className="text-xs font-semibold text-slate-700 truncate">{current.edgeSourceLabel || current.edgeSourceId || "—"}</div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-indigo-400 shrink-0" />
                   <div className="flex-1 min-w-0 text-right">
-                    <div className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">To</div>
+                    <div className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">{t('sidebar.analysis.to')}</div>
                     <div className="text-xs font-semibold text-slate-700 truncate">{current.edgeTargetLabel || current.edgeTargetId || "—"}</div>
                   </div>
                 </div>
               </div>
             )}
 
-            <EditableField label={current.type === "node" ? "Entity Name" : "Connection Name"}
+            <EditableField label={current.type === "node" ? t('sidebar.analysis.entityName') : t('sidebar.analysis.connName')}
               value={current.name || (current.type === "node" ? "Custom Node" : "Connection")}
               editing={editing} onChange={set("name")} />
 
-            <EditableField label={current.type === "node" ? "Role / Type" : "Transfer Method"}
+            <EditableField label={current.type === "node" ? t('sidebar.analysis.roleType') : t('sidebar.analysis.transferMethod')}
               value={current.role || ""}
               editing={editing} onChange={set("role")} />
 
-            <EditableField label="System Status"
+            <EditableField label={t('sidebar.analysis.systemStatus')}
               value={current.status || "Active"}
               editing={editing} onChange={set("status")} />
 
             {!editing && (
               <div className="mb-4">
-                <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest mb-1">Status</div>
+                <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-widest mb-1">{t('sidebar.analysis.status')}</div>
                 <span className={`text-sm font-bold ${current.statusColor || "text-indigo-600"}`}>{current.status || "Active"}</span>
               </div>
             )}
@@ -616,7 +620,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
             {/* Technical Parameters Section */}
             <div className="mt-6 mb-6 pt-4 border-t border-slate-100">
               <div className="text-[10px] text-indigo-400 uppercase font-bold tracking-widest mb-4 flex items-center gap-2">
-                <Activity className="w-3 h-3" /> Technical Parameters
+                <Activity className="w-3 h-3" /> {t('sidebar.analysis.techParams')}
               </div>
 
               {current.type === "node" ? (
@@ -625,7 +629,7 @@ export function AnalysisSidebar({ data, isOpen, onClose, onDelete, metadataOverr
                     <Clock className="w-4 h-4 text-slate-400 shrink-0" />
                     <div className="flex-1">
                       <EditableField
-                        label="Output Delay Multiplier"
+                        label={t('sidebar.analysis.outputDelay')}
                         value={current.outputDelay ?? 1}
                         editing={editing}
                         type="number"

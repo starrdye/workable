@@ -2,17 +2,19 @@
 
 import { useEffect, useRef } from "react";
 import { X, Keyboard } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import type { TranslationKey } from "@/lib/i18n";
 
-const SHORTCUTS = [
-  { keys: ["N"],              action: "Add new node" },
-  { keys: ["Delete"],         action: "Delete selected node / edge" },
-  { keys: ["Cmd", "Z"],       action: "Undo" },
-  { keys: ["Cmd", "Shift", "Z"], action: "Redo" },
-  { keys: ["Cmd", "E"],       action: "Export CSV" },
-  { keys: ["Cmd", "K"],       action: "Open node search" },
-  { keys: ["Escape"],         action: "Deselect / close modal" },
-  { keys: ["Tab"],            action: "Cycle through nodes" },
-  { keys: ["?"],              action: "Show this help" },
+const SHORTCUTS: { keys: string[]; actionKey: TranslationKey }[] = [
+  { keys: ["N"],                    actionKey: "keyboard.addNode" },
+  { keys: ["Delete"],               actionKey: "keyboard.deleteSelected" },
+  { keys: ["Cmd", "Z"],             actionKey: "keyboard.undo" },
+  { keys: ["Cmd", "Shift", "Z"],    actionKey: "keyboard.redo" },
+  { keys: ["Cmd", "E"],             actionKey: "keyboard.exportCsv" },
+  { keys: ["Cmd", "K"],             actionKey: "keyboard.openSearch" },
+  { keys: ["Escape"],               actionKey: "keyboard.deselect" },
+  { keys: ["Tab"],                  actionKey: "keyboard.cycleNodes" },
+  { keys: ["?"],                    actionKey: "keyboard.showHelp" },
 ];
 
 interface KeyboardHelpModalProps {
@@ -20,6 +22,7 @@ interface KeyboardHelpModalProps {
 }
 
 export function KeyboardHelpModal({ onClose }: KeyboardHelpModalProps) {
+  const { t } = useLanguage();
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Focus trap
@@ -43,7 +46,7 @@ export function KeyboardHelpModal({ onClose }: KeyboardHelpModalProps) {
       className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Keyboard shortcuts"
+      aria-label={t('keyboard.title')}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div ref={modalRef} className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -51,12 +54,12 @@ export function KeyboardHelpModal({ onClose }: KeyboardHelpModalProps) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <Keyboard className="w-4 h-4 text-indigo-500" />
-            <span className="font-semibold text-slate-800">Keyboard Shortcuts</span>
+            <span className="font-semibold text-slate-800">{t('keyboard.title')}</span>
           </div>
           <button
             onClick={onClose}
             className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-            aria-label="Close keyboard shortcuts"
+            aria-label={t('keyboard.close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -64,9 +67,9 @@ export function KeyboardHelpModal({ onClose }: KeyboardHelpModalProps) {
 
         {/* Shortcut list */}
         <div className="px-6 py-4 space-y-2">
-          {SHORTCUTS.map(({ keys, action }) => (
-            <div key={action} className="flex items-center justify-between py-1.5">
-              <span className="text-sm text-slate-600">{action}</span>
+          {SHORTCUTS.map(({ keys, actionKey }) => (
+            <div key={actionKey} className="flex items-center justify-between py-1.5">
+              <span className="text-sm text-slate-600">{t(actionKey)}</span>
               <div className="flex items-center gap-1">
                 {keys.map((k, i) => (
                   <span key={i} className="inline-flex items-center gap-1">
@@ -82,7 +85,7 @@ export function KeyboardHelpModal({ onClose }: KeyboardHelpModalProps) {
         </div>
 
         <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400 text-center">
-          Shortcuts are disabled when typing in input fields.
+          {t('keyboard.footer')}
         </div>
       </div>
     </div>

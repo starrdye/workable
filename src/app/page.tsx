@@ -25,6 +25,8 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useWorkflowLibrary }   from "@/hooks/useWorkflowLibrary";
 import { AIEngineToggle }       from "@/components/AIEngineToggle";
 import { WorkflowGeneratingOverlay, SkeletonCanvas } from "@/components/WorkflowGeneratingOverlay";
+import { LanguageToggle }       from "@/components/LanguageToggle";
+import { useLanguage }          from "@/contexts/LanguageContext";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -34,6 +36,8 @@ const ROLE_CHIPS = [
 ] as const;
 
 export default function Home() {
+  const { t } = useLanguage();
+
   // ── App state ──────────────────────────────────────────────────────────────
   const [isAppStarted,          setIsAppStarted]          = useState(false);
   /** Track 15a: true while AI is generating a workflow — overlay shown over empty canvas */
@@ -305,7 +309,7 @@ export default function Home() {
         }`}
       >
         <FileText className="w-3.5 h-3.5" />
-        AI Debug Log{aiDebugLog?.error ? " ⚠" : ""}
+        {t('debugLog.button')}{aiDebugLog?.error ? " ⚠" : ""}
       </button>
 
       {showDebugLog && (
@@ -314,9 +318,9 @@ export default function Home() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-indigo-500" />
-                <span className="font-semibold text-slate-800">AI Debug Log</span>
+                <span className="font-semibold text-slate-800">{t('debugLog.title')}</span>
                 {aiDebugLog?.error && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Error</span>
+                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">{t('debugLog.error')}</span>
                 )}
               </div>
               <button onClick={() => setShowDebugLog(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500">
@@ -325,7 +329,7 @@ export default function Home() {
             </div>
             <div className="overflow-y-auto flex-1 p-6 space-y-5 text-sm">
               {!aiDebugLog ? (
-                <p className="text-slate-400 text-center py-8">No parse attempt yet. Submit a workflow description to see debug output here.</p>
+                <p className="text-slate-400 text-center py-8">{t('debugLog.empty')}</p>
               ) : (
                 <>
                   {aiDebugLog.error && (
@@ -342,7 +346,7 @@ export default function Home() {
                             ? 'bg-emerald-100 text-emerald-700'
                             : 'bg-indigo-100 text-indigo-700'
                         }`}>
-                          {aiDebugLog.engine === 'distributed' ? '⚡ Distributed' : '⬤ Monolithic'} engine
+                          {aiDebugLog.engine === 'distributed' ? t('debugLog.engine.distributed') : t('debugLog.engine.monolithic')} {t('debugLog.engine.suffix')}
                         </span>
                       )}
                       {aiDebugLog.tokenUsage && (
@@ -352,23 +356,23 @@ export default function Home() {
                       )}
                       {aiDebugLog.tokenUsage && (
                         <span className="text-xs text-slate-400">
-                          ≈ {(aiDebugLog.tokenUsage.inputTokens + aiDebugLog.tokenUsage.outputTokens).toLocaleString()} total
+                          ≈ {(aiDebugLog.tokenUsage.inputTokens + aiDebugLog.tokenUsage.outputTokens).toLocaleString()} {t('debugLog.tokens.total')}
                         </span>
                       )}
                     </div>
                   )}
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Prompt sent ({aiDebugLog.prompt.length.toLocaleString()} chars)</div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">{t('debugLog.prompt').replace('{n}', aiDebugLog.prompt.length.toLocaleString())}</div>
                     <pre className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs text-slate-700 whitespace-pre-wrap font-mono overflow-x-auto max-h-48 overflow-y-auto">
-                      {aiDebugLog.prompt || "(empty)"}
+                      {aiDebugLog.prompt || t('debugLog.response.empty')}
                     </pre>
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
-                      Raw AI response {aiDebugLog.rawAIResponse ? `(${aiDebugLog.rawAIResponse.length.toLocaleString()} chars)` : "(empty)"}
+                      {t('debugLog.response')} {aiDebugLog.rawAIResponse ? `(${aiDebugLog.rawAIResponse.length.toLocaleString()} chars)` : t('debugLog.response.empty')}
                     </div>
                     <pre className="bg-slate-950 text-green-400 rounded-lg p-4 text-xs whitespace-pre-wrap font-mono overflow-x-auto max-h-96 overflow-y-auto">
-                      {aiDebugLog.rawAIResponse || "(no response received)"}
+                      {aiDebugLog.rawAIResponse || t('debugLog.noResponse')}
                     </pre>
                   </div>
                 </>
@@ -380,14 +384,14 @@ export default function Home() {
                   onClick={() => navigator.clipboard.writeText(aiDebugLog!.rawAIResponse)}
                   className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium"
                 >
-                  Copy response
+                  {t('debugLog.copy')}
                 </button>
               )}
               <button
                 onClick={() => setShowDebugLog(false)}
                 className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-700 font-medium"
               >
-                Close
+                {t('debugLog.close')}
               </button>
             </div>
           </div>
@@ -442,8 +446,8 @@ export default function Home() {
             <button
               onClick={handleUndo}
               disabled={!canUndo}
-              title={canUndo ? "Undo (⌘Z)" : "Nothing to undo"}
-              aria-label={canUndo ? "Undo" : "Nothing to undo"}
+              title={canUndo ? `${t('toolbar.undo')} (⌘Z)` : t('toolbar.undo.nothing')}
+              aria-label={canUndo ? t('toolbar.undo') : t('toolbar.undo.nothing')}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Undo2 className="w-4 h-4" />
@@ -451,8 +455,8 @@ export default function Home() {
             <button
               onClick={handleRedo}
               disabled={!canRedo}
-              title={canRedo ? "Redo (⌘⇧Z)" : "Nothing to redo"}
-              aria-label={canRedo ? "Redo" : "Nothing to redo"}
+              title={canRedo ? `${t('toolbar.redo')} (⌘⇧Z)` : t('toolbar.redo.nothing')}
+              aria-label={canRedo ? t('toolbar.redo') : t('toolbar.redo.nothing')}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Redo2 className="w-4 h-4" />
@@ -464,8 +468,8 @@ export default function Home() {
           {/* Track 1: Workflow Library */}
           <button
             onClick={() => setShowLibrary(true)}
-            title="Workflow Library — save & load named snapshots"
-            aria-label="Open workflow library"
+            title={t('toolbar.library.title')}
+            aria-label={t('toolbar.library')}
             className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
           >
             <BookOpen className="w-4 h-4" />
@@ -474,8 +478,8 @@ export default function Home() {
           {/* Track 9: Keyboard Help */}
           <button
             onClick={() => setShowKeyboardHelp(true)}
-            title="Keyboard shortcuts (?)"
-            aria-label="Show keyboard shortcuts"
+            title={t('toolbar.keyboard')}
+            aria-label={t('keyboard.title')}
             className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
           >
             <Keyboard className="w-4 h-4" />
@@ -485,33 +489,33 @@ export default function Home() {
 
           {/* AI Analyze */}
           <button onClick={handleAiAnalyze}
-            title={activeApiKey ? `Analyze with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Analyze"}
-            aria-label="AI Analyze Workflow"
+            title={activeApiKey ? t('toolbar.aiAnalyze.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiAnalyze.noKey')}
+            aria-label={t('toolbar.aiAnalyze')}
             className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               activeApiKey
                 ? "border-indigo-300 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
             <Sparkles className="w-4 h-4" />
-            AI Analyze
+            {t('toolbar.aiAnalyze')}
           </button>
 
           {/* AI Update */}
           <button onClick={() => { if (!activeApiKey) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
-            title={activeApiKey ? `Update workflow with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Update"}
-            aria-label="AI Update Workflow"
+            title={activeApiKey ? t('toolbar.aiUpdate.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiUpdate.noKey')}
+            aria-label={t('toolbar.aiUpdate')}
             className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               activeApiKey
                 ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
             <GitMerge className="w-4 h-4" />
-            AI Update
+            {t('toolbar.aiUpdate')}
           </button>
 
           {/* AI Settings */}
-          <button onClick={() => setShowAISettings(true)} title="AI settings"
-            aria-label="AI Settings"
+          <button onClick={() => setShowAISettings(true)} title={t('toolbar.aiSettings')}
+            aria-label={t('settings.title')}
             className="text-sm font-semibold p-2 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors relative">
             <Settings className="w-4 h-4" />
             {activeApiKey && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white" />}
@@ -520,22 +524,25 @@ export default function Home() {
           {/* AI Engine toggle (vb0.2) */}
           <AIEngineToggle compact />
 
+          {/* Language toggle */}
+          <LanguageToggle />
+
           <div className="h-6 w-px bg-gray-300" />
 
-          <button onClick={() => canvasRef.current?.exportPng()} title="Export graph as PNG"
-            aria-label="Export graph as PNG"
+          <button onClick={() => canvasRef.current?.exportPng()} title={t('toolbar.export.png.title')}
+            aria-label={t('toolbar.export.png.title')}
             className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <Download className="w-4 h-4" />PNG
+            <Download className="w-4 h-4" />{t('toolbar.export.png')}
           </button>
-          <button onClick={() => canvasRef.current?.exportCsv()} title="Export workflow as CSV"
-            aria-label="Export workflow as CSV"
+          <button onClick={() => canvasRef.current?.exportCsv()} title={t('toolbar.export.csv.title')}
+            aria-label={t('toolbar.export.csv.title')}
             className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <FileText className="w-4 h-4" />CSV
+            <FileText className="w-4 h-4" />{t('toolbar.export.csv')}
           </button>
-          <button onClick={() => importInput.current?.click()} title="Import workflow from CSV"
-            aria-label="Import workflow from CSV"
+          <button onClick={() => importInput.current?.click()} title={t('toolbar.import.title')}
+            aria-label={t('toolbar.import.title')}
             className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <Upload className="w-4 h-4" />Import
+            <Upload className="w-4 h-4" />{t('toolbar.import')}
           </button>
           <input ref={importInput} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
 
@@ -550,7 +557,7 @@ export default function Home() {
 
           {/* View Mode */}
           <div className="p-5 border-b border-slate-100">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">View Mode</h2>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">{t('sidebar.viewMode')}</h2>
             <div className="space-y-2">
               <button
                 className={`w-full text-left p-3.5 rounded-2xl border-2 transition group ${
@@ -560,9 +567,9 @@ export default function Home() {
               >
                 <span className={`flex items-center gap-1.5 font-bold text-sm mb-0.5 ${!showImprovements ? "text-indigo-600" : "text-slate-600 group-hover:text-indigo-500"}`}>
                   <Clock size={13} className="flex-shrink-0" />
-                  Current Workflow
+                  {t('sidebar.currentWorkflow')}
                 </span>
-                <p className="text-xs text-slate-500">Every step and handoff as it is today.</p>
+                <p className="text-xs text-slate-500">{t('sidebar.currentWorkflow.desc')}</p>
               </button>
               <button
                 className={`w-full text-left p-3.5 rounded-2xl border-2 transition group ${
@@ -572,9 +579,9 @@ export default function Home() {
               >
                 <span className={`flex items-center gap-1.5 font-bold text-sm mb-0.5 ${showImprovements ? "text-emerald-600" : "text-slate-600 group-hover:text-emerald-500"}`}>
                   <Zap size={13} className="flex-shrink-0" />
-                  Optimised Workflow
+                  {t('sidebar.optimisedWorkflow')}
                 </span>
-                <p className="text-xs text-slate-500">AI-suggested improvements overlaid.</p>
+                <p className="text-xs text-slate-500">{t('sidebar.optimisedWorkflow.desc')}</p>
               </button>
             </div>
 
@@ -595,16 +602,16 @@ export default function Home() {
                     )}
                     <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${showDataFlow ? "bg-indigo-500" : "bg-slate-400"}`} />
                   </span>
-                  <span className="text-xs font-semibold">Show Data Flow</span>
+                  <span className="text-xs font-semibold">{t('sidebar.showDataFlow')}</span>
                 </div>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   showDataFlow ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-400"
                 }`}>
-                  {showDataFlow ? "ON" : "OFF"}
+                  {showDataFlow ? t('sidebar.dataFlow.on') : t('sidebar.dataFlow.off')}
                 </span>
               </button>
               {showDataFlow && (
-                <p className="text-[10px] text-indigo-500 mt-1.5 ml-1">All connections lit — showing live data flow.</p>
+                <p className="text-[10px] text-indigo-500 mt-1.5 ml-1">{t('sidebar.dataFlow.hint')}</p>
               )}
             </div>
 
@@ -623,12 +630,12 @@ export default function Home() {
                   <span className={`relative flex h-2.5 w-2.5 ${highContrast ? "" : "opacity-50"}`}>
                     <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${highContrast ? "bg-fuchsia-500" : "bg-slate-400"}`} />
                   </span>
-                  <span className="text-xs font-semibold">High Contrast</span>
+                  <span className="text-xs font-semibold">{t('sidebar.highContrast')}</span>
                 </div>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   highContrast ? "bg-fuchsia-100 text-fuchsia-600" : "bg-slate-100 text-slate-400"
                 }`}>
-                  {highContrast ? "ON" : "OFF"}
+                  {highContrast ? t('sidebar.dataFlow.on') : t('sidebar.dataFlow.off')}
                 </span>
               </button>
             </div>
@@ -636,7 +643,7 @@ export default function Home() {
 
           {/* Search */}
           <div className="p-5 border-b border-slate-100">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Search</h2>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">{t('sidebar.search')}</h2>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
@@ -644,7 +651,7 @@ export default function Home() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search nodes by name… (Cmd+K)"
+                placeholder={t('sidebar.search.placeholder')}
                 className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 bg-slate-50"
               />
               {searchQuery && (
@@ -656,7 +663,7 @@ export default function Home() {
             </div>
             {searchQuery.trim() && (
               <p className="text-[11px] text-indigo-500 mt-1.5 ml-1">
-                Highlighting nodes matching &ldquo;{searchQuery.trim()}&rdquo;
+                {t('sidebar.search.highlight').replace('{query}', searchQuery.trim())}
               </p>
             )}
           </div>
@@ -668,7 +675,7 @@ export default function Home() {
               className="w-full flex items-center justify-between px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-colors"
             >
               <span className="flex items-center gap-2">
-                Filters
+                {t('sidebar.filters')}
                 {(roleFilters.length > 0 || groupFilters.length > 0) && (
                   <span className="bg-indigo-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
                     {roleFilters.length + groupFilters.length}
@@ -682,7 +689,7 @@ export default function Home() {
               <div className="px-5 pb-4 space-y-4">
                 {/* Role filter */}
                 <div>
-                  <div className="text-[11px] font-semibold text-slate-500 mb-2">Filter by Role</div>
+                  <div className="text-[11px] font-semibold text-slate-500 mb-2">{t('sidebar.filters.role')}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {ROLE_CHIPS.map(({ id, label, color }) => {
                       const active = roleFilters.includes(id);
@@ -707,7 +714,7 @@ export default function Home() {
                 {/* Group filter */}
                 {workflowGroups.length > 0 && (
                   <div>
-                    <div className="text-[11px] font-semibold text-slate-500 mb-2">Filter by Group</div>
+                    <div className="text-[11px] font-semibold text-slate-500 mb-2">{t('sidebar.filters.group')}</div>
                     <div className="flex flex-wrap gap-1.5">
                       {workflowGroups.map((g) => {
                         const active = groupFilters.includes(g.id);
@@ -734,7 +741,7 @@ export default function Home() {
                 {(roleFilters.length > 0 || groupFilters.length > 0) && (
                   <button onClick={() => { setRoleFilters([]); setGroupFilters([]); }}
                     className="text-[11px] text-slate-500 hover:text-red-500 transition-colors flex items-center gap-1">
-                    <X className="w-3 h-3" /> Clear all filters
+                    <X className="w-3 h-3" /> {t('sidebar.filters.clear')}
                   </button>
                 )}
               </div>
@@ -748,7 +755,7 @@ export default function Home() {
               className="w-full flex items-center justify-between px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-colors"
             >
               <span className="flex items-center gap-2">
-                Workflow Groups
+                {t('sidebar.workflowGroups')}
                 {workflowGroups.length > 0 && (
                   <span className="bg-slate-200 text-slate-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
                     {workflowGroups.length}
@@ -762,7 +769,7 @@ export default function Home() {
               <div className="px-5 pb-4 space-y-2">
                 {workflowGroups.length === 0 && (
                   <p className="text-[11px] text-slate-400 italic">
-                    No groups yet. Create one to visually chunk your workflow.
+                    {t('sidebar.groups.empty')}
                   </p>
                 )}
 
@@ -816,20 +823,20 @@ export default function Home() {
                       )}
 
                       <span className="text-[10px] text-slate-400 flex-shrink-0">
-                        {group.nodeIds.length} node{group.nodeIds.length !== 1 ? "s" : ""}
+                        {group.nodeIds.length} {group.nodeIds.length !== 1 ? t('sidebar.groups.nodes') : t('sidebar.groups.node')}
                       </span>
 
                       <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity flex-shrink-0">
                         <button
                           onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }}
-                          title="Rename group"
+                          title={t('sidebar.groups.rename')}
                           className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => deleteGroup(group.id)}
-                          title="Delete group"
+                          title={t('sidebar.groups.delete')}
                           className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -857,11 +864,11 @@ export default function Home() {
                   onClick={createGroup}
                   className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 text-xs font-semibold transition-colors mt-1"
                 >
-                  <Plus className="w-3.5 h-3.5" /> New Group
+                  <Plus className="w-3.5 h-3.5" /> {t('sidebar.groups.newGroup')}
                 </button>
 
                 <p className="text-[10px] text-slate-400 italic leading-snug">
-                  Right-click any node → &ldquo;Add to group&rdquo; to assign members.
+                  {t('sidebar.groups.hint')}
                 </p>
               </div>
             )}
@@ -870,9 +877,7 @@ export default function Home() {
           {/* Tips */}
           <div className="p-5 mt-auto">
             <p className="text-xs text-slate-400 italic text-center border-t border-slate-100 pt-4 leading-relaxed">
-              Drag nodes to rearrange. Right-click canvas to add a step.{" "}
-              <kbd className="bg-slate-100 border border-slate-200 rounded px-1 font-mono text-[10px]">Del</kbd>{" "}
-              to remove. Use <em>AI Analyze</em> for optimisation suggestions.
+              {t('sidebar.tips')}
             </p>
           </div>
         </aside>
@@ -931,7 +936,7 @@ export default function Home() {
               className="bg-white/90 backdrop-blur-md border border-slate-200 rounded-full shadow-lg px-3 py-2 text-slate-600 hover:bg-slate-100 flex items-center gap-1.5 text-sm font-semibold transition-colors"
             >
               <LayoutGrid className="w-4 h-4" />
-              Smart Layout
+              {t('sidebar.smartLayout')}
             </button>
           </div>
         </main>
@@ -1022,7 +1027,7 @@ export default function Home() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-indigo-500" />
-                <span className="font-semibold text-slate-800">Workflow Library</span>
+                <span className="font-semibold text-slate-800">{t('library.title')}</span>
               </div>
               <button onClick={() => setShowLibrary(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
                 <X className="w-4 h-4" />
@@ -1032,7 +1037,7 @@ export default function Home() {
             <div className="px-6 py-3 border-b border-slate-100 flex gap-2">
               <input
                 type="text"
-                placeholder="Name this workflow…"
+                placeholder={t('library.placeholder')}
                 value={librarySaveName}
                 onChange={e => setLibrarySaveName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && librarySaveName.trim() && fullServerState) { saveWorkflow(librarySaveName, fullServerState); setLibrarySaveName(''); } }}
@@ -1043,13 +1048,13 @@ export default function Home() {
                 disabled={!librarySaveName.trim() || !fullServerState}
                 className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium"
               >
-                Save
+                {t('library.save')}
               </button>
             </div>
             {/* Library list */}
             <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
               {libraryEntries.length === 0 ? (
-                <p className="text-slate-400 text-sm text-center py-10">No saved workflows yet.</p>
+                <p className="text-slate-400 text-sm text-center py-10">{t('library.empty')}</p>
               ) : libraryEntries.map(entry => (
                 <div key={entry.id} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50">
                   <div>
@@ -1066,11 +1071,11 @@ export default function Home() {
                         setShowLibrary(false);
                       }}
                       className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-medium"
-                    >Load</button>
+                    >{t('library.load')}</button>
                     <button
                       onClick={() => deleteWorkflow(entry.id)}
                       className="text-xs px-2 py-1 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 font-medium"
-                    >Delete</button>
+                    >{t('library.delete')}</button>
                   </div>
                 </div>
               ))}

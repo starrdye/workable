@@ -16,22 +16,24 @@
  */
 
 import { useEffect, useState, useRef } from "react";
-import { Loader2, Sparkles, X, AlertCircle, ArrowLeft } from "lucide-react";
+import { Loader2, Sparkles, AlertCircle, ArrowLeft } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import type { TranslationKey } from "@/lib/i18n";
 
 // ── Stage definitions ─────────────────────────────────────────────────────────
 
 interface Stage {
-  label: string;
+  labelKey: TranslationKey;
   /** Fraction of estimated total time when this stage becomes active (0–1) */
   startFraction: number;
 }
 
 const STAGES: Stage[] = [
-  { label: "Analysing your workflow description",   startFraction: 0.00 },
-  { label: "Identifying nodes and connections",      startFraction: 0.30 },
-  { label: "Structuring groups and relationships",   startFraction: 0.58 },
-  { label: "Calculating layout",                     startFraction: 0.80 },
-  { label: "Finalising…",                            startFraction: 0.93 },
+  { labelKey: "generating.stage0", startFraction: 0.00 },
+  { labelKey: "generating.stage1", startFraction: 0.30 },
+  { labelKey: "generating.stage2", startFraction: 0.58 },
+  { labelKey: "generating.stage3", startFraction: 0.80 },
+  { labelKey: "generating.stage4", startFraction: 0.93 },
 ];
 
 /** Typical end-to-end duration in ms for a parse-workflow AI call */
@@ -58,6 +60,7 @@ export function WorkflowGeneratingOverlay({
   error,
   onDismissError,
 }: WorkflowGeneratingOverlayProps) {
+  const { t } = useLanguage();
   const startTimeRef = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
 
@@ -84,7 +87,7 @@ export function WorkflowGeneratingOverlay({
             <AlertCircle className="w-7 h-7 text-red-500" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-slate-800 mb-2">Generation failed</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">{t('generating.failed')}</h3>
             <p className="text-sm text-slate-500 leading-relaxed">{error}</p>
           </div>
           <button
@@ -92,7 +95,7 @@ export function WorkflowGeneratingOverlay({
             className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-slate-800 text-white text-sm font-semibold hover:bg-slate-700 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            Back to start
+            {t('generating.backToStart')}
           </button>
         </div>
       </div>
@@ -115,8 +118,8 @@ export function WorkflowGeneratingOverlay({
             <Sparkles className="w-5 h-5 text-indigo-600 animate-pulse" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-800 leading-tight">Building your workflow…</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Powered by AI · please wait</p>
+            <h3 className="text-base font-bold text-slate-800 leading-tight">{t('generating.title')}</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{t('generating.subtitle')}</p>
           </div>
         </div>
 
@@ -152,7 +155,7 @@ export function WorkflowGeneratingOverlay({
                   : isActive ? "text-slate-800"
                   : "text-slate-400"
                 }`}>
-                  {stage.label}
+                  {t(stage.labelKey)}
                 </span>
               </div>
             );

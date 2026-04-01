@@ -6,6 +6,7 @@ import {
 import { CORE_NODE_IDS, ROLE_COLOR } from "@/lib/constants";
 import type { NodeTask } from "@/lib/serverState";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface GraphCanvasRef {
@@ -615,6 +616,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     redundantEdgeIds = [],
     proposedGroupIds = [],
   }, ref) {
+    const { t } = useLanguage();
     const canvasRef = useRef<HTMLDivElement>(null);
 
     const [serverState, setServerState] = useState<WorkflowApiState | null>(null);
@@ -1516,7 +1518,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               </div>
               {taskPopup.task.dueDate && (
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-2.5">
-                  <span>📅</span><span>Due <strong>{taskPopup.task.dueDate}</strong></span>
+                  <span>📅</span><span>{t('graphCanvas.task.due')} <strong>{taskPopup.task.dueDate}</strong></span>
                 </div>
               )}
               {taskPopup.task.note && (
@@ -1537,14 +1539,14 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               <>
                 <button className="w-full text-left px-4 py-2 hover:bg-indigo-50 hover:text-indigo-600 font-medium flex items-center gap-2 transition-colors"
                   onClick={() => { setAddForm({ cx: ctxMenu.cx, cy: ctxMenu.cy, label: "", initials: "", role: "person" }); setCtxMenu(null); }}>
-                  <span className="text-indigo-500 font-bold">+</span> Add Node Here
+                  <span className="text-indigo-500 font-bold">+</span> {t('graphCanvas.contextMenu.addNodeHere')}
                 </button>
                 <button className="w-full text-left px-4 py-2 hover:bg-violet-50 hover:text-violet-600 font-medium flex items-center gap-2 transition-colors"
                   onClick={() => {
                     const groupColors = ["#6366F1", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
                     const id = `group-${Date.now()}`;
                     const color = groupColors[(serverState?.settings?.workflowGroups?.length ?? 0) % groupColors.length];
-                    const newGroup = { id, name: "New Group", color, nodeIds: [] };
+                    const newGroup = { id, name: t('sidebar.groups.newGroup'), color, nodeIds: [] };
                     setServerState((prev) => prev ? { ...prev, settings: { ...prev.settings, workflowGroups: [...(prev.settings?.workflowGroups ?? []), newGroup] }, lastUpdated: Date.now() } : prev);
                     fetch("/api/graph-state", {
                       method: "PUT", headers: { "Content-Type": "application/json" },
@@ -1552,7 +1554,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     }).catch(console.error);
                     setCtxMenu(null);
                   }}>
-                  <span className="text-violet-500">⬡</span> Create Workflow Group
+                  <span className="text-violet-500">⬡</span> {t('graphCanvas.contextMenu.createGroup')}
                 </button>
               </>
             )}
@@ -1560,12 +1562,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               <>
                 <button className="w-full text-left px-4 py-2 hover:bg-indigo-50 hover:text-indigo-600 font-medium flex items-center gap-2 transition-colors"
                   onClick={() => { setConnectFrom(ctxMenu.nodeId); setCtxMenu(null); }}>
-                  <span className="text-indigo-500">↗</span> Connect from here
+                  <span className="text-indigo-500">↗</span> {t('graphCanvas.contextMenu.connectFrom')}
                 </button>
                 {(serverState?.settings?.workflowGroups ?? []).length > 0 && (
                   <div className="relative group/grp">
                     <button className="w-full text-left px-4 py-2 hover:bg-violet-50 hover:text-violet-600 font-medium flex items-center justify-between gap-2 transition-colors">
-                      <span><span className="text-violet-400">⬡</span> Add to group</span>
+                      <span><span className="text-violet-400">⬡</span> {t('graphCanvas.contextMenu.addToGroup')}</span>
                       <span className="text-slate-300 text-xs">›</span>
                     </button>
                     <div className="absolute left-full top-0 hidden group-hover/grp:block bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[160px] z-[300]">
@@ -1620,12 +1622,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     }
                     setCtxMenu(null);
                   }}>
-                  <span className="text-red-400">×</span> Delete Node
+                  <span className="text-red-400">×</span> {t('graphCanvas.contextMenu.deleteNode')}
                 </button>
               </>
             )}
             <div className="border-t border-gray-100 mt-1 px-4 py-1.5 text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
-              {ctxMenu.type === "node" ? "Right-click · node" : "Right-click · canvas"}
+              {ctxMenu.type === "node" ? t('graphCanvas.contextMenu.labelNode') : t('graphCanvas.contextMenu.labelCanvas')}
             </div>
           </div>
         )}
@@ -1633,7 +1635,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* ── Connect mode banner ── */}
         {connectFrom && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-4 py-2 rounded-full shadow flex items-center gap-2">
-            <span>↗ Click a target node to connect</span>
+            <span>{t('graphCanvas.connectBanner')}</span>
             <button onClick={() => setConnectFrom(null)} className="ml-1 text-amber-500 hover:text-amber-700 font-bold">✕</button>
           </div>
         )}
@@ -1643,38 +1645,38 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/20 backdrop-blur-sm"
             onClick={(e) => { if (e.target === e.currentTarget) setAddForm(null); }}>
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 border border-gray-200">
-              <h3 className="font-bold text-gray-900 mb-4">Add New Node</h3>
+              <h3 className="font-bold text-gray-900 mb-4">{t('graphCanvas.addNode.title')}</h3>
               <div className="flex flex-col gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Display Name</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">{t('graphCanvas.addNode.displayName')}</label>
                   <input autoFocus type="text" value={addForm.label} onChange={(e) => setAddForm(f => f ? { ...f, label: e.target.value } : f)}
-                    placeholder="e.g., Compliance Team" onKeyDown={(e) => e.key === "Enter" && handleAddNodeSubmit()}
+                    placeholder={t('graphCanvas.addNode.displayName.placeholder')} onKeyDown={(e) => e.key === "Enter" && handleAddNodeSubmit()}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Initials (2–3 chars)</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">{t('graphCanvas.addNode.initials')}</label>
                   <input type="text" maxLength={3} value={addForm.initials} onChange={(e) => setAddForm(f => f ? { ...f, initials: e.target.value } : f)}
-                    placeholder="e.g., CT" onKeyDown={(e) => e.key === "Enter" && handleAddNodeSubmit()}
+                    placeholder={t('graphCanvas.addNode.initials.placeholder')} onKeyDown={(e) => e.key === "Enter" && handleAddNodeSubmit()}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Role Type</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">{t('graphCanvas.addNode.roleType')}</label>
                   <select value={addForm.role} onChange={(e) => setAddForm(f => f ? { ...f, role: e.target.value as AddForm["role"] } : f)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 bg-white">
-                    <option value="person">Person / Collaborator</option>
-                    <option value="tool">Tool / System</option>
-                    <option value="external">External Partner</option>
-                    <option value="output">Output / Artifact</option>
+                    <option value="person">{t('graphCanvas.addNode.role.person')}</option>
+                    <option value="tool">{t('graphCanvas.addNode.role.tool')}</option>
+                    <option value="external">{t('graphCanvas.addNode.role.external')}</option>
+                    <option value="output">{t('graphCanvas.addNode.role.output')}</option>
                   </select>
                 </div>
               </div>
               <div className="flex gap-2 mt-5">
                 <button onClick={handleAddNodeSubmit} disabled={!addForm.label || !addForm.initials}
                   className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-semibold py-2 rounded-lg text-sm transition-colors">
-                  Add Node
+                  {t('graphCanvas.addNode.submit')}
                 </button>
                 <button onClick={() => setAddForm(null)} className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm text-gray-600 font-medium">
-                  Cancel
+                  {t('graphCanvas.addNode.cancel')}
                 </button>
               </div>
             </div>
@@ -1725,7 +1727,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
             <div className="absolute bottom-24 left-6 z-50 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 w-72" style={{ backdropFilter: "blur(8px)" }}>
               <div className="flex items-center justify-between mb-3">
                 <div className="font-bold text-xs text-slate-500 uppercase tracking-widest">
-                  {edge ? "⚡ Relation Parameters" : "⏱ Node Output Delay"}
+                  {edge ? t('graphCanvas.params.edgeParams') : t('graphCanvas.params.nodeDelay')}
                 </div>
                 <div className="text-[10px] text-slate-400 font-mono">{selectedId}</div>
               </div>
@@ -1736,22 +1738,22 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 return (
                   <div className="flex flex-col gap-3">
                     <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-semibold text-slate-500">Sequence Order</span>
-                      <span className="text-[10px] text-slate-400">Lower = fires earlier in the cycle</span>
+                      <span className="text-[11px] font-semibold text-slate-500">{t('graphCanvas.params.seqOrder')}</span>
+                      <span className="text-[10px] text-slate-400">{t('graphCanvas.params.seqOrder.hint')}</span>
                       <input type="number" min={1} max={20} step={1} defaultValue={curSeq}
                         onChange={e => saveEdge(parseInt(e.target.value) || 1, curWt)}
                         className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400 w-full" />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-semibold text-slate-500">Processing Weight</span>
-                      <span className="text-[10px] text-slate-400">Relative time for this hop (1 = normal, 6 = bottleneck)</span>
+                      <span className="text-[11px] font-semibold text-slate-500">{t('graphCanvas.params.procWeight')}</span>
+                      <span className="text-[10px] text-slate-400">{t('graphCanvas.params.procWeight.hint')}</span>
                       <input type="number" min={0.1} max={20} step={0.1} defaultValue={curWt}
                         onChange={e => saveEdge(curSeq, parseFloat(e.target.value) || 1)}
                         className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400 w-full" />
                     </label>
                     <label className="flex flex-col gap-1 border-t border-slate-100 pt-3">
-                      <span className="text-[11px] font-semibold text-slate-500">Global Node Pause (s)</span>
-                      <span className="text-[10px] text-slate-400">Handoff gap between all sequence steps</span>
+                      <span className="text-[11px] font-semibold text-slate-500">{t('graphCanvas.params.globalPause')}</span>
+                      <span className="text-[10px] text-slate-400">{t('graphCanvas.params.globalPause.hint')}</span>
                       <input type="number" min={0} max={10} step={0.5} defaultValue={serverState?.settings?.nodePause ?? 1}
                         onChange={e => saveNodePause(parseFloat(e.target.value) || 0)}
                         className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400 w-full" />
@@ -1764,15 +1766,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 return (
                   <div className="flex flex-col gap-3">
                     <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-semibold text-slate-500">Output Delay (s)</span>
-                      <span className="text-[10px] text-slate-400">How long this node holds up outgoing connections</span>
+                      <span className="text-[11px] font-semibold text-slate-500">{t('graphCanvas.params.outputDelay')}</span>
+                      <span className="text-[10px] text-slate-400">{t('graphCanvas.params.outputDelay.hint')}</span>
                       <input type="number" min={0} max={20} step={0.5} defaultValue={curDelay}
                         onChange={e => saveNodeDelay(parseFloat(e.target.value) || 0)}
                         className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400 w-full" />
                     </label>
                     <label className="flex flex-col gap-1 border-t border-slate-100 pt-3">
-                      <span className="text-[11px] font-semibold text-slate-500">Global Node Pause (s)</span>
-                      <span className="text-[10px] text-slate-400">Handoff gap between all sequence steps</span>
+                      <span className="text-[11px] font-semibold text-slate-500">{t('graphCanvas.params.globalPause')}</span>
+                      <span className="text-[10px] text-slate-400">{t('graphCanvas.params.globalPause.hint')}</span>
                       <input type="number" min={0} max={10} step={0.5} defaultValue={serverState?.settings?.nodePause ?? 1}
                         onChange={e => saveNodePause(parseFloat(e.target.value) || 0)}
                         className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-400 w-full" />
