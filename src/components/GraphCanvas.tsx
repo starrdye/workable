@@ -421,6 +421,11 @@ const EXPORT_TASK_COLORS: Record<string, string> = {
   "blocked": "#EF4444", "review": "#A855F7",
 };
 
+/** Escape special XML characters so SVG text content is always valid XML. */
+function xmlEsc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function buildSvgExport(
   nodes: CanvasNode[],
   edges: CanvasEdge[],
@@ -500,7 +505,7 @@ function buildSvgExport(
     const sw = 1.5 * scale;
     const dash = isSubgroup ? "" : `stroke-dasharray="${8 * scale} ${4 * scale}"`;
     const rx = (isSubgroup ? 12 : 18) * scale;
-    const labelText = `${group.name} · ${count}`;
+    const labelText = `${xmlEsc(group.name)} · ${count}`;
     const labelSize = (isSubgroup ? 9 : 11) * scale;
     const charW = labelSize * 0.58;
     const pillPadX = (isSubgroup ? 8 : 10) * scale;
@@ -573,8 +578,8 @@ function buildSvgExport(
     const ncx = cx(n.x + R), ncy = cy(n.y + R);
     const shadowFilter = n.isDeprecated ? "" : ` filter="drop-shadow(0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,0.08))"`;
     parts.push(`<circle cx="${ncx}" cy="${ncy}" r="${sr}" fill="white" stroke="${n.borderColor}" stroke-width="${2 * scale}" opacity="${op}"${shadowFilter}/>`);
-    parts.push(`<text x="${ncx}" y="${ncy + 5 * scale}" text-anchor="middle" font-size="${13 * scale}" font-weight="700" fill="${n.textColor}" opacity="${op}">${n.initials}</text>`);
-    parts.push(`<text x="${ncx}" y="${ncy + sr + 16 * scale}" text-anchor="middle" font-size="${10 * scale}" fill="#334155" opacity="${op}">${n.label}</text>`);
+    parts.push(`<text x="${ncx}" y="${ncy + 5 * scale}" text-anchor="middle" font-size="${13 * scale}" font-weight="700" fill="${n.textColor}" opacity="${op}">${xmlEsc(n.initials)}</text>`);
+    parts.push(`<text x="${ncx}" y="${ncy + sr + 16 * scale}" text-anchor="middle" font-size="${10 * scale}" fill="#334155" opacity="${op}">${xmlEsc(n.label)}</text>`);
   });
 
   parts.push("</svg>");
