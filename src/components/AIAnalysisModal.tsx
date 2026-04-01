@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   X, Sparkles, Loader2, AlertCircle, Plus, Trash2, Check,
   RefreshCw, Info, AlertTriangle, ShieldAlert, Zap, CheckCircle2,
@@ -258,6 +259,7 @@ function useRelativeTime(timestamp: number | null | undefined) {
 
 // ─── Action helpers ───────────────────────────────────────────────────────────
 
+// Note: ACTION_LABEL and ACTION_DONE_LABEL are now looked up via t() inside the component
 const ACTION_LABEL: Record<string, string> = {
   remove: "Remove", automate: "Automate", merge: "Merge",
 };
@@ -305,6 +307,7 @@ export function AIAnalysisModal({
   onReAnalyze, analysisTimestamp,
   appliedConnectionKeys, appliedRemovalIds,
 }: AIAnalysisModalProps) {
+  const { t } = useLanguage();
   const timeLabel   = useRelativeTime(analysisTimestamp);
   const modalRef    = useFocusTrap(isOpen);
   const [activeTab, setActiveTab] = useState<"findings" | "plan">("findings");
@@ -390,9 +393,9 @@ export function AIAnalysisModal({
               <Sparkles className="w-4 h-4 text-indigo-600" />
             </div>
             <div className="min-w-0">
-              <h2 id="ai-analysis-title" className="text-base font-bold text-slate-800">AI Workflow Analysis</h2>
+              <h2 id="ai-analysis-title" className="text-base font-bold text-slate-800">{t('analysisModal.title')}</h2>
               <div className="flex items-center gap-2">
-                <p className="text-xs text-slate-500">Powered by AI · click suggestions to apply</p>
+                <p className="text-xs text-slate-500">{t('analysisModal.subtitle')}</p>
                 {isCachedResult && timeLabel && (
                   <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full font-medium">{timeLabel}</span>
                 )}
@@ -401,9 +404,9 @@ export function AIAnalysisModal({
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {isCachedResult && onReAnalyze && (
-              <button onClick={onReAnalyze} title="Run a fresh analysis"
+              <button onClick={onReAnalyze} title={t('analysisModal.reAnalyze')}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-semibold transition-colors">
-                <RefreshCw className="w-3 h-3" /> Re-analyze
+                <RefreshCw className="w-3 h-3" /> {t('analysisModal.reAnalyze')}
               </button>
             )}
             <button onClick={onClose}
@@ -420,13 +423,13 @@ export function AIAnalysisModal({
               onClick={() => setActiveTab("findings")}
               className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${activeTab === "findings" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"}`}
             >
-              🔍 Findings
+              {t('analysisModal.tab.findings')}
             </button>
             <button
               onClick={() => setActiveTab("plan")}
               className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${activeTab === "plan" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"}`}
             >
-              📋 Suggested Actions
+              {t('analysisModal.tab.actions')}
               {hasSuggestions && (
                 <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold">
                   {suggestedConnections.length + suggestedEdgeRemovals.length + suggestedRemovals.length + suggestedNewNodes.length + suggestedTaskUpdates.length + suggestedGroupUpdates.length}
@@ -443,8 +446,8 @@ export function AIAnalysisModal({
           {isLoading && !streamText && (
             <div className="flex flex-col items-center justify-center gap-3 py-14 text-slate-500">
               <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-              <p className="text-sm font-medium">Analyzing your workflow…</p>
-              <p className="text-xs text-slate-400">This may take a few seconds</p>
+              <p className="text-sm font-medium">{t('analysisModal.loading')}</p>
+              <p className="text-xs text-slate-400">{t('analysisModal.loading.hint')}</p>
             </div>
           )}
 
@@ -454,7 +457,7 @@ export function AIAnalysisModal({
               <div className="flex items-center gap-2 mb-3">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500 shrink-0" />
                 <span className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">
-                  Generating analysis…
+                  {t('analysisModal.streaming')}
                 </span>
               </div>
               <div className="bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4">
@@ -471,12 +474,12 @@ export function AIAnalysisModal({
             <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-100">
               <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-red-700 mb-0.5">Analysis failed</p>
+                <p className="text-sm font-semibold text-red-700 mb-0.5">{t('analysisModal.failed')}</p>
                 <p className="text-sm text-red-600">{error}</p>
                 {onReAnalyze && (
                   <button onClick={onReAnalyze}
                     className="mt-2 flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 underline">
-                    <RefreshCw className="w-3 h-3" /> Try again
+                    <RefreshCw className="w-3 h-3" /> {t('analysisModal.tryAgain')}
                   </button>
                 )}
               </div>
@@ -490,7 +493,7 @@ export function AIAnalysisModal({
 
               {/* ── Suggested Connections ── */}
               {hasSuggestions && suggestedConnections.length > 0 && (
-                <SuggestionSection title="Suggested Connections" subtitle="new routes to add"
+                <SuggestionSection title={t('suggestion.connections.title')} subtitle={t('suggestion.connections.subtitle')}
                   icon={<Plus className="w-3 h-3 text-emerald-600" />}
                   iconBg="bg-emerald-100">
                   {suggestedConnections.map((conn, i) => {
@@ -521,13 +524,13 @@ export function AIAnalysisModal({
                         {onAddConnection && (
                           isApplied ? (
                             <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
-                              <Check className="w-3 h-3" /> Added
+                              <Check className="w-3 h-3" /> {t('suggestion.connections.added')}
                             </span>
                           ) : (
                             <button
                               onClick={() => { onAddConnection(conn); setAppliedConnIdx(s => new Set([...s, i])); }}
                               className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors">
-                              <Plus className="w-3 h-3" /> Add
+                              <Plus className="w-3 h-3" /> {t('suggestion.connections.add')}
                             </button>
                           )
                         )}
@@ -539,7 +542,7 @@ export function AIAnalysisModal({
 
               {/* ── Redundant Edge Removals ── */}
               {hasSuggestions && suggestedEdgeRemovals.length > 0 && (
-                <SuggestionSection title="Redundant Connections" subtitle="edges to remove"
+                <SuggestionSection title={t('suggestion.edgeRemovals.title')} subtitle={t('suggestion.edgeRemovals.subtitle')}
                   icon={<Link2Off className="w-3 h-3 text-orange-500" />}
                   iconBg="bg-orange-100">
                   {suggestedEdgeRemovals.map((rem, i) => {
@@ -568,26 +571,26 @@ export function AIAnalysisModal({
                           {!prereqDone && prereqKey && (
                             <p className="text-[10px] text-amber-600 mt-1.5 flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3" />
-                              Apply the bypass connection first
+                              {t('suggestion.edgeRemovals.prereq')}
                             </p>
                           )}
                         </div>
                         {onRemoveEdge && (
                           isApplied ? (
                             <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default border border-slate-200">
-                              <Check className="w-3 h-3" /> Removed
+                              <Check className="w-3 h-3" /> {t('suggestion.edgeRemovals.removed')}
                             </span>
                           ) : (
                             <button
                               disabled={!prereqDone}
                               onClick={() => { onRemoveEdge(rem); setAppliedEdgeIdx(s => new Set([...s, i])); }}
-                              title={!prereqDone ? "Apply the prerequisite connection first" : undefined}
+                              title={!prereqDone ? t('suggestion.prereqNote') : undefined}
                               className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
                                 !prereqDone
                                   ? "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
                                   : "bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100"
                               }`}>
-                              <MinusCircle className="w-3 h-3" /> Remove
+                              <MinusCircle className="w-3 h-3" /> {t('suggestion.edgeRemovals.remove')}
                             </button>
                           )
                         )}
@@ -599,7 +602,7 @@ export function AIAnalysisModal({
 
               {/* ── Suggested New Nodes ── */}
               {hasSuggestions && suggestedNewNodes.length > 0 && (
-                <SuggestionSection title="New Nodes" subtitle="nodes to add"
+                <SuggestionSection title={t('suggestion.newNodes.title')} subtitle={t('suggestion.newNodes.subtitle')}
                   icon={<Zap className="w-3 h-3 text-violet-600" />}
                   iconBg="bg-violet-100">
                   {suggestedNewNodes.map((node, i) => {
@@ -617,7 +620,7 @@ export function AIAnalysisModal({
                             <span className={`text-sm font-semibold ${isApplied ? "text-slate-400" : "text-violet-700"}`}>{node.label}</span>
                             <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-violet-200 bg-violet-50 text-violet-500">{node.role}</span>
                             {node.replacesNodeId && (
-                              <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">replaces node</span>
+                              <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">{t('suggestion.newNodes.replaces')}</span>
                             )}
                           </div>
                           <p className="text-xs text-slate-500 leading-relaxed mb-1.5">{node.summary}</p>
@@ -631,13 +634,13 @@ export function AIAnalysisModal({
                         {onAddNewNode && (
                           isApplied ? (
                             <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
-                              <Check className="w-3 h-3" /> Added
+                              <Check className="w-3 h-3" /> {t('suggestion.newNodes.added')}
                             </span>
                           ) : (
                             <button
                               onClick={() => { onAddNewNode(node); setAppliedNodeIdx(s => new Set([...s, i])); }}
                               className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-600 text-white text-xs font-semibold transition-colors">
-                              <Plus className="w-3 h-3" /> Add
+                              <Plus className="w-3 h-3" /> {t('suggestion.newNodes.add')}
                             </button>
                           )
                         )}
@@ -649,7 +652,7 @@ export function AIAnalysisModal({
 
               {/* ── Suggested Removals ── */}
               {hasSuggestions && suggestedRemovals.length > 0 && (
-                <SuggestionSection title="Suggested Changes" subtitle="entities to remove or automate"
+                <SuggestionSection title={t('suggestion.removals.title')} subtitle={t('suggestion.removals.subtitle')}
                   icon={<AlertTriangle className="w-3 h-3 text-red-500" />}
                   iconBg="bg-red-100">
                   {suggestedRemovals.map((rem, i) => {
@@ -671,7 +674,9 @@ export function AIAnalysisModal({
                               rem.action === "automate" ? "bg-amber-50 text-amber-600 border-amber-200" :
                                                           "bg-violet-50 text-violet-600 border-violet-200"
                             }`}>
-                              {isApplied ? (ACTION_DONE_LABEL[rem.action] ?? rem.action) : (ACTION_LABEL[rem.action] ?? rem.action)}
+                              {isApplied
+                                ? (t((`suggestion.action.${rem.action === 'remove' ? 'removed' : rem.action === 'automate' ? 'automated' : 'merged'}`) as any) ?? rem.action)
+                                : (t((`suggestion.action.${rem.action}`) as any) ?? rem.action)}
                             </span>
                             {rem.action === "merge" && rem.mergeTargetId && !isApplied && (
                               <span className="text-[10px] text-slate-400">→ into {rem.mergeTargetId}</span>
@@ -680,7 +685,7 @@ export function AIAnalysisModal({
                           <p className="text-xs text-slate-500 leading-relaxed">{rem.reason}</p>
                           {rem.fishboneBones && rem.fishboneBones.length > 0 && (
                             <div className="mt-3">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Root Cause Analysis</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">{t('suggestion.removals.rootCause')}</p>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {rem.fishboneBones.map((bone, idx) => (
                                   <div key={idx}
@@ -695,7 +700,7 @@ export function AIAnalysisModal({
                                     <div className="text-xs text-slate-600 leading-snug">{bone.cause}</div>
                                     {bone.resolvedBy && (
                                       <div className="mt-1.5 flex items-center gap-1 text-[10px] text-indigo-500 font-semibold">
-                                        <span>→ See suggested fix</span>
+                                        <span>{t('suggestion.removals.seeFix')}</span>
                                       </div>
                                     )}
                                   </div>
@@ -707,14 +712,14 @@ export function AIAnalysisModal({
                         {onRemoveEntity && (
                           isApplied ? (
                             <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default border border-slate-200">
-                              <Check className="w-3 h-3" /> {ACTION_DONE_LABEL[rem.action] ?? "Applied"}
+                              <Check className="w-3 h-3" /> {t((`suggestion.action.${rem.action === 'remove' ? 'removed' : rem.action === 'automate' ? 'automated' : 'merged'}`) as any) ?? t('suggestion.action.applied')}
                             </span>
                           ) : (
                             <button
                               onClick={() => { onRemoveEntity(rem); setAppliedRemIdx(s => new Set([...s, i])); }}
                               className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${ACTION_COLOR[rem.action] ?? "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"}`}>
                               {ACTION_ICON[rem.action] ?? <Trash2 className="w-3 h-3" />}
-                              {ACTION_LABEL[rem.action] ?? "Apply"}
+                              {t((`suggestion.action.${rem.action}`) as any) ?? t('suggestion.tasks.apply')}
                             </button>
                           )
                         )}
@@ -726,7 +731,7 @@ export function AIAnalysisModal({
 
               {/* ── Task Updates ── */}
               {hasSuggestions && suggestedTaskUpdates.length > 0 && (
-                <SuggestionSection title="Task Redistribution" subtitle="workload rebalancing"
+                <SuggestionSection title={t('suggestion.tasks.title')} subtitle={t('suggestion.tasks.subtitle')}
                   icon={<ClipboardList className="w-3 h-3 text-sky-500" />}
                   iconBg="bg-sky-100">
                   {suggestedTaskUpdates.map((upd, i) => {
@@ -744,7 +749,7 @@ export function AIAnalysisModal({
                           <p className="text-xs text-slate-500 leading-relaxed mt-0.5 mb-2">{upd.reason}</p>
                           {upd.addTasks.length > 0 && (
                             <div className="space-y-1">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Add tasks</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{t('suggestion.tasks.addTasks')}</p>
                               {upd.addTasks.map(t => (
                                 <div key={t.id} className="flex items-center gap-1.5 text-xs text-slate-600">
                                   <Plus className="w-3 h-3 text-emerald-500 flex-shrink-0" />
@@ -756,7 +761,7 @@ export function AIAnalysisModal({
                           )}
                           {upd.removeTasks.length > 0 && (
                             <div className="mt-1.5 space-y-1">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Remove task IDs</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{t('suggestion.tasks.removeTasks')}</p>
                               {upd.removeTasks.map(id => (
                                 <div key={id} className="flex items-center gap-1.5 text-xs text-slate-400">
                                   <MinusCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
@@ -769,13 +774,13 @@ export function AIAnalysisModal({
                         {onUpdateTasks && (
                           isApplied ? (
                             <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
-                              <Check className="w-3 h-3" /> Applied
+                              <Check className="w-3 h-3" /> {t('suggestion.tasks.applied')}
                             </span>
                           ) : (
                             <button
                               onClick={() => { onUpdateTasks(upd); setAppliedTaskIdx(s => new Set([...s, i])); }}
                               className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold transition-colors">
-                              <ClipboardList className="w-3 h-3" /> Apply
+                              <ClipboardList className="w-3 h-3" /> {t('suggestion.tasks.apply')}
                             </button>
                           )
                         )}
@@ -787,7 +792,7 @@ export function AIAnalysisModal({
 
               {/* ── Group Updates ── */}
               {hasSuggestions && suggestedGroupUpdates.length > 0 && (
-                <SuggestionSection title="Group Reorganisation" subtitle="group structure changes"
+                <SuggestionSection title={t('suggestion.groups.title')} subtitle={t('suggestion.groups.subtitle')}
                   icon={<Layers className="w-3 h-3 text-teal-500" />}
                   iconBg="bg-teal-100">
                   {suggestedGroupUpdates.map((upd, i) => {
@@ -809,7 +814,7 @@ export function AIAnalysisModal({
                                 style={{ backgroundColor: upd.color }} />
                             )}
                             <span className={`text-sm font-semibold truncate ${isApplied ? "text-slate-400" : "text-teal-700"}`}>
-                              {displayName ?? "(unnamed group)"}
+                              {displayName ?? t('suggestion.groups.unnamed')}
                             </span>
                             <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
                               isApplied ? "bg-slate-100 text-slate-400 border-slate-200" :
@@ -818,8 +823,8 @@ export function AIAnalysisModal({
                               "bg-teal-50 text-teal-600 border-teal-200"
                             }`}>
                               {isApplied
-                                ? (upd.action === 'create' ? "Created" : upd.action === 'delete' ? "Deleted" : "Updated")
-                                : (upd.action === 'create' ? "Create" : upd.action === 'delete' ? "Delete" : "Update")}
+                                ? (upd.action === 'create' ? t('suggestion.groups.created') : upd.action === 'delete' ? t('suggestion.groups.deleted') : t('suggestion.groups.updated'))
+                                : (upd.action === 'create' ? t('suggestion.groups.create') : upd.action === 'delete' ? t('suggestion.groups.delete') : t('suggestion.groups.update'))}
                             </span>
                             {upd.action === 'update' && upd.name && upd.name !== upd.currentName && !isApplied && (
                               <span className="text-[10px] text-slate-400">→ &ldquo;{upd.name}&rdquo;</span>
@@ -829,13 +834,13 @@ export function AIAnalysisModal({
                           {!isApplied && upd.action !== 'delete' && (
                             <div className="text-[10px] text-slate-400 space-y-0.5">
                               {upd.action === 'create' && upd.nodeIds && upd.nodeIds.length > 0 && (
-                                <div>Members: {upd.nodeIds.join(", ")}</div>
+                                <div>{t('suggestion.groups.members').replace('{list}', upd.nodeIds.join(", "))}</div>
                               )}
                               {upd.action === 'update' && (upd.addNodeIds?.length ?? 0) > 0 && (
-                                <div className="text-emerald-600">+ Add: {upd.addNodeIds!.join(", ")}</div>
+                                <div className="text-emerald-600">{t('suggestion.groups.addMembers').replace('{list}', upd.addNodeIds!.join(", "))}</div>
                               )}
                               {upd.action === 'update' && (upd.removeNodeIds?.length ?? 0) > 0 && (
-                                <div className="text-red-500">− Remove: {upd.removeNodeIds!.join(", ")}</div>
+                                <div className="text-red-500">{t('suggestion.groups.removeMembers').replace('{list}', upd.removeNodeIds!.join(", "))}</div>
                               )}
                             </div>
                           )}
@@ -843,7 +848,7 @@ export function AIAnalysisModal({
                         {onApplyGroupUpdate && (
                           isApplied ? (
                             <span className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-default">
-                              <Check className="w-3 h-3" /> Applied
+                              <Check className="w-3 h-3" /> {t('suggestion.groups.applied')}
                             </span>
                           ) : (
                             <button
@@ -854,10 +859,10 @@ export function AIAnalysisModal({
                                   : "bg-teal-50 text-teal-600 border-teal-200 hover:bg-teal-100"
                               }`}>
                               {upd.action === 'delete'
-                                ? <><Trash2 className="w-3 h-3" /> Delete</>
+                                ? <><Trash2 className="w-3 h-3" /> {t('suggestion.groups.delete')}</>
                                 : upd.action === 'create'
-                                  ? <><Plus className="w-3 h-3" /> Create</>
-                                  : <><RefreshCw className="w-3 h-3" /> Update</>
+                                  ? <><Plus className="w-3 h-3" /> {t('suggestion.groups.create')}</>
+                                  : <><RefreshCw className="w-3 h-3" /> {t('suggestion.groups.update')}</>
                               }
                             </button>
                           )
@@ -928,7 +933,7 @@ export function AIAnalysisModal({
                 <button
                   onClick={() => setActiveTab("plan")}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-500 hover:bg-indigo-50 transition-colors">
-                  📋 View {suggestedConnections.length + suggestedEdgeRemovals.length + suggestedRemovals.length + suggestedNewNodes.length + suggestedTaskUpdates.length + suggestedGroupUpdates.length} suggested actions →
+                  {t('analysisModal.viewActions').replace('{n}', String(suggestedConnections.length + suggestedEdgeRemovals.length + suggestedRemovals.length + suggestedNewNodes.length + suggestedTaskUpdates.length + suggestedGroupUpdates.length))}
                 </button>
               )}
             </>
@@ -940,13 +945,13 @@ export function AIAnalysisModal({
           {onReAnalyze && !isLoading && !isCachedResult && (
             <button onClick={onReAnalyze}
               className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-semibold">
-              <RefreshCw className="w-3 h-3" /> Run analysis
+              <RefreshCw className="w-3 h-3" /> {t('analysisModal.runAnalysis')}
             </button>
           )}
           <div className="flex-1" />
           <button onClick={onClose}
             className="px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">
-            Close
+            {t('analysisModal.close')}
           </button>
         </div>
       </div>

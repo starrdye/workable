@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { X, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { PROVIDERS, type AIProvider, type ProviderMeta } from "@/lib/aiClient";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -95,6 +96,7 @@ interface AISettingsModalProps {
 }
 
 export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISettingsModalProps) {
+  const { t } = useLanguage();
   const [config, setConfig] = useState<AIConfig>(currentConfig);
   const [showKey, setShowKey] = useState<Record<AIProvider, boolean>>({ anthropic: false, gemini: false, doubao: false });
   const [saved, setSaved] = useState(false);
@@ -145,8 +147,8 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 shrink-0">
           <div>
-            <h2 id="ai-settings-title" className="text-lg font-bold text-slate-800">AI Settings</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Choose your AI provider, model, and API key</p>
+            <h2 id="ai-settings-title" className="text-lg font-bold text-slate-800">{t('settings.title')}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{t('settings.subtitle')}</p>
           </div>
           <button
             onClick={onClose}
@@ -161,7 +163,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
           {/* ── Section 1: Provider selection ─────────────────────────────── */}
           <section>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-              AI Provider
+              {t('settings.provider')}
             </p>
             <div className="grid grid-cols-3 gap-3">
               {PROVIDERS.map((meta) => {
@@ -199,7 +201,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
           {activeProvider === "doubao" && activeMeta.codingPlanBaseUrl && (
             <section>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                Billing Plan — <span className={activeColor.text}>ByteDance</span>
+                {t('settings.billingPlan')} — <span className={activeColor.text}>ByteDance</span>
               </p>
               {(() => {
                 const isCodingPlan = (config.baseUrls?.doubao ?? "").includes("/coding/");
@@ -223,15 +225,15 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                     {[
                       {
                         id: false,
-                        label: "Standard",
-                        sub: "Pay-per-use",
+                        label: t('settings.plan.standard'),
+                        sub: t('settings.plan.standard.sub'),
                         desc: "Requires an ep-xxx endpoint ID from Ark console.",
                         hint: "/api/v3",
                       },
                       {
                         id: true,
-                        label: "Coding Plan",
-                        sub: "Subscription",
+                        label: t('settings.plan.coding'),
+                        sub: t('settings.plan.coding.sub'),
                         desc: "Use a direct model name — no endpoint ID needed.",
                         hint: "/api/coding/v3",
                       },
@@ -280,10 +282,10 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                 ? (activeMeta.codingPlanModels ?? [])
                 : activeMeta.models;
               const sectionLabel = isCodingPlan
-                ? "Model"
+                ? t('settings.model')
                 : activeMeta.usesEndpointId
-                ? "Endpoint ID"
-                : "Model";
+                ? t('settings.endpointId')
+                : t('settings.model');
 
               return (
                 <>
@@ -349,7 +351,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
           {activeMeta.defaultBaseUrl && !(activeProvider === "doubao") && (
             <section>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                Base URL — <span className={activeColor.text}>{activeMeta.name}</span>
+                {t('settings.baseUrl')} — <span className={activeColor.text}>{activeMeta.name}</span>
               </p>
               <div className="space-y-2">
                 <input
@@ -362,7 +364,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                   {activeMeta.baseUrlHint}
                   {!config.baseUrls?.[activeProvider] && (
-                    <span className="text-slate-300"> · Leave blank to use the default.</span>
+                    <span className="text-slate-300"> {t('settings.baseUrlHint.blank')}</span>
                   )}
                 </p>
               </div>
@@ -372,7 +374,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
           {/* ── Section 3: API keys for all providers ─────────────────────── */}
           <section>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-              API Keys
+              {t('settings.apiKeys')}
             </p>
             <div className="space-y-4">
               {PROVIDERS.map((meta) => {
@@ -387,7 +389,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
                       </span>
                       {key && (
                         <span className="text-xs text-emerald-600 flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3" /> Key saved
+                          <CheckCircle className="w-3 h-3" /> {t('settings.keySaved')}
                         </span>
                       )}
                     </div>
@@ -421,29 +423,29 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
           {/* ── Section 4: AI Engine Mode ─────────────────────────────────── */}
           <section>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-              AI Engine Mode
+              {t('settings.engine.title')}
             </p>
             <div className="grid grid-cols-2 gap-3">
               {([
                 {
                   value: 'monolithic' as const,
-                  label: 'Monolithic',
-                  badge: 'Stable',
+                  label: t('settings.engine.monolithic'),
+                  badge: t('settings.engine.monolithic.badge'),
                   badgeColor: 'bg-indigo-100 text-indigo-700',
                   activeRing: 'ring-indigo-500',
                   activeBg: 'bg-indigo-50 border-indigo-400 text-indigo-800',
-                  desc: 'Single AI call — fast, reliable, works for most workflows.',
+                  desc: t('settings.engine.monolithic.desc'),
                 },
                 {
                   value: 'distributed' as const,
-                  label: 'Distributed',
-                  badge: 'Experimental',
+                  label: t('settings.engine.distributed'),
+                  badge: t('settings.engine.distributed.badge'),
                   badgeColor: 'bg-emerald-100 text-emerald-700',
                   activeRing: 'ring-emerald-500',
                   activeBg: 'bg-emerald-50 border-emerald-400 text-emerald-800',
-                  desc: 'Parallel node agents — deeper analysis, higher token cost.',
+                  desc: t('settings.engine.distributed.desc'),
                 },
-              ] as const).map((opt) => {
+              ]).map((opt) => {
                 const isActive = engineMode === opt.value;
                 return (
                   <button
@@ -472,7 +474,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
               })}
             </div>
             <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-              Preference saved automatically. Toggle anytime from the toolbar pill next to AI Settings.
+              {t('settings.engine.hint')}
             </p>
           </section>
         </div>
@@ -481,7 +483,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
         <div className="px-8 pb-7 pt-4 border-t border-slate-100 space-y-2 shrink-0">
           {!hasKeyForActive && (
             <p className="text-xs text-amber-600 text-center">
-              Add an API key for <strong>{activeMeta.name}</strong> to enable AI features.
+              {t('settings.noKeyWarning').replace('{provider}', activeMeta.name)}
             </p>
           )}
           <div className="flex gap-3">
@@ -489,7 +491,7 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
               onClick={onClose}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
             >
-              Cancel
+              {t('settings.cancel')}
             </button>
             <button
               onClick={handleSave}
@@ -501,9 +503,9 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
               }`}
             >
               {saved ? (
-                <><CheckCircle className="w-4 h-4" /> Saved</>
+                <><CheckCircle className="w-4 h-4" /> {t('settings.saved')}</>
               ) : (
-                "Save Settings"
+                t('settings.save')
               )}
             </button>
           </div>
