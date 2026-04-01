@@ -6,7 +6,7 @@ import { hierarchicalLayout, groupAwareLayout } from '@/lib/layout';
 import { CORE_NODE_IDS } from '@/lib/constants';
 import { jsonrepair } from 'jsonrepair';
 import { ParseWorkflowResponse } from '@/lib/aiSchemas';
-import { JACK_ROUTINE_DEMO_AI_JSON } from '@/lib/demoAnalysis';
+import { JACK_ROUTINE_DEMO_AI_JSON, JACK_ROUTINE_DEMO_AI_JSON_ZH } from '@/lib/demoAnalysis';
 
 const SYSTEM_PROMPT = `You are a workflow graph parser. Convert natural language workflow descriptions into structured JSON graphs.
 
@@ -268,12 +268,14 @@ function sanitizeGroups(groups: AIGroup[], nodeIds: Set<string>): WorkflowGroup[
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, apiKey, provider = 'anthropic', model, baseUrl } = await req.json() as {
+    const body = await req.json();
+    const { prompt, apiKey, provider = 'anthropic', model, baseUrl, lang = 'en' } = body as {
       prompt: string;
       apiKey: string;
       provider?: AIProvider;
       model?: string;
       baseUrl?: string;
+      lang?: string;
     };
 
     // Demo provider: skip API key check and use pre-built JSON response
@@ -305,7 +307,7 @@ export async function POST(req: NextRequest) {
     let rawText: string;
     let genResult: { usage: { inputTokens: number; outputTokens: number } | null } = { usage: null };
     if (isDemoProvider) {
-      rawText = JACK_ROUTINE_DEMO_AI_JSON;
+      rawText = lang === 'zh' ? JACK_ROUTINE_DEMO_AI_JSON_ZH : JACK_ROUTINE_DEMO_AI_JSON;
     } else {
       const result = await generateText({
         provider,

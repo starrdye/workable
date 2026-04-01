@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   Zap, ArrowRight, UploadCloud, FileText,
   Sparkles, Loader2, AlertCircle, Settings,
@@ -181,10 +182,11 @@ function PreviewBlank() {
 
 // ── Density badge ─────────────────────────────────────────────────────────────
 
-const DENSITY_STYLE: Record<Template["density"], { bg: string; text: string; label: string }> = {
-  few:  { bg: "bg-indigo-100", text: "text-indigo-700",  label: "Few entities"  },
-  some: { bg: "bg-violet-100", text: "text-violet-700",  label: "Some entities" },
-  many: { bg: "bg-emerald-100",text: "text-emerald-700", label: "Many entities" },
+// DENSITY_STYLE labels are looked up dynamically via t() in TemplateCard
+const DENSITY_STYLE: Record<Template["density"], { bg: string; text: string }> = {
+  few:  { bg: "bg-indigo-100", text: "text-indigo-700"  },
+  some: { bg: "bg-violet-100", text: "text-violet-700"  },
+  many: { bg: "bg-emerald-100",text: "text-emerald-700" },
 };
 
 // ── Template card ─────────────────────────────────────────────────────────────
@@ -198,7 +200,13 @@ function TemplateCard({
   preview:  React.ReactNode;
   onSelect: (t: Template) => void;
 }) {
+  const { t } = useLanguage();
   const ds = DENSITY_STYLE[template.density];
+  const densityKey = template.density === 'few'
+    ? 'gallery.density.few'
+    : template.density === 'some'
+    ? 'gallery.density.some'
+    : 'gallery.density.many';
   return (
     <button
       onClick={() => onSelect(template)}
@@ -213,14 +221,14 @@ function TemplateCard({
       <div className="px-5 py-4 flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">
           <span className="font-bold text-slate-800 text-sm leading-snug group-hover:text-indigo-700 transition-colors">
-            {template.name}
+            {t(`template.${template.id}.name` as any) || template.name}
           </span>
           <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${ds.bg} ${ds.text}`}>
-            {ds.label}
+            {t(densityKey as any)}
           </span>
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
-          {template.description}
+          {t(`template.${template.id}.desc` as any) || template.description}
         </p>
         {template.nodeCount > 0 && (
           <p className="text-[11px] text-slate-400 font-mono">
@@ -250,6 +258,7 @@ function TemplateGallery({
   onSelect: (t: Template) => void;
   onBack:   () => void;
 }) {
+  const { t } = useLanguage();
 
   return (
     <div className="absolute inset-0 z-[110] flex items-center justify-center bg-[#F8FAFC]"
@@ -266,9 +275,9 @@ function TemplateGallery({
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">Choose a Starting Point</h2>
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight">{t('gallery.title')}</h2>
             <p className="text-sm text-slate-500 mt-0.5">
-              Personal workflow templates — from a simple daily routine to a full work week.
+              {t('gallery.desc')}
             </p>
           </div>
         </div>
@@ -277,15 +286,15 @@ function TemplateGallery({
         <div className="px-8 py-3 bg-slate-50/60 border-b border-slate-100 flex items-center gap-6 text-xs text-slate-500">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-200 inline-block" />
-            <span className="text-indigo-600 font-semibold">Few</span> — straight / simple edges
+            <span className="text-indigo-600 font-semibold">{t('gallery.legend.few')}</span> {t('gallery.legend.few.desc')}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-violet-200 inline-block" />
-            <span className="text-violet-600 font-semibold">Some</span> — single bezier curves
+            <span className="text-violet-600 font-semibold">{t('gallery.legend.some')}</span> {t('gallery.legend.some.desc')}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-200 inline-block" />
-            <span className="text-emerald-600 font-semibold">Many</span> — 4-arc bundles + force rings
+            <span className="text-emerald-600 font-semibold">{t('gallery.legend.many')}</span> {t('gallery.legend.many.desc')}
           </span>
         </div>
 
@@ -312,18 +321,19 @@ export function StartScreen({
   aiConfig, onSaveConfig: _onSaveConfig, onOpenSettings,
   onGenerationStart, onGenerationError, isDemoMode,
 }: StartScreenProps) {
+  const { t, lang } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName]         = useState<string | null>(null);
   const [csvText, setCsvText]           = useState<string | null>(null);
-  const [instructions, setInstructions] = useState(isDemoMode ? DEMO_JACK_TEXT : "");
+  const [instructions, setInstructions] = useState(isDemoMode ? t('demo.jack.text') : "");
   const [isParsingAI, setIsParsingAI]   = useState(false);
   const [aiError, setAiError]           = useState<string | null>(null);
   const [showGallery, setShowGallery]   = useState(false);
 
   // Pre-fill with demo text whenever demo mode is activated
   useEffect(() => {
-    if (isDemoMode) setInstructions(DEMO_JACK_TEXT);
-  }, [isDemoMode]);
+    if (isDemoMode) setInstructions(t('demo.jack.text'));
+  }, [isDemoMode, t]);
 
   const cfg            = aiConfig;
   const activeProvider = cfg?.provider ?? "anthropic";
@@ -358,7 +368,7 @@ export function StartScreen({
   // Always go through onTemplateLoad so the server state is reset correctly,
   // even when switching back to Ridgeview from another template.
   const handleTemplateSelect = (template: Template) => {
-    const state = buildTemplateState(template);
+    const state = buildTemplateState(template, lang);
     if (onTemplateLoad) {
       onTemplateLoad({
         customNodes:        state.customNodes,
@@ -456,10 +466,10 @@ export function StartScreen({
             <div>
               <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
                 <img src="/workable-logo.svg" alt="Workable" className="w-9 h-9" />
-                Workable
+                {t('startScreen.title')}
               </h1>
               <p className="text-gray-500 mt-1.5 text-sm">
-                Map your personal workflow, spot bottlenecks, and optimise how you work — powered by your own notes.
+                {t('startScreen.desc')}
               </p>
             </div>
 
@@ -474,12 +484,12 @@ export function StartScreen({
                 ) : (
                   <span className="text-xs flex items-center gap-1 text-amber-600">
                     <AlertCircle className="w-3 h-3" />
-                    No API key
+                    {t('startScreen.noApiKey')}
                   </span>
                 )}
                 <button
                   onClick={onOpenSettings}
-                  title="AI Settings"
+                  title={t('settings.title')}
                   className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 transition-colors"
                 >
                   <Settings className="w-4 h-4" />
@@ -502,8 +512,8 @@ export function StartScreen({
                   <Layers className="w-5 h-5 text-indigo-600 group-hover:text-white transition-colors" />
                 </div>
                 <div>
-                  <div className="font-bold text-slate-800 text-sm">Start Fresh</div>
-                  <div className="text-xs text-slate-500 mt-0.5">Choose from 4 templates</div>
+                  <div className="font-bold text-slate-800 text-sm">{t('startScreen.startFresh')}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{t('startScreen.startFresh.desc')}</div>
                 </div>
               </button>
 
@@ -521,10 +531,10 @@ export function StartScreen({
                 </div>
                 <div>
                   <div className={`font-bold text-sm ${fileName ? "text-emerald-700" : "text-slate-800"}`}>
-                    {fileName ? "CSV Loaded ✓" : "Import from CSV"}
+                    {fileName ? t('startScreen.csvLoaded') : t('startScreen.importCsv')}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
-                    {fileName ? fileName : "Drag & drop or click to browse"}
+                    {fileName ? fileName : t('startScreen.csvDrag')}
                   </div>
                 </div>
               </div>
@@ -536,17 +546,17 @@ export function StartScreen({
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                Or paste your notes / describe your daily workflow
+                {t('startScreen.promptLabel')}
                 {isDemoMode && (
                   <span className="ml-auto flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full normal-case tracking-normal">
-                    🎬 Scripted
+                    🎬 {t('demo.badge.label')}
                   </span>
                 )}
               </label>
               <div className="relative">
                 <textarea
                   rows={isDemoMode ? 5 : 3}
-                  value={isDemoMode ? DEMO_JACK_TEXT : instructions}
+                  value={isDemoMode ? t('demo.jack.text') : instructions}
                   onChange={(e) => {
                     if (isDemoMode) return;
                     if (e.target.value.length <= MAX_PROMPT_CHARS) {
@@ -556,7 +566,7 @@ export function StartScreen({
                   }}
                   readOnly={isDemoMode}
                   disabled={isParsingAI}
-                  title={isDemoMode ? "Demo mode — no editing" : undefined}
+                  title={isDemoMode ? t('demo.badge.label') : undefined}
                   className={`w-full border rounded-xl p-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 resize-none shadow-sm transition-colors disabled:opacity-60 ${
                     isDemoMode
                       ? "bg-slate-50 border-emerald-200 text-slate-500 cursor-not-allowed"
@@ -564,11 +574,11 @@ export function StartScreen({
                       ? "bg-white border-indigo-300 focus:border-indigo-600 focus:ring-indigo-600"
                       : "bg-white border-gray-300 focus:border-indigo-600 focus:ring-indigo-600"
                   }`}
-                  placeholder="e.g., Every morning I check emails, then update my task list in Notion, before a stand-up with the team, then deep work until lunch…"
+                  placeholder={t('startScreen.placeholder')}
                 />
                 {isDemoMode && (
                   <div className="absolute bottom-2 right-2 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-0.5 pointer-events-none select-none">
-                    demo · read only
+                    {t('demo.badge.label')} · {t('demo.staticData')}
                   </div>
                 )}
               </div>
@@ -583,7 +593,7 @@ export function StartScreen({
               {hasInstructions && !activeKey && !isDemoMode && (
                 <p className="text-xs text-amber-600 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
-                  Add an API key in AI Settings (⚙) to generate from this description.
+                  {t('startScreen.noKeyHint')}
                 </p>
               )}
               {aiError && (
@@ -605,13 +615,13 @@ export function StartScreen({
               }`}
             >
               {isParsingAI ? (
-                <><Loader2 className="w-5 h-5 animate-spin" />Generating workflow with AI…</>
+                <><Loader2 className="w-5 h-5 animate-spin" />{t('startScreen.btnGenerating')}</>
               ) : buttonMode === "csv" ? (
-                <>Load Workflow from CSV <ArrowRight className="w-5 h-5" /></>
+                <>{t('startScreen.btnCsv')} <ArrowRight className="w-5 h-5" /></>
               ) : buttonMode === "ai" ? (
-                <><Sparkles className="w-5 h-5" />Generate with AI <ArrowRight className="w-5 h-5" /></>
+                <><Sparkles className="w-5 h-5" />{t('startScreen.btnAi')} <ArrowRight className="w-5 h-5" /></>
               ) : (
-                <>Open Blank Canvas <ArrowRight className="w-5 h-5" /></>
+                <>{t('startScreen.btnDefault')} <ArrowRight className="w-5 h-5" /></>
               )}
             </button>
           </div>

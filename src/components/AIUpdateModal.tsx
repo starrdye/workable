@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { X, GitMerge, Loader2, AlertCircle, Plus, Trash2, Pencil, ChevronLeft, ArrowRight } from "lucide-react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
@@ -163,6 +164,7 @@ function diffSummaryPill(result: AIUpdateResult) {
 export function AIUpdateModal({
   isOpen, isLoading, result, error, onClose, onSubmit, onApply, isDemoMode,
 }: AIUpdateModalProps) {
+  const { t } = useLanguage();
   const [view, setView]       = useState<"prompt" | "preview">("prompt");
   const [prompt, setPrompt]   = useState(isDemoMode ? DEMO_UPDATE_PROMPT : "");
   const textareaRef           = useRef<HTMLTextAreaElement>(null);
@@ -177,9 +179,9 @@ export function AIUpdateModal({
   useEffect(() => {
     if (isOpen) {
       setView("prompt");
-      if (isDemoMode) setPrompt(DEMO_UPDATE_PROMPT);
+      if (isDemoMode) setPrompt(t('demo.update.prompt'));
     }
-  }, [isOpen, isDemoMode]);
+  }, [isOpen, isDemoMode, t]);
 
   // Auto-focus textarea on open
   useEffect(() => {
@@ -191,7 +193,7 @@ export function AIUpdateModal({
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    const effectivePrompt = isDemoMode ? DEMO_UPDATE_PROMPT : prompt;
+    const effectivePrompt = isDemoMode ? t('demo.update.prompt') : prompt;
     if (!effectivePrompt.trim() || isLoading) return;
     onSubmit(effectivePrompt.trim());
   };
@@ -233,11 +235,11 @@ export function AIUpdateModal({
               <GitMerge className="w-4 h-4 text-violet-600" />
             </div>
             <div>
-              <h2 id="ai-update-title" className="text-base font-bold text-slate-800">AI Update</h2>
+              <h2 id="ai-update-title" className="text-base font-bold text-slate-800">{t('updateModal.title')}</h2>
               {view === "preview" && result ? (
                 <p className="text-xs text-slate-500 font-medium">{diffSummaryPill(result)}</p>
               ) : (
-                <p className="text-xs text-slate-500">Describe any change to your workflow in plain English</p>
+                <p className="text-xs text-slate-500">{t('updateModal.subtitle')}</p>
               )}
             </div>
           </div>
@@ -256,25 +258,25 @@ export function AIUpdateModal({
               {/* Textarea */}
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  What changed?
+                  {t('updateModal.label')}
                   {isDemoMode && (
                     <span className="ml-auto flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full normal-case tracking-normal">
-                      🎬 Scripted
+                      🎬 {t('demo.badge.label')}
                     </span>
                   )}
                 </label>
                 <div className="relative">
                   <textarea
                     ref={textareaRef}
-                    value={isDemoMode ? DEMO_UPDATE_PROMPT : prompt}
+                    value={isDemoMode ? t('demo.update.prompt') : prompt}
                     onChange={e => { if (!isDemoMode) setPrompt(e.target.value); }}
                     onKeyDown={handleKeyDown}
                     readOnly={isDemoMode}
                     disabled={isLoading}
                     rows={4}
                     maxLength={2000}
-                    title={isDemoMode ? "Demo mode — no editing" : undefined}
-                    placeholder="e.g. Bryan joins as Mary's mentee — he's working on the company website"
+                    title={isDemoMode ? t('demo.badge.label') : undefined}
+                    placeholder={t('updateModal.placeholder')}
                     className={`w-full border rounded-xl px-4 py-3 text-sm placeholder-slate-400 resize-none focus:outline-none transition ${
                       isDemoMode
                         ? "bg-slate-50 border-emerald-200 text-slate-500 cursor-not-allowed"
@@ -283,9 +285,15 @@ export function AIUpdateModal({
                   />
                   {isDemoMode && (
                     <div className="absolute bottom-2 right-2 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-0.5 pointer-events-none select-none">
-                      demo · read only
+                      {t('demo.badge.label')} · {t('demo.staticData')}
                     </div>
                   )}
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-[10px] text-slate-400">⌘ Return to submit</p>
+                  <p className={`text-[10px] ${prompt.length > 1800 ? "text-amber-500" : "text-slate-400"}`}>
+                    {prompt.length} / 2000
+                  </p>
                 </div>
                 {!isDemoMode && (
                   <div className="flex justify-between items-center mt-1">
@@ -301,7 +309,7 @@ export function AIUpdateModal({
               {isLoading && (
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-violet-50 border border-violet-100">
                   <Loader2 className="w-5 h-5 animate-spin text-violet-500 flex-shrink-0" />
-                  <p className="text-sm text-violet-700">Generating workflow patch…</p>
+                  <p className="text-sm text-violet-700">{t('updateModal.loading')}</p>
                 </div>
               )}
 
@@ -316,7 +324,7 @@ export function AIUpdateModal({
               {/* Examples */}
               {!isLoading && (
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Examples</p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t('updateModal.examples')}</p>
                   <div className="space-y-1.5">
                     {EXAMPLES.map((ex, i) => (
                       <button key={i}
@@ -346,7 +354,7 @@ export function AIUpdateModal({
                     <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
                       <Plus className="w-3 h-3 text-emerald-600" />
                     </div>
-                    <h3 className="text-sm font-bold text-slate-800">Adding</h3>
+                    <h3 className="text-sm font-bold text-slate-800">{t('updateModal.adding')}</h3>
                   </div>
                   <div className="space-y-2">
                     {result.add.nodes.map((n, i) => (
@@ -395,7 +403,7 @@ export function AIUpdateModal({
                     <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
                       <Pencil className="w-3 h-3 text-amber-600" />
                     </div>
-                    <h3 className="text-sm font-bold text-slate-800">Updating</h3>
+                    <h3 className="text-sm font-bold text-slate-800">{t('updateModal.updating')}</h3>
                   </div>
                   <div className="space-y-2">
                     {result.update.nodes.map((n, i) => {
@@ -475,28 +483,28 @@ export function AIUpdateModal({
                     <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                       <Trash2 className="w-3 h-3 text-red-500" />
                     </div>
-                    <h3 className="text-sm font-bold text-slate-800">Removing</h3>
+                    <h3 className="text-sm font-bold text-slate-800">{t('updateModal.removing')}</h3>
                   </div>
                   <div className="space-y-2">
                     {result.remove.nodeIds.map((id, i) => (
                       <div key={i} className="flex items-center gap-2 p-3 rounded-xl border border-red-100 bg-red-50/50">
                         <Trash2 className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
                         <span className="text-sm font-semibold text-slate-700">{id}</span>
-                        <span className="text-xs text-slate-400">node</span>
+                        <span className="text-xs text-slate-400">{t('updateModal.node')}</span>
                       </div>
                     ))}
                     {result.remove.edgeIds.map((id, i) => (
                       <div key={i} className="flex items-center gap-2 p-3 rounded-xl border border-red-100 bg-red-50/50">
                         <Trash2 className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
                         <span className="text-sm text-slate-600">{id}</span>
-                        <span className="text-xs text-slate-400">edge</span>
+                        <span className="text-xs text-slate-400">{t('updateModal.edge')}</span>
                       </div>
                     ))}
                     {(result.remove.groupIds ?? []).map((id, i) => (
                       <div key={i} className="flex items-center gap-2 p-3 rounded-xl border border-red-100 bg-red-50/50">
                         <Trash2 className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
                         <span className="text-sm font-semibold text-slate-700">{id}</span>
-                        <span className="text-xs text-slate-400">group</span>
+                        <span className="text-xs text-slate-400">{t('updateModal.group')}</span>
                       </div>
                     ))}
                   </div>
@@ -506,7 +514,7 @@ export function AIUpdateModal({
               {/* Empty state */}
               {!hasAdd && !hasUpdate && !hasRemove && (
                 <div className="text-center py-6 text-slate-400 text-sm">
-                  No changes were generated. Try rephrasing your update.
+                  {t('updateModal.noChanges')}
                 </div>
               )}
             </>
@@ -521,21 +529,21 @@ export function AIUpdateModal({
               disabled={!(isDemoMode ? DEMO_UPDATE_PROMPT : prompt).trim() || isLoading}
               className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2">
               {isLoading
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating patch…</>
-                : <><GitMerge className="w-4 h-4" /> Update Workflow</>
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> {t('updateModal.loading')}</>
+                : <><GitMerge className="w-4 h-4" /> {t('updateModal.submitBtn')}</>
               }
             </button>
           ) : (
             <div className="flex gap-3">
               <button onClick={handleBack}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">
-                <ChevronLeft className="w-4 h-4" /> Back
+                <ChevronLeft className="w-4 h-4" /> {t('updateModal.back')}
               </button>
               <button
                 onClick={() => result && onApply(result)}
                 disabled={!result || (!hasAdd && !hasUpdate && !hasRemove)}
                 className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2">
-                <Plus className="w-4 h-4" /> Apply to Graph
+                <Plus className="w-4 h-4" /> {t('updateModal.applyBtn')}
               </button>
             </div>
           )}

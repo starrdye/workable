@@ -22,6 +22,7 @@ export interface AIEngineConfig {
   provider: string;
   model: string;
   baseUrl?: string;
+  lang?: string;
 }
 
 export interface EngineCallOptions {
@@ -110,6 +111,7 @@ export function useAIEngine() {
           provider: config.provider,
           model: config.model,
           baseUrl: config.baseUrl || undefined,
+          lang: config.lang || 'en',
           engine: effectiveMode,
         }),
         signal: controller.signal,
@@ -178,6 +180,7 @@ export function useAIEngine() {
           provider: config.provider,
           model: config.model,
           baseUrl: config.baseUrl || undefined,
+          lang: config.lang || 'en',
           engine: effectiveMode,
         }),
         signal: controller.signal,
@@ -254,6 +257,7 @@ export function useAIEngine() {
           provider: config.provider,
           model:    config.model,
           baseUrl:  config.baseUrl || undefined,
+          lang:     config.lang || 'en',
           engine:   effectiveMode,
           stream:   true,
         }),

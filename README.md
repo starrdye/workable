@@ -1,3 +1,5 @@
+<p align="right"><strong>🌐 Language / 语言：</strong> <strong>English</strong> | <a href="README_zh.md">简体中文</a></p>
+
 <div align="center">
   <img src="./banner.svg" alt="Workable — Personal Workflow Mapper" width="100%"/>
 

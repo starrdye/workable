@@ -15,6 +15,7 @@ import { hierarchicalLayout, radialWebLayout } from "./layout";
 import { CORE_NODE_IDS, ROLE_COLOR } from "./constants";
 import type { NodeTask, WorkflowGroup } from "./serverState";
 import { JACK_ROUTINE_DEMO_ANALYSIS, JACK_ROUTINE_DEMO_AI_JSON } from "./demoAnalysis";
+import { getNodeLabel, getGroupName } from "./templateTranslations";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -831,7 +832,7 @@ for (const t of TEMPLATES) {
   if (!t.useBuiltins && t.nodes.length > 0) getPrecomputed(t);
 }
 
-export function buildTemplateState(template: Template): TemplateState {
+export function buildTemplateState(template: Template, lang = "en"): TemplateState {
   if (template.useBuiltins || template.nodes.length === 0) {
     return {
       customNodes:        [],
@@ -843,21 +844,35 @@ export function buildTemplateState(template: Template): TemplateState {
   }
 
   const { baselinePositions, ecosystemPositions } = getPrecomputed(template);
-  const customNodes = makeCustomNodes(template.nodes, baselinePositions);
+
+  // Apply label translations to customNodes
+  const customNodes = makeCustomNodes(template.nodes, baselinePositions).map(n => ({
+    ...n,
+    label: getNodeLabel(lang, template.id, n.id, n.label),
+  }));
   const customEdges = makeCustomEdges(template.edges);
 
-  // Name lookup for connection labels (label = display name)
-  const nodeNameMap = new Map<string, string>(template.nodes.map(n => [n.id, n.label]));
+  // Name lookup using translated labels so connections & processes also localise
+  const nodeNameMap = new Map<string, string>(
+    template.nodes.map(n => [n.id, getNodeLabel(lang, template.id, n.id, n.label)])
+  );
+
+  // Translate group names once for reuse
+  const translatedGroups = (template.workflowGroups ?? []).map(g => ({
+    ...g,
+    name: getGroupName(lang, template.id, g.id, g.name),
+  }));
 
   // Build metadataOverrides — one entry per node, derived consistently:
-  //   name        ← node.label  (fixes "Custom Node" fallback in sidebar)
+  //   name        ← translated node label
   //   role        ← node.role
-  //   connections ← all neighbouring node labels (both in & out edges)
-  //   processes   ← workflow group names this node belongs to ("Assigned Workflows")
+  //   connections ← all neighbouring translated labels (both in & out edges)
+  //   processes   ← translated workflow group names this node belongs to
   //   + any rich meta from nodeMeta (status, statusColor, summary, tasks)
   const metadataOverrides: NonNullable<TemplateState["settings"]>["metadataOverrides"] = {};
   for (const node of template.nodes) {
     const meta = template.nodeMeta?.[node.id] ?? {};
+    const translatedLabel = getNodeLabel(lang, template.id, node.id, node.label);
 
     // Direct connections — all neighbours regardless of direction
     const neighbourNames = new Set<string>();
@@ -872,13 +887,13 @@ export function buildTemplateState(template: Template): TemplateState {
       }
     }
 
-    // Assigned Workflows — group names the node is a member of
-    const groupNames = (template.workflowGroups ?? [])
+    // Assigned Workflows — translated group names the node belongs to
+    const groupNames = translatedGroups
       .filter(g => g.nodeIds.includes(node.id))
       .map(g => g.name);
 
     metadataOverrides[node.id] = {
-      name:        node.label,
+      name:        translatedLabel,
       role:        node.role,
       status:      meta.status,
       statusColor: meta.statusColor,
@@ -897,7 +912,7 @@ export function buildTemplateState(template: Template): TemplateState {
     settings: {
       hiddenCoreNodes:   [...CORE_NODE_IDS],
       metadataOverrides,
-      workflowGroups:    template.workflowGroups ?? [],
+      workflowGroups:    translatedGroups,
     },
   };
 }

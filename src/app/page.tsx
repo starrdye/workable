@@ -11,7 +11,7 @@ import { KeyboardHelpModal } from "@/components/KeyboardHelpModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
-  Undo2, Redo2, BookOpen, Keyboard, Clock,
+  Undo2, Redo2, BookOpen, Keyboard, Clock, PanelLeft,
 } from "lucide-react";
 import { PROVIDERS } from "@/lib/aiClient";
 
@@ -25,6 +25,8 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useWorkflowLibrary }   from "@/hooks/useWorkflowLibrary";
 import { AIEngineToggle }       from "@/components/AIEngineToggle";
 import { WorkflowGeneratingOverlay, SkeletonCanvas } from "@/components/WorkflowGeneratingOverlay";
+import { LanguageToggle }       from "@/components/LanguageToggle";
+import { useLanguage }          from "@/contexts/LanguageContext";
 
 const ROLE_CHIPS = [
   { id: "person",   label: "Person",   color: "#6366F1" },
@@ -36,7 +38,9 @@ const ROLE_CHIPS = [
 // ── Demo Mode Badge (clickable — opens demo story) ───────────────────────────
 
 function DemoBadge() {
+  const { t } = useLanguage();
   const [showStory, setShowStory] = useState(false);
+
   return (
     <>
       {/* Fixed bottom-right pill */}
@@ -44,12 +48,12 @@ function DemoBadge() {
         onClick={() => setShowStory(true)}
         className="fixed bottom-5 right-5 z-[300] flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-2xl shadow-lg transition-colors cursor-pointer"
         style={{ boxShadow: "0 4px 18px 0 rgba(16,185,129,0.35)" }}
-        title="Click to learn about this demo"
+        title={t('demo.badge.title')}
       >
         <span className="text-sm leading-none" aria-hidden>🎭</span>
         <div className="flex flex-col leading-tight text-left">
-          <span className="font-bold tracking-wide">Demo Mode</span>
-          <span className="font-normal opacity-80 text-[10px]">Click to learn more</span>
+          <span className="font-bold tracking-wide">{t('demo.badge.label')}</span>
+          <span className="font-normal opacity-80 text-[10px]">{t('demo.badge.sublabel')}</span>
         </div>
       </button>
 
@@ -65,8 +69,8 @@ function DemoBadge() {
                   <span className="text-xl">🎭</span>
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-800">Demo — Jack&apos;s Daily Routine</h2>
-                  <p className="text-xs text-emerald-600 font-semibold mt-0.5">Scripted workflow · No API key required</p>
+                  <h2 className="text-base font-bold text-slate-800">{t('demo.story.title')}</h2>
+                  <p className="text-xs text-emerald-600 font-semibold mt-0.5">{t('demo.story.subtitle')}</p>
                 </div>
               </div>
               <button onClick={() => setShowStory(false)}
@@ -78,23 +82,20 @@ function DemoBadge() {
             {/* Body */}
             <div className="px-8 py-6 space-y-4 overflow-y-auto max-h-[60vh]">
               <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">The Scenario</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('demo.story.scenario.label')}</p>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Jack is a financial analyst who runs a daily data reconciliation between Bloomberg Terminal
-                  and an internal PostgreSQL database. When price breaks are found, he must wait for
-                  Sarah (Portfolio Manager) to manually review and approve overrides — a bottleneck that
-                  blocks the entire end-of-day pipeline.
+                  {t('demo.story.scenario.text')}
                 </p>
               </div>
 
               <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">What&apos;s Scripted</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('demo.story.scripted.label')}</p>
                 <div className="space-y-2">
                   {[
-                    { icon: "📝", label: "Workflow description", detail: "Jack's routine is pre-filled in the text input — no typing needed" },
-                    { icon: "🔍", label: "AI Analyze", detail: "Identifies Sarah as a bottleneck and proposes an AI Exception Reviewer" },
-                    { icon: "✏️", label: "AI Update prompt", detail: "Sarah's promotion scenario — junior analysts added to the approval chain" },
-                    { icon: "🤖", label: "AI responses", detail: "All AI calls use built-in mock data — no API key required" },
+                    { icon: "📝", label: t('demo.story.scripted.workflow.label'), detail: t('demo.story.scripted.workflow.text') },
+                    { icon: "🔍", label: t('demo.story.scripted.analyze.label'),  detail: t('demo.story.scripted.analyze.text') },
+                    { icon: "✏️", label: t('demo.story.scripted.update.label'),   detail: t('demo.story.scripted.update.text') },
+                    { icon: "🤖", label: t('demo.story.scripted.responses.label'), detail: t('demo.story.scripted.responses.text') },
                   ].map(({ icon, label, detail }) => (
                     <div key={label} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
                       <span className="text-base shrink-0">{icon}</span>
@@ -108,9 +109,16 @@ function DemoBadge() {
               </div>
 
               <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">What Works Normally</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('demo.story.works.label')}</p>
                 <div className="flex flex-wrap gap-2">
-                  {["Export PNG", "Export CSV", "Data Flow view", "Canvas zoom & pan", "Node/edge selection", "Groups"].map(f => (
+                  {[
+                    t('demo.story.works.export.png'),
+                    t('demo.story.works.export.csv'),
+                    t('demo.story.works.view.data'),
+                    t('demo.story.works.canvas.nav'),
+                    t('demo.story.works.selection'),
+                    t('demo.story.works.groups')
+                  ].map(f => (
                     <span key={f} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full font-medium">✓ {f}</span>
                   ))}
                 </div>
@@ -121,7 +129,7 @@ function DemoBadge() {
             <div className="px-8 pb-6 pt-4 border-t border-slate-100">
               <button onClick={() => setShowStory(false)}
                 className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors">
-                Got it — explore the demo
+                {t('demo.story.footer.button')}
               </button>
             </div>
           </div>
@@ -132,14 +140,17 @@ function DemoBadge() {
 }
 
 export default function Home() {
+  const { t } = useLanguage();
+
   // ── App state ──────────────────────────────────────────────────────────────
   const [isAppStarted,          setIsAppStarted]          = useState(false);
   /** Track 15a: true while AI is generating a workflow — overlay shown over empty canvas */
   const [isGeneratingWorkflow,  setIsGeneratingWorkflow]  = useState(false);
   const [workflowGenerationError, setWorkflowGenerationError] = useState<string | null>(null);
-  const [showImprovements, setShowImprovements] = useState(false);
-  const [showDataFlow,     setShowDataFlow]     = useState(false);
-  const [highContrast,     setHighContrast]     = useState(false);
+  const [showImprovements,  setShowImprovements]  = useState(false);
+  const [showDataFlow,      setShowDataFlow]      = useState(false);
+  const [highContrast,      setHighContrast]      = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [selectedId,   setSelectedId]    = useState<string | null>(null);
   const [selectedType, setSelectedType]  = useState<"node" | "edge" | null>(null);
   const [analysisData, setAnalysisData]  = useState<AnalysisData | null>(null);
@@ -228,6 +239,8 @@ export default function Home() {
     GROUP_COLORS,
   } = useWorkflowGroups(fullServerState, setFullServerState, setGroupFilters, pushSnapshot);
 
+  const { language } = useLanguage();
+
   const {
     aiConfig, handleSaveAiConfig, activeApiKey,
     showAISettings, setShowAISettings,
@@ -249,6 +262,7 @@ export default function Home() {
     aiDebugLog, setAiDebugLog,
   } = useAIHandlers(
     fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType, pushSnapshot,
+    language,
     () => { canvasRef.current?.triggerRefresh(); },
   );
   resetAppliedSuggestionsRef.current = resetAppliedSuggestions;
@@ -403,21 +417,19 @@ export default function Home() {
   // ── Debug modal (shared between start screen and canvas) ───────────────────
   const debugModal = (
     <>
-      {!isDemoMode && (
-        <button
-          onClick={() => setShowDebugLog(true)}
-          className={`fixed bottom-5 left-5 z-[200] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg transition-colors ${
-            aiDebugLog?.error
-              ? "bg-red-700 text-white hover:bg-red-600"
-              : aiDebugLog
-              ? "bg-slate-800 text-slate-100 hover:bg-slate-700"
-              : "bg-slate-200 text-slate-500 hover:bg-slate-300"
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5" />
-          AI Debug Log{aiDebugLog?.error ? " ⚠" : ""}
-        </button>
-      )}
+      <button
+        onClick={() => setShowDebugLog(true)}
+        className={`fixed bottom-5 left-5 z-[200] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg transition-colors ${
+          aiDebugLog?.error
+            ? "bg-red-700 text-white hover:bg-red-600"
+            : aiDebugLog
+            ? "bg-slate-800 text-slate-100 hover:bg-slate-700"
+            : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+        }`}
+      >
+        <FileText className="w-3.5 h-3.5" />
+        {t('debugLog.button')}{aiDebugLog?.error ? " ⚠" : ""}
+      </button>
 
       {showDebugLog && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -425,9 +437,9 @@ export default function Home() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-indigo-500" />
-                <span className="font-semibold text-slate-800">AI Debug Log</span>
+                <span className="font-semibold text-slate-800">{t('debugLog.title')}</span>
                 {aiDebugLog?.error && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Error</span>
+                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">{t('debugLog.error')}</span>
                 )}
               </div>
               <button onClick={() => setShowDebugLog(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500">
@@ -436,7 +448,7 @@ export default function Home() {
             </div>
             <div className="overflow-y-auto flex-1 p-6 space-y-5 text-sm">
               {!aiDebugLog ? (
-                <p className="text-slate-400 text-center py-8">No parse attempt yet. Submit a workflow description to see debug output here.</p>
+                <p className="text-slate-400 text-center py-8">{t('debugLog.empty')}</p>
               ) : (
                 <>
                   {aiDebugLog.error && (
@@ -453,7 +465,7 @@ export default function Home() {
                             ? 'bg-emerald-100 text-emerald-700'
                             : 'bg-indigo-100 text-indigo-700'
                         }`}>
-                          {aiDebugLog.engine === 'distributed' ? '⚡ Distributed' : '⬤ Monolithic'} engine
+                          {aiDebugLog.engine === 'distributed' ? t('debugLog.engine.distributed') : t('debugLog.engine.monolithic')} {t('debugLog.engine.suffix')}
                         </span>
                       )}
                       {aiDebugLog.tokenUsage && (
@@ -463,23 +475,23 @@ export default function Home() {
                       )}
                       {aiDebugLog.tokenUsage && (
                         <span className="text-xs text-slate-400">
-                          ≈ {(aiDebugLog.tokenUsage.inputTokens + aiDebugLog.tokenUsage.outputTokens).toLocaleString()} total
+                          ≈ {(aiDebugLog.tokenUsage.inputTokens + aiDebugLog.tokenUsage.outputTokens).toLocaleString()} {t('debugLog.tokens.total')}
                         </span>
                       )}
                     </div>
                   )}
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Prompt sent ({aiDebugLog.prompt.length.toLocaleString()} chars)</div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">{t('debugLog.prompt').replace('{n}', aiDebugLog.prompt.length.toLocaleString())}</div>
                     <pre className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs text-slate-700 whitespace-pre-wrap font-mono overflow-x-auto max-h-48 overflow-y-auto">
-                      {aiDebugLog.prompt || "(empty)"}
+                      {aiDebugLog.prompt || t('debugLog.response.empty')}
                     </pre>
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
-                      Raw AI response {aiDebugLog.rawAIResponse ? `(${aiDebugLog.rawAIResponse.length.toLocaleString()} chars)` : "(empty)"}
+                      {t('debugLog.response')} {aiDebugLog.rawAIResponse ? `(${aiDebugLog.rawAIResponse.length.toLocaleString()} chars)` : t('debugLog.response.empty')}
                     </div>
                     <pre className="bg-slate-950 text-green-400 rounded-lg p-4 text-xs whitespace-pre-wrap font-mono overflow-x-auto max-h-96 overflow-y-auto">
-                      {aiDebugLog.rawAIResponse || "(no response received)"}
+                      {aiDebugLog.rawAIResponse || t('debugLog.noResponse')}
                     </pre>
                   </div>
                 </>
@@ -491,14 +503,14 @@ export default function Home() {
                   onClick={() => navigator.clipboard.writeText(aiDebugLog!.rawAIResponse)}
                   className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium"
                 >
-                  Copy response
+                  {t('debugLog.copy')}
                 </button>
               )}
               <button
                 onClick={() => setShowDebugLog(false)}
                 className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-700 font-medium"
               >
-                Close
+                {t('debugLog.close')}
               </button>
             </div>
           </div>
@@ -511,6 +523,9 @@ export default function Home() {
   if (!isAppStarted) {
     return (
       <>
+        <div className="fixed top-4 right-4 z-50">
+          <LanguageToggle />
+        </div>
         <StartScreen
           onStart={() => setIsAppStarted(true)}
           onImportAndStart={handleImportAndStart}
@@ -534,19 +549,27 @@ export default function Home() {
 
   // ── Canvas app shell ────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-dvh md:h-screen relative bg-[#F8FAFC] overflow-hidden font-[var(--font-inter)] text-slate-800 antialiased">
+    <div className="flex flex-col h-dvh relative bg-[#F8FAFC] overflow-hidden font-[var(--font-inter)] text-slate-800 antialiased">
 
       {/* ── Header ── */}
       <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between z-50 shadow-sm relative shrink-0 min-w-0">
         <div className="flex items-center gap-3 shrink-0">
           <button onClick={() => setIsAppStarted(false)} title="Back to home"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0">
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <img src="/workable-logo.svg" alt="Workable" className="w-7 h-7" />
-          <h1 className="text-xl font-bold tracking-tight">
+          <img src="/workable-logo.svg" alt="Workable" className="w-7 h-7 shrink-0" />
+          <h1 className="text-xl font-bold tracking-tight hidden sm:block">
             <span className="text-indigo-600">Workable</span>
           </h1>
+          {/* Mobile sidebar toggle — only visible on small screens */}
+          <button
+            onClick={() => setShowMobileSidebar(v => !v)}
+            title="Toggle sidebar"
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+          >
+            <PanelLeft className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3 overflow-x-auto min-w-0 scrollbar-hide">
@@ -555,8 +578,8 @@ export default function Home() {
             <button
               onClick={handleUndo}
               disabled={!canUndo}
-              title={canUndo ? "Undo (⌘Z)" : "Nothing to undo"}
-              aria-label={canUndo ? "Undo" : "Nothing to undo"}
+              title={canUndo ? `${t('toolbar.undo')} (⌘Z)` : t('toolbar.undo.nothing')}
+              aria-label={canUndo ? t('toolbar.undo') : t('toolbar.undo.nothing')}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Undo2 className="w-4 h-4" />
@@ -564,8 +587,8 @@ export default function Home() {
             <button
               onClick={handleRedo}
               disabled={!canRedo}
-              title={canRedo ? "Redo (⌘⇧Z)" : "Nothing to redo"}
-              aria-label={canRedo ? "Redo" : "Nothing to redo"}
+              title={canRedo ? `${t('toolbar.redo')} (⌘⇧Z)` : t('toolbar.redo.nothing')}
+              aria-label={canRedo ? t('toolbar.redo') : t('toolbar.redo.nothing')}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Redo2 className="w-4 h-4" />
@@ -577,8 +600,8 @@ export default function Home() {
           {/* Track 1: Workflow Library */}
           <button
             onClick={() => setShowLibrary(true)}
-            title="Workflow Library — save & load named snapshots"
-            aria-label="Open workflow library"
+            title={t('toolbar.library.title')}
+            aria-label={t('toolbar.library')}
             className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
           >
             <BookOpen className="w-4 h-4" />
@@ -587,8 +610,8 @@ export default function Home() {
           {/* Track 9: Keyboard Help */}
           <button
             onClick={() => setShowKeyboardHelp(true)}
-            title="Keyboard shortcuts (?)"
-            aria-label="Show keyboard shortcuts"
+            title={t('toolbar.keyboard')}
+            aria-label={t('keyboard.title')}
             className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
           >
             <Keyboard className="w-4 h-4" />
@@ -598,33 +621,33 @@ export default function Home() {
 
           {/* AI Analyze */}
           <button onClick={handleAiAnalyze}
-            title={(activeApiKey || isDemoMode) ? `Analyze with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Analyze"}
-            aria-label="AI Analyze Workflow"
-            className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
+            title={(activeApiKey || isDemoMode) ? t('toolbar.aiAnalyze.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiAnalyze.noKey')}
+            aria-label={t('toolbar.aiAnalyze')}
+            className={`shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               (activeApiKey || isDemoMode)
                 ? "border-indigo-300 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
-            <Sparkles className="w-4 h-4" />
-            AI Analyze
+            <Sparkles className="w-4 h-4 shrink-0" />
+            {t('toolbar.aiAnalyze')}
           </button>
 
           {/* AI Update */}
           <button onClick={() => { if (!activeApiKey && !isDemoMode) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
-            title={(activeApiKey || isDemoMode) ? `Update workflow with ${activeProviderMeta?.name ?? "AI"}` : "Set an API key to use AI Update"}
-            aria-label="AI Update Workflow"
-            className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
+            title={(activeApiKey || isDemoMode) ? t('toolbar.aiUpdate.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiUpdate.noKey')}
+            aria-label={t('toolbar.aiUpdate')}
+            className={`shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               (activeApiKey || isDemoMode)
                 ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
-            <GitMerge className="w-4 h-4" />
-            AI Update
+            <GitMerge className="w-4 h-4 shrink-0" />
+            {t('toolbar.aiUpdate')}
           </button>
 
           {/* AI Settings */}
-          <button onClick={() => setShowAISettings(true)} title="AI settings"
-            aria-label="AI Settings"
+          <button onClick={() => setShowAISettings(true)} title={t('toolbar.aiSettings')}
+            aria-label={t('settings.title')}
             className="text-sm font-semibold p-2 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors relative">
             <Settings className="w-4 h-4" />
             {activeApiKey && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white" />}
@@ -633,22 +656,25 @@ export default function Home() {
           {/* AI Engine toggle (vb0.2) */}
           <AIEngineToggle compact />
 
+          {/* Language toggle */}
+          <LanguageToggle />
+
           <div className="h-6 w-px bg-gray-300" />
 
-          <button onClick={() => canvasRef.current?.exportPng()} title="Export graph as PNG"
-            aria-label="Export graph as PNG"
-            className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <Download className="w-4 h-4" />PNG
+          <button onClick={() => canvasRef.current?.exportPng()} title={t('toolbar.export.png.title')}
+            aria-label={t('toolbar.export.png.title')}
+            className="shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+            <Download className="w-4 h-4 shrink-0" />{t('toolbar.export.png')}
           </button>
-          <button onClick={() => canvasRef.current?.exportCsv()} title="Export workflow as CSV"
-            aria-label="Export workflow as CSV"
-            className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <FileText className="w-4 h-4" />CSV
+          <button onClick={() => canvasRef.current?.exportCsv()} title={t('toolbar.export.csv.title')}
+            aria-label={t('toolbar.export.csv.title')}
+            className="shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+            <FileText className="w-4 h-4 shrink-0" />{t('toolbar.export.csv')}
           </button>
-          <button onClick={() => importInput.current?.click()} title="Import workflow from CSV"
-            aria-label="Import workflow from CSV"
-            className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <Upload className="w-4 h-4" />Import
+          <button onClick={() => importInput.current?.click()} title={t('toolbar.import.title')}
+            aria-label={t('toolbar.import.title')}
+            className="shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+            <Upload className="w-4 h-4 shrink-0" />{t('toolbar.import')}
           </button>
           <input ref={importInput} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
 
@@ -658,12 +684,27 @@ export default function Home() {
       {/* ── Body ── */}
       <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden relative">
 
+        {/* Mobile sidebar backdrop */}
+        {showMobileSidebar && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            onClick={() => setShowMobileSidebar(false)}
+          />
+        )}
+
         {/* ── Left sidebar ── */}
-        <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col z-40 relative shadow-sm md:overflow-y-auto">
+        <aside className={`
+          fixed md:relative inset-y-0 left-0 z-50 md:z-40
+          w-4/5 max-w-xs md:w-80
+          bg-white border-r border-slate-200
+          flex flex-col shadow-sm overflow-y-auto
+          transform transition-transform duration-300 ease-in-out
+          ${showMobileSidebar ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+        `}>
 
           {/* View Mode */}
           <div className="p-5 border-b border-slate-100">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">View Mode</h2>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">{t('sidebar.viewMode')}</h2>
             <div className="space-y-2">
               <button
                 className={`w-full text-left p-3.5 rounded-2xl border-2 transition group ${
@@ -673,9 +714,9 @@ export default function Home() {
               >
                 <span className={`flex items-center gap-1.5 font-bold text-sm mb-0.5 ${!showImprovements ? "text-indigo-600" : "text-slate-600 group-hover:text-indigo-500"}`}>
                   <Clock size={13} className="flex-shrink-0" />
-                  Current Workflow
+                  {t('sidebar.currentWorkflow')}
                 </span>
-                <p className="text-xs text-slate-500">Every step and handoff as it is today.</p>
+                <p className="text-xs text-slate-500">{t('sidebar.currentWorkflow.desc')}</p>
               </button>
               <button
                 className={`w-full text-left p-3.5 rounded-2xl border-2 transition group ${
@@ -685,9 +726,9 @@ export default function Home() {
               >
                 <span className={`flex items-center gap-1.5 font-bold text-sm mb-0.5 ${showImprovements ? "text-emerald-600" : "text-slate-600 group-hover:text-emerald-500"}`}>
                   <Zap size={13} className="flex-shrink-0" />
-                  Optimised Workflow
+                  {t('sidebar.optimisedWorkflow')}
                 </span>
-                <p className="text-xs text-slate-500">AI-suggested improvements overlaid.</p>
+                <p className="text-xs text-slate-500">{t('sidebar.optimisedWorkflow.desc')}</p>
               </button>
             </div>
 
@@ -708,16 +749,16 @@ export default function Home() {
                     )}
                     <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${showDataFlow ? "bg-indigo-500" : "bg-slate-400"}`} />
                   </span>
-                  <span className="text-xs font-semibold">Show Data Flow</span>
+                  <span className="text-xs font-semibold">{t('sidebar.showDataFlow')}</span>
                 </div>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   showDataFlow ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-400"
                 }`}>
-                  {showDataFlow ? "ON" : "OFF"}
+                  {showDataFlow ? t('sidebar.dataFlow.on') : t('sidebar.dataFlow.off')}
                 </span>
               </button>
               {showDataFlow && (
-                <p className="text-[10px] text-indigo-500 mt-1.5 ml-1">All connections lit — showing live data flow.</p>
+                <p className="text-[10px] text-indigo-500 mt-1.5 ml-1">{t('sidebar.dataFlow.hint')}</p>
               )}
             </div>
 
@@ -736,12 +777,12 @@ export default function Home() {
                   <span className={`relative flex h-2.5 w-2.5 ${highContrast ? "" : "opacity-50"}`}>
                     <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${highContrast ? "bg-fuchsia-500" : "bg-slate-400"}`} />
                   </span>
-                  <span className="text-xs font-semibold">High Contrast</span>
+                  <span className="text-xs font-semibold">{t('sidebar.highContrast')}</span>
                 </div>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   highContrast ? "bg-fuchsia-100 text-fuchsia-600" : "bg-slate-100 text-slate-400"
                 }`}>
-                  {highContrast ? "ON" : "OFF"}
+                  {highContrast ? t('sidebar.dataFlow.on') : t('sidebar.dataFlow.off')}
                 </span>
               </button>
             </div>
@@ -749,7 +790,7 @@ export default function Home() {
 
           {/* Search */}
           <div className="p-5 border-b border-slate-100">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Search</h2>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">{t('sidebar.search')}</h2>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
@@ -757,7 +798,7 @@ export default function Home() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search nodes by name… (Cmd+K)"
+                placeholder={t('sidebar.search.placeholder')}
                 className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 bg-slate-50"
               />
               {searchQuery && (
@@ -769,7 +810,7 @@ export default function Home() {
             </div>
             {searchQuery.trim() && (
               <p className="text-[11px] text-indigo-500 mt-1.5 ml-1">
-                Highlighting nodes matching &ldquo;{searchQuery.trim()}&rdquo;
+                {t('sidebar.search.highlight').replace('{query}', searchQuery.trim())}
               </p>
             )}
           </div>
@@ -781,7 +822,7 @@ export default function Home() {
               className="w-full flex items-center justify-between px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-colors"
             >
               <span className="flex items-center gap-2">
-                Filters
+                {t('sidebar.filters')}
                 {(roleFilters.length > 0 || groupFilters.length > 0) && (
                   <span className="bg-indigo-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
                     {roleFilters.length + groupFilters.length}
@@ -795,7 +836,7 @@ export default function Home() {
               <div className="px-5 pb-4 space-y-4">
                 {/* Role filter */}
                 <div>
-                  <div className="text-[11px] font-semibold text-slate-500 mb-2">Filter by Role</div>
+                  <div className="text-[11px] font-semibold text-slate-500 mb-2">{t('sidebar.filters.role')}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {ROLE_CHIPS.map(({ id, label, color }) => {
                       const active = roleFilters.includes(id);
@@ -820,7 +861,7 @@ export default function Home() {
                 {/* Group filter */}
                 {workflowGroups.length > 0 && (
                   <div>
-                    <div className="text-[11px] font-semibold text-slate-500 mb-2">Filter by Group</div>
+                    <div className="text-[11px] font-semibold text-slate-500 mb-2">{t('sidebar.filters.group')}</div>
                     <div className="flex flex-wrap gap-1.5">
                       {workflowGroups.map((g) => {
                         const active = groupFilters.includes(g.id);
@@ -847,7 +888,7 @@ export default function Home() {
                 {(roleFilters.length > 0 || groupFilters.length > 0) && (
                   <button onClick={() => { setRoleFilters([]); setGroupFilters([]); }}
                     className="text-[11px] text-slate-500 hover:text-red-500 transition-colors flex items-center gap-1">
-                    <X className="w-3 h-3" /> Clear all filters
+                    <X className="w-3 h-3" /> {t('sidebar.filters.clear')}
                   </button>
                 )}
               </div>
@@ -861,7 +902,7 @@ export default function Home() {
               className="w-full flex items-center justify-between px-5 py-3.5 text-xs font-semibold text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-colors"
             >
               <span className="flex items-center gap-2">
-                Workflow Groups
+                {t('sidebar.workflowGroups')}
                 {workflowGroups.length > 0 && (
                   <span className="bg-slate-200 text-slate-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
                     {workflowGroups.length}
@@ -875,7 +916,7 @@ export default function Home() {
               <div className="px-5 pb-4 space-y-2">
                 {workflowGroups.length === 0 && (
                   <p className="text-[11px] text-slate-400 italic">
-                    No groups yet. Create one to visually chunk your workflow.
+                    {t('sidebar.groups.empty')}
                   </p>
                 )}
 
@@ -929,20 +970,20 @@ export default function Home() {
                       )}
 
                       <span className="text-[10px] text-slate-400 flex-shrink-0">
-                        {group.nodeIds.length} node{group.nodeIds.length !== 1 ? "s" : ""}
+                        {group.nodeIds.length} {group.nodeIds.length !== 1 ? t('sidebar.groups.nodes') : t('sidebar.groups.node')}
                       </span>
 
                       <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity flex-shrink-0">
                         <button
                           onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }}
-                          title="Rename group"
+                          title={t('sidebar.groups.rename')}
                           className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => deleteGroup(group.id)}
-                          title="Delete group"
+                          title={t('sidebar.groups.delete')}
                           className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -970,11 +1011,11 @@ export default function Home() {
                   onClick={createGroup}
                   className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 text-xs font-semibold transition-colors mt-1"
                 >
-                  <Plus className="w-3.5 h-3.5" /> New Group
+                  <Plus className="w-3.5 h-3.5" /> {t('sidebar.groups.newGroup')}
                 </button>
 
                 <p className="text-[10px] text-slate-400 italic leading-snug">
-                  Right-click any node → &ldquo;Add to group&rdquo; to assign members.
+                  {t('sidebar.groups.hint')}
                 </p>
               </div>
             )}
@@ -983,9 +1024,7 @@ export default function Home() {
           {/* Tips */}
           <div className="p-5 mt-auto">
             <p className="text-xs text-slate-400 italic text-center border-t border-slate-100 pt-4 leading-relaxed">
-              Drag nodes to rearrange. Right-click canvas to add a step.{" "}
-              <kbd className="bg-slate-100 border border-slate-200 rounded px-1 font-mono text-[10px]">Del</kbd>{" "}
-              to remove. Use <em>AI Analyze</em> for optimisation suggestions.
+              {t('sidebar.tips')}
             </p>
           </div>
         </aside>
@@ -1010,7 +1049,7 @@ export default function Home() {
             highContrast={highContrast}
             selectedId={selectedId}
             selectedType={selectedType}
-            onSelectNode={(id, type) => { setSelectedId(id); setSelectedType(type); }}
+            onSelectNode={(id, type) => { setSelectedId(id); setSelectedType(type); setShowMobileSidebar(false); }}
             onDeselect={() => { setSelectedId(null); setSelectedType(null); }}
             onHover={(name, summary) => setTooltip((t) => ({ ...t, name, summary, visible: true }))}
             onHoverEnd={() => setTooltip((t) => ({ ...t, visible: false }))}
@@ -1044,7 +1083,7 @@ export default function Home() {
               className="bg-white/90 backdrop-blur-md border border-slate-200 rounded-full shadow-lg px-3 py-2 text-slate-600 hover:bg-slate-100 flex items-center gap-1.5 text-sm font-semibold transition-colors"
             >
               <LayoutGrid className="w-4 h-4" />
-              Smart Layout
+              {t('sidebar.smartLayout')}
             </button>
           </div>
         </main>
@@ -1140,7 +1179,7 @@ export default function Home() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-indigo-500" />
-                <span className="font-semibold text-slate-800">Workflow Library</span>
+                <span className="font-semibold text-slate-800">{t('library.title')}</span>
               </div>
               <button onClick={() => setShowLibrary(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
                 <X className="w-4 h-4" />
@@ -1150,7 +1189,7 @@ export default function Home() {
             <div className="px-6 py-3 border-b border-slate-100 flex gap-2">
               <input
                 type="text"
-                placeholder="Name this workflow…"
+                placeholder={t('library.placeholder')}
                 value={librarySaveName}
                 onChange={e => setLibrarySaveName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && librarySaveName.trim() && fullServerState) { saveWorkflow(librarySaveName, fullServerState); setLibrarySaveName(''); } }}
@@ -1161,13 +1200,13 @@ export default function Home() {
                 disabled={!librarySaveName.trim() || !fullServerState}
                 className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium"
               >
-                Save
+                {t('library.save')}
               </button>
             </div>
             {/* Library list */}
             <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
               {libraryEntries.length === 0 ? (
-                <p className="text-slate-400 text-sm text-center py-10">No saved workflows yet.</p>
+                <p className="text-slate-400 text-sm text-center py-10">{t('library.empty')}</p>
               ) : libraryEntries.map(entry => (
                 <div key={entry.id} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50">
                   <div>
@@ -1184,11 +1223,11 @@ export default function Home() {
                         setShowLibrary(false);
                       }}
                       className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-medium"
-                    >Load</button>
+                    >{t('library.load')}</button>
                     <button
                       onClick={() => deleteWorkflow(entry.id)}
                       className="text-xs px-2 py-1 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 font-medium"
-                    >Delete</button>
+                    >{t('library.delete')}</button>
                   </div>
                 </div>
               ))}

@@ -29,6 +29,7 @@ export function useAIHandlers(
   setSelectedId: Dispatch<SetStateAction<string | null>>,
   setSelectedType: Dispatch<SetStateAction<'node' | 'edge' | null>>,
   pushSnapshot: (state: ServerGraphState) => void,
+  language: string,
   onCanvasMutation?: () => void,
 ) {
   // ── AI Config ──────────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ export function useAIHandlers(
       provider: isDemo ? 'demo' as AIProvider : aiConfig.provider,
       model:    isDemo ? 'demo-model' : aiConfig.models[aiConfig.provider],
       baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
+      lang:     language,
     };
 
     // Distributed engine doesn't support streaming — use buffered path
@@ -299,8 +301,8 @@ export function useAIHandlers(
     setAiUpdateLoading(true);
     try {
       const updateConfig = isDemo
-        ? { apiKey: 'demo', provider: 'demo' as AIProvider, model: 'demo-mock', baseUrl: undefined }
-        : { apiKey: activeApiKey, provider: aiConfig.provider, model: aiConfig.models[aiConfig.provider], baseUrl: aiConfig.baseUrls?.[aiConfig.provider] };
+        ? { apiKey: 'demo', provider: 'demo' as AIProvider, model: 'demo-mock', baseUrl: undefined, lang: language }
+        : { apiKey: activeApiKey, provider: aiConfig.provider, model: aiConfig.models[aiConfig.provider], baseUrl: aiConfig.baseUrls?.[aiConfig.provider], lang: language };
       const { data, aborted, engine } = await aiEngine.runUpdate(
         prompt,
         fullServerState,

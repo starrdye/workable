@@ -8,7 +8,7 @@ import { AIUpdatePatchResponse } from '@/lib/aiSchemas';
 import { buildUpdateSnapshot } from '@/lib/snapshotBuilder';
 import { runDistributedUpdate } from '@/lib/agents/distributedUpdate';
 import type { AIEngineMode } from '@/contexts/AIEngineContext';
-import { JACK_ROUTINE_DEMO_UPDATE_RESULT } from '@/lib/demoAnalysis';
+import { JACK_ROUTINE_DEMO_UPDATE_RESULT, JACK_ROUTINE_DEMO_UPDATE_RESULT_ZH } from '@/lib/demoAnalysis';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -325,7 +325,8 @@ function validatePatch(
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, currentState, apiKey, provider = 'anthropic', model, baseUrl, engine } = await req.json() as {
+    const body = await req.json();
+    const { prompt, currentState, apiKey, provider = 'anthropic', model, baseUrl, engine, lang = 'en' } = body as {
       prompt: string;
       currentState: ServerGraphState;
       apiKey: string;
@@ -333,6 +334,7 @@ export async function POST(req: NextRequest) {
       model?: string;
       baseUrl?: string;
       engine?: AIEngineMode;
+      lang?: string;
     };
 
     const isDemoProvider = provider === 'demo';
@@ -361,7 +363,7 @@ export async function POST(req: NextRequest) {
 
     // Demo provider: return pre-built mock without any AI call
     if (isDemoProvider) {
-      return NextResponse.json(JACK_ROUTINE_DEMO_UPDATE_RESULT);
+      return NextResponse.json(lang === 'zh' ? JACK_ROUTINE_DEMO_UPDATE_RESULT_ZH : JACK_ROUTINE_DEMO_UPDATE_RESULT);
     }
 
     // ── Distributed engine branch ─────────────────────────────────────────────

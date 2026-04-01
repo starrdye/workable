@@ -8,6 +8,7 @@ import { jsonrepair } from 'jsonrepair';
 import { runDistributedOptimize } from '@/lib/agents/distributedOptimize';
 import type { ServerGraphState } from '@/lib/serverState';
 import type { AIEngineMode } from '@/contexts/AIEngineContext';
+import { JACK_ROUTINE_DEMO_ANALYSIS, JACK_ROUTINE_DEMO_ANALYSIS_ZH } from '@/lib/demoAnalysis';
 
 const SYSTEM_PROMPT = `You are a workflow optimization expert specializing in business process improvement and operational efficiency.
 
@@ -212,7 +213,8 @@ function stripFences(text: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const { workflowData, apiKey, provider = 'anthropic', model, baseUrl, engine, stream: wantStream } = await req.json() as {
+    const body = await req.json();
+    const { workflowData, apiKey, provider = 'anthropic', model, baseUrl, engine, stream: wantStream, lang = 'en' } = body as {
       workflowData: Record<string, unknown>;
       apiKey: string;
       provider?: AIProvider;
@@ -221,6 +223,7 @@ export async function POST(req: NextRequest) {
       engine?: AIEngineMode;
       /** Track 14d: set true to receive Server-Sent Events instead of a JSON blob */
       stream?: boolean;
+      lang?: string;
     };
 
     if (provider !== 'demo' && !apiKey?.trim()) return NextResponse.json({ error: 'API key is required.' }, { status: 400 });
@@ -243,6 +246,40 @@ export async function POST(req: NextRequest) {
             : 'No model configured for this provider.' },
         { status: 400 }
       );
+    }
+
+    // Demo provider: return pre-built mock without any AI call
+    if (provider === 'demo') {
+      const { JACK_ROUTINE_DEMO_ANALYSIS, JACK_ROUTINE_DEMO_ANALYSIS_ZH } = await import('@/lib/demoAnalysis');
+      const demoData = lang === 'zh' ? JACK_ROUTINE_DEMO_ANALYSIS_ZH : JACK_ROUTINE_DEMO_ANALYSIS;
+
+      if (wantStream) {
+        const encoder = new TextEncoder();
+        const sseStream = new ReadableStream({
+          async start(controller) {
+            const send = (data: any) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            
+            // Send a pseudo-stream of chunks to simulate the AI "thinking"
+            const chunks = demoData.analysis.split('\n');
+            for (const chunk of chunks) {
+              send({ type: 'chunk', text: chunk + '\n' });
+              await new Promise(r => setTimeout(r, 80)); // 80ms delay per line for demo effect
+            }
+
+            send({ type: 'validating', message: lang === 'zh' ? '正在完成演示建议...' : 'Finalizing demo suggestions...' });
+            await new Promise(r => setTimeout(r, 600));
+            
+            send({
+              type: 'done',
+              ...demoData,
+              isDemo: true,
+            });
+            controller.close();
+          }
+        });
+        return new Response(sseStream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' } });
+      }
+      return NextResponse.json({ ...demoData, isDemo: true });
     }
 
     // ── Distributed engine branch ─────────────────────────────────────────────
@@ -276,52 +313,6 @@ export async function POST(req: NextRequest) {
 
     const userMessage = `Analyze this workflow and provide optimization recommendations:\n\n${workflowSnapshot}`;
 
-    // ── Demo Provider Mock ────────────────────────────────────────────────────
-    if (provider === 'demo') {
-      const { JACK_ROUTINE_DEMO_ANALYSIS } = await import('@/lib/demoAnalysis');
-
-      if (wantStream) {
-        const encoder = new TextEncoder();
-        const sseStream = new ReadableStream({
-          async start(controller) {
-            const send = (event: Record<string, unknown>) => {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-            };
-            
-            // Send a pseudo-stream of chunks to simulate the AI "thinking"
-            const chunks = JACK_ROUTINE_DEMO_ANALYSIS.analysis.split('\n');
-            for (const chunk of chunks) {
-              send({ type: 'chunk', text: chunk + '\n' });
-              await new Promise(r => setTimeout(r, 80)); // 80ms delay per line for demo effect
-            }
-
-            send({ type: 'validating', message: 'Finalizing demo suggestions...' });
-            await new Promise(r => setTimeout(r, 600));
-
-            send({
-              type: 'done',
-              ...JACK_ROUTINE_DEMO_ANALYSIS,
-              isDemo: true, // Custom flag for UI to show a "Demo" badge
-            });
-            controller.close();
-          }
-        });
-
-        return new Response(sseStream, {
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-          },
-        });
-      }
-
-      // Non-streaming demo response
-      return NextResponse.json({
-        ...JACK_ROUTINE_DEMO_ANALYSIS,
-        isDemo: true,
-      });
-    }
 
     // ── Track 14d: Streaming path ─────────────────────────────────────────────
     if (wantStream) {

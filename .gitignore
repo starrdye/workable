@@ -47,6 +47,7 @@ next-env.d.ts
 
 # temporary
 /public/tem/
+/tem/
 
 # SQLite database (Phase 1 distributed)
 /data/
