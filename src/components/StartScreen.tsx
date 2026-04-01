@@ -212,14 +212,14 @@ function TemplateCard({
       <div className="px-5 py-4 flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">
           <span className="font-bold text-slate-800 text-sm leading-snug group-hover:text-indigo-700 transition-colors">
-            {template.name}
+            {t(`template.${template.id}.name` as any) || template.name}
           </span>
           <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${ds.bg} ${ds.text}`}>
             {t(densityKey as any)}
           </span>
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
-          {template.description}
+          {t(`template.${template.id}.desc` as any) || template.description}
         </p>
         {template.nodeCount > 0 && (
           <p className="text-[11px] text-slate-400 font-mono">

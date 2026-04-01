@@ -120,6 +120,16 @@ export const translations = {
     'gallery.legend.many.desc':     '— 4-arc bundles + force rings',
     'gallery.density.few':          'Few entities',
     'gallery.density.some':         'Some entities',
+
+    // ── Template names & descriptions ──────────────────────────────────────
+    'template.blank.name':                 'Blank Canvas',
+    'template.blank.desc':                 'Start from scratch — drag in nodes and draw connections yourself.',
+    'template.morning-routine.name':       'Morning Routine',
+    'template.morning-routine.desc':       'Personal daily startup: wake-up → review → plan → deep work. A simple 7-step flow centered on you.',
+    'template.project-workflow.name':      'Project Workflow',
+    'template.project-workflow.desc':      'You at the hub: idea → research → writing → review → publish. ~14 steps with tools and collaborators.',
+    'template.full-week.name':             'Full Work Week',
+    'template.full-week.desc':             'Your complete weekly system: inputs, deep work blocks, meetings, reviews, and outputs — all mapped.',
     'gallery.density.many':         'Many entities',
 
     // ── AI Analysis Modal ──────────────────────────────────────────────────
@@ -461,6 +471,16 @@ export const translations = {
     'gallery.density.few':          '少量节点',
     'gallery.density.some':         '适量节点',
     'gallery.density.many':         '大量节点',
+
+    // ── Template names & descriptions ──────────────────────────────────────
+    'template.blank.name':                 '空白画布',
+    'template.blank.desc':                 '从零开始 — 自由拖入节点并连接它们。',
+    'template.morning-routine.name':       '晨间例程',
+    'template.morning-routine.desc':       '个人每日启动流程：起床 → 回顾 → 规划 → 深度工作。以您为核心的 7 步简洁流程。',
+    'template.project-workflow.name':      '项目工作流',
+    'template.project-workflow.desc':      '您是核心节点：构思 → 调研 → 写作 → 审阅 → 发布。约 14 个步骤，涵盖工具与协作者。',
+    'template.full-week.name':             '完整工作周',
+    'template.full-week.desc':             '您的完整周工作系统：输入、深度工作块、会议、回顾与成果输出 — 全部一目了然。',
 
     // ── AI Analysis Modal ──────────────────────────────────────────────────
     'analysisModal.title':          'AI 工作流分析',
