@@ -404,6 +404,9 @@ export default function Home() {
   if (!isAppStarted) {
     return (
       <>
+        <div className="fixed top-4 right-4 z-50">
+          <LanguageToggle />
+        </div>
         <StartScreen
           onStart={() => setIsAppStarted(true)}
           onImportAndStart={handleImportAndStart}
