@@ -432,13 +432,13 @@ export default function Home() {
 
       {/* ── Header ── */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-50 shadow-sm relative">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <button onClick={() => setIsAppStarted(false)} title="Back to home"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0">
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <img src="/workable-logo.svg" alt="Workable" className="w-7 h-7" />
-          <h1 className="text-xl font-bold tracking-tight">
+          <img src="/workable-logo.svg" alt="Workable" className="w-7 h-7 shrink-0" />
+          <h1 className="text-xl font-bold tracking-tight hidden sm:block">
             <span className="text-indigo-600">Workable</span>
           </h1>
         </div>
