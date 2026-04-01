@@ -503,19 +503,32 @@ export function StartScreen({
             {/* Quick-start options */}
             <div className="grid grid-cols-2 gap-4">
 
-              {/* Start Fresh → opens template gallery */}
-              <button
-                onClick={() => setShowGallery(true)}
-                className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 transition-all text-center group"
-              >
-                <div className="w-11 h-11 rounded-full bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-600 transition-colors">
-                  <Layers className="w-5 h-5 text-indigo-600 group-hover:text-white transition-colors" />
+              {/* Start Fresh → opens template gallery (hidden in demo mode) */}
+              {!isDemoMode ? (
+                <button
+                  onClick={() => setShowGallery(true)}
+                  className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 transition-all text-center group"
+                >
+                  <div className="w-11 h-11 rounded-full bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-600 transition-colors">
+                    <Layers className="w-5 h-5 text-indigo-600 group-hover:text-white transition-colors" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800 text-sm">{t('startScreen.startFresh')}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{t('startScreen.startFresh.desc')}</div>
+                  </div>
+                </button>
+              ) : (
+                /* Demo mode: show a locked "Jack's Routine" card instead */
+                <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 border-emerald-200 bg-emerald-50/40 text-center">
+                  <div className="w-11 h-11 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <span className="text-xl leading-none">🎭</span>
+                  </div>
+                  <div>
+                    <div className="font-bold text-emerald-800 text-sm">Jack's Routine</div>
+                    <div className="text-xs text-emerald-600 mt-0.5">Pre-loaded demo workflow</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-bold text-slate-800 text-sm">{t('startScreen.startFresh')}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{t('startScreen.startFresh.desc')}</div>
-                </div>
-              </button>
+              )}
 
               {/* Import from CSV */}
               <div

@@ -702,6 +702,30 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
 
     useEffect(() => { vtRef.current = viewTransform; }, [viewTransform]);
 
+    /** Fit all visible nodes into the canvas viewport with padding. */
+    const fitAllToView = useCallback(() => {
+      if (!canvasRef.current) return;
+      const visibleNodes = canvasNodes.filter(n => {
+        const hidden = new Set(serverState?.settings?.hiddenCoreNodes ?? []);
+        return n.isCustom || !hidden.has(n.id);
+      });
+      if (!visibleNodes.length) return;
+      const PAD = 80;
+      const minX = Math.min(...visibleNodes.map(n => n.x)) - PAD;
+      const maxX = Math.max(...visibleNodes.map(n => n.x + 2 * R)) + PAD;
+      const minY = Math.min(...visibleNodes.map(n => n.y)) - PAD;
+      const maxY = Math.max(...visibleNodes.map(n => n.y + 2 * R)) + PAD;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const contentW = maxX - minX;
+      const contentH = maxY - minY;
+      const scale = Math.min(rect.width / contentW, rect.height / contentH, 1.5);
+      const x = (rect.width  - contentW * scale) / 2 - minX * scale;
+      const y = (rect.height - contentH * scale) / 2 - minY * scale;
+      const next = { x, y, scale };
+      vtRef.current = next;
+      setViewTransform(next);
+    }, [canvasNodes, serverState]);
+
     const clientToCanvas = useCallback((clientX: number, clientY: number) => {
       const rect = canvasRef.current!.getBoundingClientRect();
       const vt = vtRef.current;
@@ -810,10 +834,20 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     // ── Task dot popup ────────────────────────────────────────────────────────
     const [taskPopup, setTaskPopup] = useState<{ task: NodeTask; px: number; py: number } | null>(null);
 
+    const didInitialFit = useRef(false);
     useEffect(() => {
       if (!serverState) return;
       setCanvasNodes(buildNodes(serverState.baselinePositions, serverState.customNodes, showImprovements));
     }, [serverState, showImprovements]);
+
+    // Auto-fit viewport the first time canvasNodes populates (covers initial load
+    // and cold-start re-seed so nodes are always centred regardless of canvas size).
+    useEffect(() => {
+      if (canvasNodes.length > 0 && !didInitialFit.current) {
+        didInitialFit.current = true;
+        requestAnimationFrame(() => fitAllToView());
+      }
+    }, [canvasNodes.length, fitAllToView]);
 
     useEffect(() => {
       Promise.all([
@@ -1071,10 +1105,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           lastPollTs.current = s.lastUpdated;
           setServerState(prev => prev ? { ...prev, ...s } : s);
         }
-        // 3. Reset the viewport so repositioned nodes are in view
-        const reset = { x: 0, y: 0, scale: 1 };
-        vtRef.current = reset;
-        setViewTransform(reset);
+        // 3. Fit viewport so all repositioned nodes are visible
+        requestAnimationFrame(() => fitAllToView());
       },
       triggerRefresh: async () => {
         const s: WorkflowApiState = await fetch("/api/graph-state").then(r => r.json()).catch(() => null);

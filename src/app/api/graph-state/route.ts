@@ -17,10 +17,34 @@ import {
   deleteWorkflowGroup,
 } from '@/lib/serverState';
 import type { GraphAction } from '@/lib/graphActions';
+import { TEMPLATES, buildTemplateState } from '@/lib/templates';
+
+// Demo-mode: if the server-side state has been wiped (cold start / new
+// serverless instance), automatically re-seed with the demo-jack template so
+// the canvas never flickers back to the default Ridgeview nodes.
+function ensureDemoState() {
+  const state = getGraphState();
+  if (state.settings?.templateId === 'demo-jack') return; // already seeded
+  const tpl = TEMPLATES.find(t => t.id === 'demo-jack');
+  if (!tpl) return;
+  const s = buildTemplateState(tpl, 'en');
+  importState({
+    baselinePositions:  s.baselinePositions,
+    ecosystemPositions: s.ecosystemPositions,
+    customNodes:        s.customNodes,
+    customEdges:        s.customEdges,
+    settings: {
+      ...(s.settings ?? {}),
+      templateId: 'demo-jack',
+    },
+  });
+}
 
 // Performance: client can pass ?since=<lastUpdated> to get a lightweight
 // unchanged response instead of the full payload, reducing parse/render overhead.
 export async function GET(request: NextRequest) {
+  ensureDemoState();
+
   const { searchParams } = new URL(request.url);
   const since = Number(searchParams.get("since") ?? "0");
   const state = getGraphState();
