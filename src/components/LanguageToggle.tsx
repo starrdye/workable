@@ -10,7 +10,7 @@ export function LanguageToggle() {
   const { lang, setLang } = useLanguage();
 
   return (
-    <div className="flex items-center rounded-full border border-gray-300 overflow-hidden text-xs font-semibold">
+    <div className="shrink-0 flex items-center rounded-full border border-gray-300 overflow-hidden text-xs font-semibold">
       <button
         onClick={() => setLang('en')}
         aria-label="Switch to English"

@@ -443,7 +443,7 @@ export default function Home() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           {/* Undo / Redo (Track 2) */}
           <div className="flex items-center gap-1">
             <button
@@ -494,12 +494,12 @@ export default function Home() {
           <button onClick={handleAiAnalyze}
             title={activeApiKey ? t('toolbar.aiAnalyze.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiAnalyze.noKey')}
             aria-label={t('toolbar.aiAnalyze')}
-            className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
+            className={`shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               activeApiKey
                 ? "border-indigo-300 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
-            <Sparkles className="w-4 h-4" />
+            <Sparkles className="w-4 h-4 shrink-0" />
             {t('toolbar.aiAnalyze')}
           </button>
 
@@ -507,12 +507,12 @@ export default function Home() {
           <button onClick={() => { if (!activeApiKey) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
             title={activeApiKey ? t('toolbar.aiUpdate.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiUpdate.noKey')}
             aria-label={t('toolbar.aiUpdate')}
-            className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
+            className={`shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
               activeApiKey
                 ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
-            <GitMerge className="w-4 h-4" />
+            <GitMerge className="w-4 h-4 shrink-0" />
             {t('toolbar.aiUpdate')}
           </button>
 
@@ -534,18 +534,18 @@ export default function Home() {
 
           <button onClick={() => canvasRef.current?.exportPng()} title={t('toolbar.export.png.title')}
             aria-label={t('toolbar.export.png.title')}
-            className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <Download className="w-4 h-4" />{t('toolbar.export.png')}
+            className="shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+            <Download className="w-4 h-4 shrink-0" />{t('toolbar.export.png')}
           </button>
           <button onClick={() => canvasRef.current?.exportCsv()} title={t('toolbar.export.csv.title')}
             aria-label={t('toolbar.export.csv.title')}
-            className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <FileText className="w-4 h-4" />{t('toolbar.export.csv')}
+            className="shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+            <FileText className="w-4 h-4 shrink-0" />{t('toolbar.export.csv')}
           </button>
           <button onClick={() => importInput.current?.click()} title={t('toolbar.import.title')}
             aria-label={t('toolbar.import.title')}
-            className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
-            <Upload className="w-4 h-4" />{t('toolbar.import')}
+            className="shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+            <Upload className="w-4 h-4 shrink-0" />{t('toolbar.import')}
           </button>
           <input ref={importInput} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
 
