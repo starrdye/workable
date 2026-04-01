@@ -312,7 +312,7 @@ export function StartScreen({
   aiConfig, onSaveConfig: _onSaveConfig, onOpenSettings,
   onGenerationStart, onGenerationError,
 }: StartScreenProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName]         = useState<string | null>(null);
   const [csvText, setCsvText]           = useState<string | null>(null);
@@ -354,7 +354,7 @@ export function StartScreen({
   // Always go through onTemplateLoad so the server state is reset correctly,
   // even when switching back to Ridgeview from another template.
   const handleTemplateSelect = (template: Template) => {
-    const state = buildTemplateState(template);
+    const state = buildTemplateState(template, lang);
     if (onTemplateLoad) {
       onTemplateLoad({
         customNodes:        state.customNodes,
