@@ -534,11 +534,11 @@ export default function Home() {
 
   // ── Canvas app shell ────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen relative bg-[#F8FAFC] overflow-hidden font-[var(--font-inter)] text-slate-800 antialiased">
+    <div className="flex flex-col h-dvh md:h-screen relative bg-[#F8FAFC] overflow-hidden font-[var(--font-inter)] text-slate-800 antialiased">
 
       {/* ── Header ── */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-50 shadow-sm relative">
-        <div className="flex items-center gap-3">
+      <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between z-50 shadow-sm relative shrink-0 min-w-0">
+        <div className="flex items-center gap-3 shrink-0">
           <button onClick={() => setIsAppStarted(false)} title="Back to home"
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
             <ChevronLeft className="w-5 h-5" />
@@ -549,7 +549,7 @@ export default function Home() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 overflow-x-auto min-w-0 scrollbar-hide">
           {/* Undo / Redo (Track 2) */}
           <div className="flex items-center gap-1">
             <button
@@ -656,10 +656,10 @@ export default function Home() {
       </header>
 
       {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden relative">
 
         {/* ── Left sidebar ── */}
-        <aside className="w-80 bg-white border-r border-slate-200 flex flex-col z-40 relative shadow-sm overflow-y-auto">
+        <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col z-40 relative shadow-sm md:overflow-y-auto">
 
           {/* View Mode */}
           <div className="p-5 border-b border-slate-100">
@@ -991,7 +991,7 @@ export default function Home() {
         </aside>
 
         {/* ── Main canvas ── */}
-        <main className="flex-1 relative bg-[#F8FAFC] overflow-hidden">
+        <main className="flex-1 relative bg-[#F8FAFC] overflow-hidden min-h-[70vh] md:min-h-0">
 
           {/* Track 15a — Skeleton placeholder nodes while AI is generating */}
           {isGeneratingWorkflow && <SkeletonCanvas />}

@@ -690,6 +690,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     const vtRef = useRef({ x: 0, y: 0, scale: 1 });
     const panRef = useRef<{ sx: number; sy: number; svx: number; svy: number } | null>(null);
     const isPanningRef = useRef(false);
+    const touchRef = useRef<{ pinchDist?: number } | null>(null);
 
     useEffect(() => { vtRef.current = viewTransform; }, [viewTransform]);
 
@@ -716,6 +717,84 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       el.addEventListener("wheel", handleWheel, { passive: false });
       return () => el.removeEventListener("wheel", handleWheel);
     }, [handleWheel]);
+
+    // ── Touch pan + pinch-zoom ────────────────────────────────────────────────
+    useEffect(() => {
+      const el = canvasRef.current;
+      if (!el) return;
+
+      const onTouchStart = (e: TouchEvent) => {
+        e.preventDefault();
+        const touches = e.touches;
+        if (touches.length === 1) {
+          const t0 = touches[0];
+          const vt = vtRef.current;
+          touchRef.current = {};
+          panRef.current = { sx: t0.clientX, sy: t0.clientY, svx: vt.x, svy: vt.y };
+          isPanningRef.current = false;
+        } else if (touches.length >= 2) {
+          const t0 = touches[0], t1 = touches[1];
+          const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+          touchRef.current = { pinchDist: dist };
+          panRef.current = null;
+        }
+      };
+
+      const onTouchMove = (e: TouchEvent) => {
+        e.preventDefault();
+        const touches = e.touches;
+        if (touches.length === 1 && panRef.current) {
+          const t0 = touches[0];
+          const p = panRef.current;
+          const dx = t0.clientX - p.sx, dy = t0.clientY - p.sy;
+          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isPanningRef.current = true;
+          if (isPanningRef.current) {
+            const next = { x: p.svx + dx, y: p.svy + dy, scale: vtRef.current.scale };
+            vtRef.current = next;
+            setViewTransform(next);
+          }
+        } else if (touches.length >= 2 && touchRef.current?.pinchDist !== undefined) {
+          const t0 = touches[0], t1 = touches[1];
+          const newDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+          const ratio = newDist / touchRef.current.pinchDist;
+          const vt = vtRef.current;
+          const rect = el.getBoundingClientRect();
+          const mx = (t0.clientX + t1.clientX) / 2 - rect.left;
+          const my = (t0.clientY + t1.clientY) / 2 - rect.top;
+          const ns = Math.max(0.15, Math.min(4, vt.scale * ratio));
+          const next = { x: mx - (mx - vt.x) * (ns / vt.scale), y: my - (my - vt.y) * (ns / vt.scale), scale: ns };
+          vtRef.current = next;
+          setViewTransform(next);
+          touchRef.current.pinchDist = newDist;
+        }
+      };
+
+      const onTouchEnd = (e: TouchEvent) => {
+        if (e.touches.length === 0) {
+          touchRef.current = null;
+          panRef.current = null;
+          isPanningRef.current = false;
+        } else if (e.touches.length === 1) {
+          // Transition from pinch back to single-finger pan
+          const t0 = e.touches[0];
+          const vt = vtRef.current;
+          touchRef.current = {};
+          panRef.current = { sx: t0.clientX, sy: t0.clientY, svx: vt.x, svy: vt.y };
+          isPanningRef.current = false;
+        }
+      };
+
+      el.addEventListener("touchstart", onTouchStart, { passive: false });
+      el.addEventListener("touchmove", onTouchMove, { passive: false });
+      el.addEventListener("touchend", onTouchEnd, { passive: false });
+      el.addEventListener("touchcancel", onTouchEnd, { passive: false });
+      return () => {
+        el.removeEventListener("touchstart", onTouchStart);
+        el.removeEventListener("touchmove", onTouchMove);
+        el.removeEventListener("touchend", onTouchEnd);
+        el.removeEventListener("touchcancel", onTouchEnd);
+      };
+    }, []);
 
     // ── Task dot popup ────────────────────────────────────────────────────────
     const [taskPopup, setTaskPopup] = useState<{ task: NodeTask; px: number; py: number } | null>(null);
