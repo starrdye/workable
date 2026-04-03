@@ -432,6 +432,57 @@ export function deleteWorkflowGroup(groupId: string) {
 }
 
 /**
+ * Combined Import and Reset Layout — performs both in a single atomic update.
+ * Eliminates "Double Update" flickering (AI suggested positions → Local layout refactor)
+ * by only updating lastUpdated once at the end.
+ */
+export function importAndResetLayout(data: {
+  baselinePositions: Record<string, NodePosition>;
+  ecosystemPositions: Record<string, NodePosition>;
+  customNodes: CustomNodeConfig[];
+  customEdges: CustomEdgeConfig[];
+  settings?: Partial<GlobalSettings>;
+}) {
+  const state = global.__graphState!;
+
+  // 1. Logic from importState
+  state.baselinePositions  = { ...DEFAULT_BASELINE,   ...data.baselinePositions };
+  state.ecosystemPositions = { ...DEFAULT_ECOSYSTEM,  ...data.ecosystemPositions };
+  state.originalBaselinePositions  = { ...state.baselinePositions };
+  state.originalEcosystemPositions = { ...state.ecosystemPositions };
+  state.customNodes  = data.customNodes;
+  state.customEdges  = data.customEdges;
+  if (data.settings) state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
+
+  // 2. Logic from resetLayout
+  if (state.customNodes.length > 0) {
+    const nodeCount = state.customNodes.length;
+    const canvasW = Math.max(900, nodeCount * 140);
+    const canvasH = Math.max(720, Math.min(nodeCount, 6) * 150);
+
+    const layoutNodes = state.customNodes.map(n => ({ id: n.id }));
+    const nodeIdSet   = new Set(layoutNodes.map(n => n.id));
+    const layoutEdges = state.customEdges
+      .filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
+      .map(e => ({ source: e.source, target: e.target }));
+
+    let freshPositions = hierarchicalLayout(layoutNodes, layoutEdges, canvasW, canvasH);
+    const groups = state.settings.workflowGroups ?? [];
+    if (groups.length > 0) {
+      freshPositions = groupAwareLayout(freshPositions, groups, canvasW, layoutEdges);
+    }
+    state.baselinePositions = { ...state.baselinePositions, ...freshPositions };
+    state.originalBaselinePositions = { ...state.originalBaselinePositions, ...freshPositions };
+  } else {
+    state.baselinePositions  = { ...state.originalBaselinePositions };
+    state.ecosystemPositions = { ...state.originalEcosystemPositions };
+  }
+
+  // Final Update — only one broadcast to the client
+  state.lastUpdated = Date.now();
+}
+
+/**
  * Incremental layout — place a small set of new nodes relative to their
  * connected neighbours instead of re-running the full hierarchical layout.
  *

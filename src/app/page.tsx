@@ -245,7 +245,7 @@ export default function Home() {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action:             "importState",
+        action:             "importAndReset",
         customNodes:        result.customNodes,
         customEdges:        result.customEdges,
         baselinePositions:  result.baselinePositions,
@@ -257,11 +257,8 @@ export default function Home() {
         },
       }),
     }).catch(console.error);
-    await fetch("/api/graph-state", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "resetLayout" }),
-    }).catch(console.error);
+
+    // Clear the generating overlay — workflow is ready
     // Clear the generating overlay — workflow is ready
     setIsGeneratingWorkflow(false);
     setIsAppStarted(true);

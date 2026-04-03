@@ -7,6 +7,7 @@ import {
   removeNode,
   removeEdge,
   importState,
+  importAndResetLayout,
   resetLayout,
   incrementalLayout,
   updateEdgeParams,
@@ -75,6 +76,15 @@ export async function PUT(request: NextRequest) {
       break;
     case 'importState':
       importState({
+        baselinePositions:  body.baselinePositions,
+        ecosystemPositions: body.ecosystemPositions,
+        customNodes:        body.customNodes,
+        customEdges:        body.customEdges,
+        settings:           body.settings,
+      });
+      break;
+    case 'importAndReset':
+      importAndResetLayout({
         baselinePositions:  body.baselinePositions,
         ecosystemPositions: body.ecosystemPositions,
         customNodes:        body.customNodes,

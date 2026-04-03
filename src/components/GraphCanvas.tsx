@@ -472,12 +472,14 @@ function buildSvgExport(
 
   // ── Workflow group bounding boxes ────────────────────────────────────────
   const GROUP_PAD = 34;
-  const allNodeIds = (groupId: string): string[] => {
+  const getRecursiveNodes = (groupId: string, visited: Set<string>): string[] => {
+    if (visited.has(groupId)) return [];
+    visited.add(groupId);
     const grp = allGroups.find((g) => g.id === groupId);
     if (!grp) return [];
     return [
       ...grp.nodeIds,
-      ...allGroups.filter((g) => g.parentGroupId === groupId).flatMap((child) => allNodeIds(child.id)),
+      ...allGroups.filter((g) => g.parentGroupId === groupId).flatMap((child) => getRecursiveNodes(child.id, visited)),
     ];
   };
   const bboxOf = (nodeIds: string[]) => {
@@ -494,7 +496,7 @@ function buildSvgExport(
     };
   };
   const renderGroupSvg = (group: { id: string; name: string; color: string; nodeIds: string[]; parentGroupId?: string }, isSubgroup: boolean) => {
-    const ids = isSubgroup ? group.nodeIds : allNodeIds(group.id);
+    const ids = getRecursiveNodes(group.id, new Set());
     const b = bboxOf(ids);
     if (!b) return "";
     const { minX, maxX, minY, maxY, count } = b;
@@ -641,6 +643,39 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     );
     const nodeMap = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
 
+    /** Pre-calculate recursive membership and depth for every group to ensure performance and correct layering. */
+    const groupHierarchy = useMemo(() => {
+      const gList = serverState?.settings?.workflowGroups ?? [];
+      const nodesMap: Record<string, string[]> = {};
+      const depthMap: Record<string, number> = {};
+
+      const compute = (gid: string, visited: Set<string>, depth: number): string[] => {
+        if (visited.has(gid)) return []; // Safety: prevent infinite recursion on cycles
+        visited.add(gid);
+        const g = gList.find(x => x.id === gid);
+        if (!g) return [];
+        
+        depthMap[gid] = Math.max(depthMap[gid] ?? 0, depth);
+        const members = [...g.nodeIds];
+        // Find children
+        for (const child of gList) {
+          if (child.parentGroupId === gid) {
+            members.push(...compute(child.id, visited, depth + 1));
+          }
+        }
+        const unique = Array.from(new Set(members));
+        nodesMap[gid] = unique;
+        return unique;
+      };
+
+      // First pass: root groups (distance from root defines rendering depth)
+      gList.filter(g => !g.parentGroupId).forEach(root => compute(root.id, new Set(), 0));
+      // Second pass: catch any orphaned subgroup islands
+      gList.forEach(g => { if (depthMap[g.id] === undefined) compute(g.id, new Set(), 0); });
+
+      return { nodesMap, depthMap };
+    }, [serverState?.settings?.workflowGroups]);
+
     // ── Search + Filter visibility ──────────────────────────────────────────
     /** Set of node IDs that pass current search query. null = no search active. */
     const searchMatchIds = useMemo(() => {
@@ -656,13 +691,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     /** Set of node IDs in any of the active filter groups. null = no group filter. */
     const groupFilterNodeIds = useMemo(() => {
       if (!activeFilters.groupIds.length) return null;
-      const groupSet = new Set(activeFilters.groupIds);
       const ids = new Set<string>();
-      (serverState?.settings?.workflowGroups ?? []).forEach((g) => {
-        if (groupSet.has(g.id)) g.nodeIds.forEach((id) => ids.add(id));
+      activeFilters.groupIds.forEach(gid => {
+        (groupHierarchy.nodesMap[gid] ?? []).forEach(nid => ids.add(nid));
       });
       return ids;
-    }, [activeFilters.groupIds, serverState?.settings?.workflowGroups]);
+    }, [activeFilters.groupIds, groupHierarchy]);
 
     /** Compute per-node visibility opacity: 1 = visible, 0.12 = dimmed */
     function nodeOpacity(nodeId: string): number {
@@ -1218,17 +1252,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               const isLOD = viewTransform.scale < 0.50;
               const isAbstract = !showNodes;
 
-              // Recursively collect all node IDs for a group including its subgroups.
-              const allNodeIds = (groupId: string): string[] => {
-                const grp = allGroups.find(g => g.id === groupId);
-                if (!grp) return [];
-                return [
-                  ...grp.nodeIds,
-                  ...allGroups
-                    .filter(g => g.parentGroupId === groupId)
-                    .flatMap(child => allNodeIds(child.id)),
-                ];
-              };
+
 
               // Bounding box of a set of node IDs (returns null if no positioned members).
               const bbox = (nodeIds: string[]) => {
@@ -1250,8 +1274,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               const subGroups = allGroups.filter(g => !!g.parentGroupId);
 
               const renderGroup = (group: typeof allGroups[0], isSubgroup: boolean) => {
-                // Parents expand to encompass all descendant nodes.
-                const ids = isSubgroup ? group.nodeIds : allNodeIds(group.id);
+                // Use pre-calculated recursive member list for bounding box calculation
+                const ids = groupHierarchy.nodesMap[group.id] ?? [];
                 const b = bbox(ids);
                 if (!b) return null;
                 const { minX, maxX, minY, maxY, count } = b;
@@ -1349,10 +1373,13 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 );
               };
 
+              const sortedGroups = [...allGroups].sort((a, b) => 
+                (groupHierarchy.depthMap[a.id] ?? 0) - (groupHierarchy.depthMap[b.id] ?? 0)
+              );
+
               return (
                 <>
-                  {topLevel.map(g => renderGroup(g, false))}
-                  {subGroups.map(g => renderGroup(g, true))}
+                  {sortedGroups.map(g => renderGroup(g, !!g.parentGroupId))}
                 </>
               );
             })()}

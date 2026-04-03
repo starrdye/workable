@@ -29,6 +29,12 @@ export type GraphAction =
       customNodes:        CustomNodeConfig[];
       customEdges:        CustomEdgeConfig[];
       settings?:          Partial<GlobalSettings> }
+  | { action: 'importAndReset';
+      baselinePositions:  Record<string, NodePosition>;
+      ecosystemPositions: Record<string, NodePosition>;
+      customNodes:        CustomNodeConfig[];
+      customEdges:        CustomEdgeConfig[];
+      settings?:          Partial<GlobalSettings> }
   | { action: 'resetLayout' }
   | { action: 'incrementalLayout'; nodeIds: string[] }
   | { action: 'upsertWorkflowGroup'; group: WorkflowGroup }
