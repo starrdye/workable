@@ -419,22 +419,18 @@ export function upsertWorkflowGroup(group: WorkflowGroup) {
   const state = global.__graphState!;
   if (!state.settings.workflowGroups) state.settings.workflowGroups = [];
 
-  // Auto-nesting logic:
-  // If we assign a node to this group, and that node already belongs to another group 'B',
-  // then group 'B' should automatically become a sub-group of this group.
+  // Move behavior + Auto-nesting logic:
+  // When a node is added to this group, remove it from all other groups first.
+  const nodeIdsInThisGroup = new Set(group.nodeIds);
   const otherGroups = state.settings.workflowGroups.filter(g => g.id !== group.id);
-  group.nodeIds.forEach(nid => {
-    otherGroups.forEach(other => {
-      if (other.nodeIds.includes(nid)) {
-        // Node nid is now shared. Make 'other' a sub-group of 'group'.
-        other.parentGroupId = group.id;
-        // Ensure parent group includes nodes from its children
-        other.nodeIds.forEach(otherNid => {
-          if (!group.nodeIds.includes(otherNid)) {
-            group.nodeIds.push(otherNid);
-          }
-        });
-      }
+  
+  // Track: 'fix the bug that when i add a node... it automatically add everyone else'
+  // Strategy: Move node (remove from other groups) to solve redundancy.
+  otherGroups.forEach(other => {
+    other.nodeIds = other.nodeIds.filter(nid => {
+      // If node is now in 'group', but was previously in 'other', we remove it from 'other'.
+      // This prevents node duplication and accidental auto-nesting based on single nodes.
+      return !nodeIdsInThisGroup.has(nid);
     });
   });
 

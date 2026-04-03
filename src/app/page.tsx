@@ -131,7 +131,7 @@ export default function Home() {
     workflowGroups,
     editingGroupId, setEditingGroupId,
     editingGroupName, setEditingGroupName,
-    createGroup, renameGroup, changeGroupColor, deleteGroup,
+    createGroup, renameGroup, changeGroupColor, deleteGroup, setGroupParent,
     GROUP_COLORS,
   } = useWorkflowGroups(fullServerState, setFullServerState, setGroupFilters, pushSnapshot);
 
@@ -158,6 +158,8 @@ export default function Home() {
     fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType, pushSnapshot,
     () => { canvasRef.current?.triggerRefresh(); },
   );
+
+  const [activeHierarchyGroupId, setActiveHierarchyGroupId] = useState<string | null>(null);
   resetAppliedSuggestionsRef.current = resetAppliedSuggestions;
 
   // ── AI analysis canvas highlights ─────────────────────────────────────────
@@ -847,10 +849,62 @@ export default function Home() {
                       )}
 
                       <span className="text-[10px] text-slate-400 flex-shrink-0">
-                        {group.nodeIds.length} {group.nodeIds.length !== 1 ? t('sidebar.groups.nodes') : t('sidebar.groups.node')}
+                        {group.effectiveNodeCount} {(group.effectiveNodeCount ?? 0) !== 1 ? t('sidebar.groups.nodes') : t('sidebar.groups.node')}
                       </span>
 
                       <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity flex-shrink-0">
+                        {/* Hierarchy Edit (Track: 'allow users to edit the sub group relation') */}
+                        <div className="relative">
+                          <button
+                            onClick={() => setActiveHierarchyGroupId(activeHierarchyGroupId === group.id ? null : group.id)}
+                            title={t('sidebar.groups.setParent') || "Move to Parent..."}
+                            className={`p-1 rounded transition-colors ${activeHierarchyGroupId === group.id ? "bg-indigo-100 text-indigo-600" : "hover:bg-slate-200 text-slate-400 hover:text-indigo-500"}`}
+                          >
+                            <GitMerge className="w-3 h-3" />
+                          </button>
+                          {/* Parent selection dropdown */}
+                          {activeHierarchyGroupId === group.id && (
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl py-1.5 min-w-[170px] z-[100] animate-in fade-in slide-in-from-top-1 duration-150">
+                              <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 mb-1 flex justify-between items-center">
+                                <span>{t('sidebar.groups.chooseParent') || "Move to Group"}</span>
+                                <button onClick={() => setActiveHierarchyGroupId(null)} className="hover:text-slate-600">✕</button>
+                              </div>
+                              {/* [None] / Root level */}
+                              <button
+                                onClick={() => { setGroupParent(group.id, null); setActiveHierarchyGroupId(null); }}
+                                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-2 ${!group.parentGroupId ? "bg-indigo-50 text-indigo-600 font-bold" : "text-slate-600 font-medium"}`}
+                              >
+                                <span className="w-2 h-2 rounded-full border border-slate-300" />
+                                [ {t('sidebar.groups.none') || "Main Feed"} ]
+                              </button>
+                              {/* Potential Parents */}
+                              {(() => {
+                                const descendants = new Set<string>();
+                                const findDescendants = (gid: string) => {
+                                  workflowGroups.filter(x => x.parentGroupId === gid).forEach(child => {
+                                    descendants.add(child.id);
+                                    findDescendants(child.id);
+                                  });
+                                };
+                                findDescendants(group.id);
+
+                                return workflowGroups
+                                  .filter(p => p.id !== group.id && !descendants.has(p.id))
+                                  .map(p => (
+                                    <button
+                                      key={p.id}
+                                      onClick={() => { setGroupParent(group.id, p.id); setActiveHierarchyGroupId(null); }}
+                                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-2 ${group.parentGroupId === p.id ? "bg-indigo-50 text-indigo-600 font-bold" : "text-slate-600 font-medium"}`}
+                                    >
+                                      <span style={{ background: p.color }} className="w-2 h-2 rounded-full" />
+                                      {p.name}
+                                    </button>
+                                  ));
+                              })()}
+                            </div>
+                          )}
+                        </div>
+
                         <button
                           onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }}
                           title={t('sidebar.groups.rename')}
@@ -860,7 +914,7 @@ export default function Home() {
                         </button>
                         <button
                           onClick={() => deleteGroup(group.id)}
-                          title={t('sidebar.groups.delete')}
+                          title={t('sidebar.groups.rename')}
                           className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
                         >
                           <Trash2 className="w-3 h-3" />

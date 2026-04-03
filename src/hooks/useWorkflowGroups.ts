@@ -31,20 +31,36 @@ export function useWorkflowGroups(
 
   // Hierarchical sort: Sub-groups should always be right after their parent group.
   const workflowGroups = (() => {
-    const result: typeof rawGroups = [];
+    const sortedResult: typeof rawGroups = [];
     const roots = rawGroups.filter(g => !g.parentGroupId);
     
     const addRecursive = (gid: string) => {
       const g = rawGroups.find(x => x.id === gid);
       if (!g) return;
-      if (!result.find(x => x.id === gid)) result.push(g);
+      if (!sortedResult.find(x => x.id === gid)) sortedResult.push(g);
       rawGroups.filter(x => x.parentGroupId === gid).forEach(child => addRecursive(child.id));
     };
     
     roots.forEach(r => addRecursive(r.id));
     // Catch orphans (groups with parentGroupId pointing to non-existent ID)
-    rawGroups.forEach(g => { if (!result.find(x => x.id === g.id)) result.push(g); });
-    return result;
+    rawGroups.forEach(g => { if (!sortedResult.find(x => x.id === g.id)) sortedResult.push(g); });
+
+    const getRecursiveNodeIds = (groupId: string, visited = new Set<string>()): Set<string> => {
+      if (visited.has(groupId)) return new Set();
+      visited.add(groupId);
+      const g = rawGroups.find(x => x.id === groupId);
+      if (!g) return new Set();
+      const ids = new Set(g.nodeIds);
+      rawGroups.filter(x => x.parentGroupId === groupId).forEach(child => {
+        getRecursiveNodeIds(child.id, visited).forEach(id => ids.add(id));
+      });
+      return ids;
+    };
+
+    return sortedResult.map(g => ({
+      ...g,
+      effectiveNodeCount: getRecursiveNodeIds(g.id).size
+    }));
   })();
 
   const createGroup = () => {
@@ -95,6 +111,18 @@ export function useWorkflowGroups(
     setGroupFilters(f => f.filter(gid => gid !== id));
   };
 
+  const setGroupParent = (id: string, parentGroupId: string | null) => {
+    const group = workflowGroups.find(g => g.id === id);
+    if (!group) return;
+    if (fullServerState) pushSnapshot(fullServerState);
+    const updated = { ...group, parentGroupId: parentGroupId || undefined };
+    put({ action: 'upsertWorkflowGroup', group: updated });
+    setFullServerState(prev => prev ? {
+      ...prev,
+      settings: { ...prev.settings!, workflowGroups: (prev.settings?.workflowGroups ?? []).map(g => g.id === id ? updated : g) },
+    } : prev);
+  };
+
   return {
     workflowGroups,
     editingGroupId, setEditingGroupId,
@@ -103,6 +131,7 @@ export function useWorkflowGroups(
     renameGroup,
     changeGroupColor,
     deleteGroup,
+    setGroupParent,
     GROUP_COLORS,
   };
 }

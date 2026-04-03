@@ -173,7 +173,7 @@ function buildNodes(
     // with amber border + text so the glow reads clearly when showImprovements is on.
     const isUpgr = id === "cy" && showImprovements;
     const border = isUpgr ? "#10B981" : s.border;
-    const text   = isUpgr ? "#10B981" : s.text;
+    const text = isUpgr ? "#10B981" : s.text;
     return {
       id, x: p.x, y: p.y,
       initials: BASE_LABELS[id].initials,
@@ -654,7 +654,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         visited.add(gid);
         const g = gList.find(x => x.id === gid);
         if (!g) return [];
-        
+
         depthMap[gid] = Math.max(depthMap[gid] ?? 0, depth);
         const members = [...g.nodeIds];
         // Find children
@@ -753,7 +753,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       const contentW = maxX - minX;
       const contentH = maxY - minY;
       const scale = Math.min(rect.width / contentW, rect.height / contentH, 1.5);
-      const x = (rect.width  - contentW * scale) / 2 - minX * scale;
+      const x = (rect.width - contentW * scale) / 2 - minX * scale;
       const y = (rect.height - contentH * scale) / 2 - minY * scale;
       const next = { x, y, scale };
       vtRef.current = next;
@@ -1193,14 +1193,14 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     });
 
     // ── Level-of-Detail thresholds ────────────────────────────────────────────
-    // LOD 2 (full)     scale ≥ 0.60 : nodes + edges + task dots + labels
-    // LOD 1 (mid)      scale ≥ 0.30 : task dots hidden
-    // LOD 0 (abstract) scale <  0.30 : only workflow group regions visible
-    const LOD_TASKS = 0.60;
-    const LOD_ABSTRACT = 0.30;
+    // LOD 2 (full)     scale ≥ 0.90 : nodes + edges + task dots + labels
+    // LOD 1 (mid)      scale ≥ 0.40 : task dots hidden
+    // LOD 0 (abstract) scale <  0.40 : only workflow group regions visible
+    const LOD_TASKS = 0.90;
+    const LOD_ABSTRACT = 0.40;
     const showTasks = viewTransform.scale >= LOD_TASKS;
     const showNodes = viewTransform.scale >= LOD_ABSTRACT;
-    const showLabels = viewTransform.scale >= 0.50;
+    const showLabels = viewTransform.scale >= 0.90;
 
     // ── Render ────────────────────────────────────────────────────────────────
     return (
@@ -1222,13 +1222,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* Blueprint dot background */}
         <div className="absolute inset-0 pointer-events-none opacity-40"
           style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
-        <style dangerouslySetInnerHTML={{ __html: [
-          ...seqStyles,
-          `@keyframes proposedGroupPulse {
+        <style dangerouslySetInnerHTML={{
+          __html: [
+            ...seqStyles,
+            `@keyframes proposedGroupPulse {
             0%,100% { opacity: 1; }
             50%     { opacity: 0.55; }
           }`,
-        ].join("\n") }} />
+          ].join("\n")
+        }} />
 
         {/* ── Pan/zoom transform container ── */}
         <div style={{
@@ -1297,45 +1299,21 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 const dash = isProposed ? "6 4" : isSubgroup ? undefined : (isAbstract ? undefined : "8 4");
                 const rx = isSubgroup ? 12 : 18;
 
-                // Center labels when significantly zoomed in to avoid corner-overlaps
-                const isZoomedIn = viewTransform.scale > 1.4;
-
-                // In abstract mode (nodes hidden) or high zoom, the label moves to the bbox
-                // center and scales up so the group is identifiable at a glance.
+                // Center labels for ALL zoom levels (track: 'for all zoom level, make the gourp text appears in the middle')
                 const cx = (minX + maxX) / 2;
                 const cy = (minY + maxY) / 2;
 
-                const labelX = (isAbstract || isZoomedIn)
-                  ? cx
-                  : minX + (isSubgroup ? 10 : 14);
-                const labelY = (isAbstract || isZoomedIn)
-                  ? cy
-                  : minY + (isLOD
-                    ? (isSubgroup ? 20 : 24)
-                    : (isSubgroup ? 14 : 16));
+                const labelX = cx;
+                const labelY = cy;
 
-                const labelAnchor = (isAbstract || isZoomedIn) ? "middle" : "start";
-                const labelBaseline = (isAbstract || isZoomedIn) ? "middle" : "auto";
+                const labelAnchor = "middle";
+                const labelBaseline = "middle";
                 const labelSize = isAbstract
                   ? (isSubgroup ? 18 : 30)
-                  : isZoomedIn
-                    ? (isSubgroup ? 14 : 18)
-                    : isLOD ? (isSubgroup ? 11 : 14)
-                      : (isSubgroup ? 9 : 11);
+                  : (isSubgroup ? 14 : 18);
 
-                // Label container pill — sized by estimated text width.
-                // At high zoom, we only show the name to keep it clean.
-                const labelText = isZoomedIn ? group.name : `${group.name}${(isAbstract || isLOD) ? ` · ${count}` : ""}`;
-                const pillPadX = (isAbstract || isZoomedIn) ? (isSubgroup ? 14 : 20) : (isSubgroup ? 8 : 10);
-                const pillPadY = (isAbstract || isZoomedIn) ? (isSubgroup ? 7 : 10) : (isSubgroup ? 4 : 5);
-                const charW = labelSize * 0.58;
-                const pillW = labelText.length * charW + pillPadX * 2;
-                const pillH = labelSize + pillPadY * 2;
-                const pillX = (isAbstract || isZoomedIn) ? cx - pillW / 2 : labelX - pillPadX;
-                const pillY = (isAbstract || isZoomedIn) ? cy - pillH / 2 : labelY - labelSize - pillPadY;
-                const pillRx = pillH / 2;
-                const pillFill = isProposed ? "#10B98130" : group.color + (isSubgroup ? "30" : "18");
-                const pillStroke = isProposed ? "#10B981BB" : group.color + (isSubgroup ? "BB" : "77");
+                // Always show the full name centered. (Track: 'remove the border, fill for the group name text container')
+                const labelText = group.name;
                 const textColor = isProposed ? "#059669" : group.color;
 
                 return (
@@ -1352,13 +1330,6 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       rx={rx} ry={rx}
                       fill={fill} stroke={stroke}
                       strokeWidth={strokeW} strokeDasharray={dash}
-                    />
-                    {/* Label container pill */}
-                    <rect
-                      x={pillX} y={pillY} width={pillW} height={pillH}
-                      rx={pillRx} ry={pillRx}
-                      fill={pillFill} stroke={pillStroke}
-                      strokeWidth={isAbstract ? (isSubgroup ? 1.5 : 2) : 1}
                     />
                     <text
                       x={labelX}
@@ -1380,7 +1351,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 );
               };
 
-              const sortedGroups = [...allGroups].sort((a, b) => 
+              const sortedGroups = [...allGroups].sort((a, b) =>
                 (groupHierarchy.depthMap[a.id] ?? 0) - (groupHierarchy.depthMap[b.id] ?? 0)
               );
 
