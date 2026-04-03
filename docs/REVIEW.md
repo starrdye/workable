@@ -8,7 +8,7 @@ This document provides an overview of all current branches in the repository, th
 | :--- | :--- | :--- | :--- |
 | `vb0.2` | **Active** | Keep | Implementation of Track 16b (Strategy Engine Toggle, token usage). |
 | `vb0.1` | **Merged** | Delete | Implementation of Track 16a (Distributed Agent System). |
-| `main` | **Stable** | Keep | Production-ready branch with Tracks 1-12 fully implemented. |
+| `main` | **Stable** | Keep | Production-ready branch with v0.40.2 stability fixes and UI cleanup. |
 | `0.51-personal` | **Merged** | Delete | Fix: SSE stream interval not cleared on client disconnect. |
 | `0.5-personal` | **Merged** | Delete | Implementation of Tracks 1, 3, 4, and 9 (Persistence, SSE, AI, UI). |
 | `0.47-personal` | **Merged** | Delete | Final implementation of Track 9 & 12 (merged into `main`). |

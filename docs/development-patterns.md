@@ -56,3 +56,20 @@ This guarantees that the positions the user sees on first load are identical to 
 - **Never** call `localStorage` inside `useState(initializer)` or component body
 - Use `useEffect` for any client-side-only reads (AI config, saved state)
 - `aiConfig` is initialised with a static default object, then overwritten in `useEffect(() => setAiConfig(loadAIConfig()), [])`
+
+## Gating Demo-only UI
+
+To maintain a clean production interface while preserving demo features, use the `isDemoMode` flag (hardcoded in `page.tsx`).
+
+1. **Pass the flag**: Any component needing demo-specific UI should accept `isDemoMode?: boolean` in its props.
+2. **Conditional Rendering**:
+   ```tsx
+   {isDemoMode && (
+     <div className="demo-badge">Demo Mode Active</div>
+   )}
+   ```
+3. **Internal Logic**: Use the flag to bypass requirements (like API keys) or show mock data:
+   ```tsx
+   const canUseAI = hasInstructions && (!!activeKey || isDemoMode);
+   ```
+4. **Translations**: Always add demo-related strings to `src/lib/i18n.ts` under both `en` and `zh` to prevent TypeScript and runtime errors.
