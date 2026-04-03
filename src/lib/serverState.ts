@@ -418,6 +418,26 @@ export function importState(data: {
 export function upsertWorkflowGroup(group: WorkflowGroup) {
   const state = global.__graphState!;
   if (!state.settings.workflowGroups) state.settings.workflowGroups = [];
+
+  // Auto-nesting logic:
+  // If we assign a node to this group, and that node already belongs to another group 'B',
+  // then group 'B' should automatically become a sub-group of this group.
+  const otherGroups = state.settings.workflowGroups.filter(g => g.id !== group.id);
+  group.nodeIds.forEach(nid => {
+    otherGroups.forEach(other => {
+      if (other.nodeIds.includes(nid)) {
+        // Node nid is now shared. Make 'other' a sub-group of 'group'.
+        other.parentGroupId = group.id;
+        // Ensure parent group includes nodes from its children
+        other.nodeIds.forEach(otherNid => {
+          if (!group.nodeIds.includes(otherNid)) {
+            group.nodeIds.push(otherNid);
+          }
+        });
+      }
+    });
+  });
+
   state.settings.workflowGroups = state.settings.workflowGroups.filter((g) => g.id !== group.id);
   state.settings.workflowGroups.push(group);
   state.lastUpdated = Date.now();

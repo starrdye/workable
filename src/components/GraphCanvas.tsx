@@ -1297,35 +1297,42 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 const dash = isProposed ? "6 4" : isSubgroup ? undefined : (isAbstract ? undefined : "8 4");
                 const rx = isSubgroup ? 12 : 18;
 
-                // In abstract mode (nodes hidden) the label moves to the bbox
+                // Center labels when significantly zoomed in to avoid corner-overlaps
+                const isZoomedIn = viewTransform.scale > 1.4;
+
+                // In abstract mode (nodes hidden) or high zoom, the label moves to the bbox
                 // center and scales up so the group is identifiable at a glance.
                 const cx = (minX + maxX) / 2;
                 const cy = (minY + maxY) / 2;
 
-                const labelX = isAbstract
+                const labelX = (isAbstract || isZoomedIn)
                   ? cx
                   : minX + (isSubgroup ? 10 : 14);
-                const labelY = isAbstract
+                const labelY = (isAbstract || isZoomedIn)
                   ? cy
                   : minY + (isLOD
                     ? (isSubgroup ? 20 : 24)
                     : (isSubgroup ? 14 : 16));
-                const labelAnchor = isAbstract ? "middle" : "start";
-                const labelBaseline = isAbstract ? "middle" : "auto";
+
+                const labelAnchor = (isAbstract || isZoomedIn) ? "middle" : "start";
+                const labelBaseline = (isAbstract || isZoomedIn) ? "middle" : "auto";
                 const labelSize = isAbstract
                   ? (isSubgroup ? 18 : 30)
-                  : isLOD ? (isSubgroup ? 11 : 14)
-                    : (isSubgroup ? 9 : 11);
+                  : isZoomedIn
+                    ? (isSubgroup ? 14 : 18)
+                    : isLOD ? (isSubgroup ? 11 : 14)
+                      : (isSubgroup ? 9 : 11);
 
                 // Label container pill — sized by estimated text width.
-                const labelText = `${group.name}${(isAbstract || isLOD) ? ` · ${count}` : ""}`;
-                const pillPadX = isAbstract ? (isSubgroup ? 14 : 20) : (isSubgroup ? 8 : 10);
-                const pillPadY = isAbstract ? (isSubgroup ? 7 : 10) : (isSubgroup ? 4 : 5);
+                // At high zoom, we only show the name to keep it clean.
+                const labelText = isZoomedIn ? group.name : `${group.name}${(isAbstract || isLOD) ? ` · ${count}` : ""}`;
+                const pillPadX = (isAbstract || isZoomedIn) ? (isSubgroup ? 14 : 20) : (isSubgroup ? 8 : 10);
+                const pillPadY = (isAbstract || isZoomedIn) ? (isSubgroup ? 7 : 10) : (isSubgroup ? 4 : 5);
                 const charW = labelSize * 0.58;
                 const pillW = labelText.length * charW + pillPadX * 2;
                 const pillH = labelSize + pillPadY * 2;
-                const pillX = isAbstract ? cx - pillW / 2 : labelX - pillPadX;
-                const pillY = isAbstract ? cy - pillH / 2 : labelY - labelSize - pillPadY;
+                const pillX = (isAbstract || isZoomedIn) ? cx - pillW / 2 : labelX - pillPadX;
+                const pillY = (isAbstract || isZoomedIn) ? cy - pillH / 2 : labelY - labelSize - pillPadY;
                 const pillRx = pillH / 2;
                 const pillFill = isProposed ? "#10B98130" : group.color + (isSubgroup ? "30" : "18");
                 const pillStroke = isProposed ? "#10B981BB" : group.color + (isSubgroup ? "BB" : "77");

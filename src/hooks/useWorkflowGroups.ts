@@ -27,7 +27,25 @@ export function useWorkflowGroups(
   const [editingGroupId,   setEditingGroupId]   = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
 
-  const workflowGroups = fullServerState?.settings?.workflowGroups ?? [];
+  const rawGroups = fullServerState?.settings?.workflowGroups ?? [];
+
+  // Hierarchical sort: Sub-groups should always be right after their parent group.
+  const workflowGroups = (() => {
+    const result: typeof rawGroups = [];
+    const roots = rawGroups.filter(g => !g.parentGroupId);
+    
+    const addRecursive = (gid: string) => {
+      const g = rawGroups.find(x => x.id === gid);
+      if (!g) return;
+      if (!result.find(x => x.id === gid)) result.push(g);
+      rawGroups.filter(x => x.parentGroupId === gid).forEach(child => addRecursive(child.id));
+    };
+    
+    roots.forEach(r => addRecursive(r.id));
+    // Catch orphans (groups with parentGroupId pointing to non-existent ID)
+    rawGroups.forEach(g => { if (!result.find(x => x.id === g.id)) result.push(g); });
+    return result;
+  })();
 
   const createGroup = () => {
     if (fullServerState) pushSnapshot(fullServerState);
@@ -37,7 +55,7 @@ export function useWorkflowGroups(
     put({ action: 'upsertWorkflowGroup', group });
     setFullServerState(prev => prev ? {
       ...prev,
-      settings: { ...prev.settings!, workflowGroups: [...(prev.settings?.workflowGroups ?? []), group] },
+      settings: { ...prev.settings!, workflowGroups: [...rawGroups, group] },
     } : prev);
     setEditingGroupId(id);
     setEditingGroupName('New Group');
