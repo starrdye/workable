@@ -1306,11 +1306,21 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 const labelX = cx;
                 const labelY = cy;
 
-                const labelAnchor = "middle";
-                const labelBaseline = "middle";
                 const labelSize = isAbstract
                   ? (isSubgroup ? 18 : 30)
                   : (isSubgroup ? 14 : 18);
+
+                // Group-level filtering (track: 'grey out the workgroups too')
+                const isFiltered = searchQuery.trim() !== "" || activeFilters.roles.length > 0 || activeFilters.groupIds.length > 0;
+                let groupOpacity = 1.0;
+                if (isFiltered) {
+                  const nameMatch = searchQuery.trim() !== "" && group.name.toLowerCase().includes(searchQuery.toLowerCase());
+                  const groupSelectMatch = activeFilters.groupIds.includes(group.id);
+                  const nodeMatch = ids.some(nid => nodeOpacity(nid) === 1);
+                  if (!nameMatch && !groupSelectMatch && !nodeMatch) {
+                    groupOpacity = 0.15;
+                  }
+                }
 
                 // Always show the full name centered. (Track: 'remove the border, fill for the group name text container')
                 const labelText = group.name;
@@ -1321,6 +1331,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     key={group.id}
                     style={{
                       pointerEvents: "none",
+                      opacity: groupOpacity,
+                      transition: "opacity 0.3s",
                       ...(isProposed ? { animation: "proposedGroupPulse 2s ease-in-out infinite" } : {}),
                     }}
                   >
@@ -1340,8 +1352,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       stroke={textColor}
                       strokeWidth={isAbstract ? (isSubgroup ? 0.6 : 0.8) : 0}
                       paintOrder="stroke fill"
-                      textAnchor={labelAnchor}
-                      dominantBaseline={labelBaseline}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
                       style={{ userSelect: "none" }}
                       opacity={isSubgroup ? 0.9 : 1}
                     >
