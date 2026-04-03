@@ -56,6 +56,8 @@ interface StartScreenProps {
   onGenerationStart?: () => void;
   /** Track 15a — called if AI generation fails, so the page shows the error overlay */
   onGenerationError?: (error: string) => void;
+  /** If true, indicates this is a demo environment where API keys are not required */
+  isDemoMode?: boolean;
 }
 
 // ── Mini network preview SVGs per template ────────────────────────────────────
@@ -311,6 +313,7 @@ export function StartScreen({
   onStart, onImportAndStart, onAiParsed, onTemplateLoad, onDebugLog,
   aiConfig, onSaveConfig: _onSaveConfig, onOpenSettings,
   onGenerationStart, onGenerationError,
+  isDemoMode = false,
 }: StartScreenProps) {
   const { t, lang } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -329,6 +332,8 @@ export function StartScreen({
   const activeModelLabel = activeMeta.usesEndpointId
     ? (activeModel || "no endpoint set")
     : (activeMeta.models.find((m) => m.id === activeModel)?.label ?? activeModel);
+
+  const hasKey = !!activeKey || isDemoMode;
 
   // ── File handling ────────────────────────────────────────────────────────
   const handleFileDrop = (e: React.DragEvent) => {
@@ -372,7 +377,7 @@ export function StartScreen({
   const handleLoadWorkflow = async () => {
     setAiError(null);
     if (csvText && onImportAndStart) { onImportAndStart(csvText); return; }
-    if (instructions.trim() && activeKey && cfg && onAiParsed) {
+    if (instructions.trim() && (activeKey || isDemoMode) && cfg && onAiParsed) {
       setIsParsingAI(true);
 
       // Track 15a: Transition to canvas shell immediately — don't wait for the AI call.
@@ -422,7 +427,7 @@ export function StartScreen({
   };
 
   const hasInstructions = instructions.trim().length > 0;
-  const canUseAI        = hasInstructions && !!activeKey;
+  const canUseAI        = hasInstructions && (!!activeKey || isDemoMode);
   const buttonMode      = csvText ? "csv" : canUseAI ? "ai" : "default";
 
   return (
@@ -460,6 +465,11 @@ export function StartScreen({
                 <span className="text-xs flex items-center gap-1.5 text-slate-500">
                   <span className={`w-2 h-2 rounded-full ${DOT[activeProvider]}`} />
                   {activeMeta.name} · {activeModelLabel}
+                </span>
+              ) : isDemoMode ? (
+                <span className="text-xs flex items-center gap-1.5 text-emerald-600">
+                  <Sparkles className="w-3 h-3" />
+                  {t('demo.badge.label')}
                 </span>
               ) : (
                 <span className="text-xs flex items-center gap-1 text-amber-600">

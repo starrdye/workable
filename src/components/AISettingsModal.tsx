@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { X, Eye, EyeOff, CheckCircle } from "lucide-react";
+import { X, Eye, EyeOff, CheckCircle, Sparkles } from "lucide-react";
 import { PROVIDERS, type AIProvider, type ProviderMeta } from "@/lib/aiClient";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useAIEngineMode } from "@/contexts/AIEngineContext";
@@ -93,9 +93,11 @@ interface AISettingsModalProps {
   onClose: () => void;
   onSave: (config: AIConfig) => void;
   currentConfig: AIConfig;
+  /** If true, indicates this is a demo environment where API keys are not required */
+  isDemoMode?: boolean;
 }
 
-export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISettingsModalProps) {
+export function AISettingsModal({ isOpen, onClose, onSave, currentConfig, isDemoMode = false }: AISettingsModalProps) {
   const { t } = useLanguage();
   const [config, setConfig] = useState<AIConfig>(currentConfig);
   const [showKey, setShowKey] = useState<Record<AIProvider, boolean>>({ anthropic: false, gemini: false, doubao: false });
@@ -150,12 +152,19 @@ export function AISettingsModal({ isOpen, onClose, onSave, currentConfig }: AISe
             <h2 id="ai-settings-title" className="text-lg font-bold text-slate-800">{t('settings.title')}</h2>
             <p className="text-xs text-slate-500 mt-0.5">{t('settings.subtitle')}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-700"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-3">
+            {isDemoMode && (
+              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider border border-emerald-200 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> {t('demo.badge.label')}
+              </span>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-full hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-700"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-7">

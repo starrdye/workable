@@ -111,6 +111,8 @@ export const translations = {
     'startScreen.btnAi':            'Generate with AI',
     'startScreen.btnCsv':           'Load Workflow from CSV',
     'startScreen.btnGenerating':    'Generating workflow with AI…',
+    'demo.badge.label':             'Demo Mode',
+    'demo.staticData':              'Viewing pre-analyzed demo data',
 
     // ── Template gallery ───────────────────────────────────────────────────
     'gallery.title':                'Choose a Starting Point',
@@ -464,6 +466,8 @@ export const translations = {
     'startScreen.btnAi':            'AI 生成工作流',
     'startScreen.btnCsv':           '从 CSV 加载工作流',
     'startScreen.btnGenerating':    '正在用 AI 生成工作流…',
+    'demo.badge.label':             '演示模式',
+    'demo.staticData':              '正在查看预先分析的演示数据',
 
     // ── Template gallery ───────────────────────────────────────────────────
     'gallery.title':                '选择起点',
