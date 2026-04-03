@@ -62,6 +62,8 @@ export default function Home() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const workflowCache = useRef<Record<string, any> | null>(null);
   const reconcileAfterUndoRef = useRef<(state: import('@/lib/serverState').ServerGraphState | null) => void>(() => {});
+  /** Incremented on every undo/redo so AIAnalysisModal can reset its local applied state */
+  const [undoResetKey, setUndoResetKey] = useState(0);
 
   // ── Composed hooks ─────────────────────────────────────────────────────────
   const { fullServerState, setFullServerState } = useGraphState();
@@ -96,6 +98,7 @@ export default function Home() {
     const prev = popUndo(cur);
     if (prev) await applyHistoryState(prev);
     reconcileAfterUndoRef.current(prev ?? null);
+    setUndoResetKey(k => k + 1);
   }, [popUndo, applyHistoryState]);
 
   const handleRedo = useCallback(async () => {
@@ -104,6 +107,7 @@ export default function Home() {
     const next = popRedo(cur);
     if (next) await applyHistoryState(next);
     reconcileAfterUndoRef.current(next ?? null);
+    setUndoResetKey(k => k + 1);
   }, [popRedo, applyHistoryState]);
 
   // Track 9: Keyboard shortcuts (Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo, Cmd+E = export, Cmd+K = search, ? = help)
@@ -152,7 +156,7 @@ export default function Home() {
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     handleAddConnection, handleRemoveEntity,
     appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds, appliedNewNodeIds,
-    appliedAIGroupIds,
+    appliedTaskNodeIds, appliedAIGroupIds,
     reconcileAfterUndo,
     aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,
     handleRemoveEdge, handleAddNewNode, handleUpdateTasks, handleApplyGroupUpdate,
@@ -1095,6 +1099,9 @@ export default function Home() {
         appliedConnectionKeys={appliedConnectionKeys}
         appliedRemovalIds={appliedRemovalIds}
         appliedNewNodeIds={appliedNewNodeIds}
+        appliedEdgeRemovalIds={appliedEdgeRemovalIds}
+        appliedTaskNodeIds={appliedTaskNodeIds}
+        undoResetKey={undoResetKey}
         fullServerState={fullServerState}
       />
       <AIUpdateModal

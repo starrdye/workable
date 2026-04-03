@@ -76,6 +76,8 @@ export function useAIHandlers(
   const [appliedEdgeRemovalIds, setAppliedEdgeRemovalIds] = useState<Set<string>>(() => new Set());
   /** Track IDs of suggested new nodes (tempId) that have been successfully applied */
   const [appliedNewNodeIds,     setAppliedNewNodeIds]     = useState<Set<string>>(() => new Set());
+  /** Track nodeIds of applied task updates — used to show "applied" badge in modal */
+  const [appliedTaskNodeIds,    setAppliedTaskNodeIds]    = useState<Set<string>>(() => new Set());
   /**
    * vb0.22: IDs of workflow groups that were created by an AI "create group"
    * suggestion — used by GraphCanvas to render them with a distinct proposed-group
@@ -519,6 +521,7 @@ export function useAIHandlers(
       setAppliedConnectionKeys(new Set());
       setAppliedEdgeRemovalIds(new Set());
       setAppliedNewNodeIds(new Set());
+      setAppliedTaskNodeIds(new Set());
       setAppliedAIGroupIds(new Set());
       return;
     }
@@ -569,8 +572,23 @@ export function useAIHandlers(
       return next;
     });
 
-    // Remove-edge: core edges are hard to verify → reset all edge removals on undo
-    setAppliedEdgeRemovalIds(new Set());
+    // Remove-edge: keep edgeId only if the edge is still absent from customEdges
+    setAppliedEdgeRemovalIds(prev => {
+      const next = new Set<string>();
+      for (const edgeId of prev) {
+        if (!customEdgeIds.has(edgeId)) next.add(edgeId); // Still absent → still applied
+      }
+      return next;
+    });
+
+    // Task update: keep nodeId only if the node still exists in the state
+    setAppliedTaskNodeIds(prev => {
+      const next = new Set<string>();
+      for (const nodeId of prev) {
+        if (presentNodeIds.has(nodeId)) next.add(nodeId);
+      }
+      return next;
+    });
   };
 
   const handleAddNewNode = async (node: SuggestedNewNode) => {
@@ -661,6 +679,7 @@ export function useAIHandlers(
       overrides[update.nodeId] = { ...(overrides[update.nodeId] ?? {}), tasks: merged };
       return { ...prev, settings: { ...prev.settings!, metadataOverrides: overrides } };
     });
+    setAppliedTaskNodeIds(prev => { const next = new Set(prev); next.add(update.nodeId); return next; });
   };
 
   const handleRemoveEntity = async (removal: SuggestedRemoval) => {
@@ -883,7 +902,7 @@ export function useAIHandlers(
     // analysis actions
     handleAddConnection, handleRemoveEntity,
     appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds, appliedNewNodeIds,
-    appliedAIGroupIds,
+    appliedTaskNodeIds, appliedAIGroupIds,
     reconcileAfterUndo,
     // new suggestion types
     aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,

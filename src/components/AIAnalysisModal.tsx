@@ -128,6 +128,15 @@ interface AIAnalysisModalProps {
   appliedRemovalIds?: Set<string>;
   /** Track IDs of suggested new nodes (tempId) that have been successfully applied */
   appliedNewNodeIds?: Set<string>;
+  /** Applied edge removal IDs from parent */
+  appliedEdgeRemovalIds?: Set<string>;
+  /** Applied task update node IDs from parent */
+  appliedTaskNodeIds?: Set<string>;
+  /**
+   * Incremented by parent on every undo/redo — triggers the modal to clear its
+   * local index-based applied state so parent-reconciled sets take over.
+   */
+  undoResetKey?: number;
   /** If true, indicates this is pre-baked demo data */
   isDemo?: boolean;
 }
@@ -312,6 +321,8 @@ export function AIAnalysisModal({
   onAddConnection, onRemoveEdge, onRemoveEntity, onAddNewNode, onUpdateTasks, onApplyGroupUpdate,
   onReAnalyze, analysisTimestamp,
   appliedConnectionKeys, appliedRemovalIds, appliedNewNodeIds,
+  appliedEdgeRemovalIds, appliedTaskNodeIds,
+  undoResetKey,
   fullServerState,
   isDemo = false,
 }: AIAnalysisModalProps) {
@@ -327,6 +338,18 @@ export function AIAnalysisModal({
   const [appliedNodeIdx,  setAppliedNodeIdx]  = useState<Set<number>>(new Set());
   const [appliedTaskIdx,  setAppliedTaskIdx]  = useState<Set<number>>(new Set());
   const [appliedGroupIdx, setAppliedGroupIdx] = useState<Set<number>>(new Set());
+
+  // When parent triggers an undo/redo, clear all local index state so the
+  // parent-reconciled sets (appliedConnectionKeys, etc.) take full control.
+  useEffect(() => {
+    if (undoResetKey === undefined) return;
+    setAppliedConnIdx(new Set());
+    setAppliedEdgeIdx(new Set());
+    setAppliedRemIdx(new Set());
+    setAppliedNodeIdx(new Set());
+    setAppliedTaskIdx(new Set());
+    setAppliedGroupIdx(new Set());
+  }, [undoResetKey]);
 
   // Refs for scrolling to suggestion cards when fishbone bone is clicked
   const connRefs    = useRef<(HTMLDivElement | null)[]>([]);
@@ -561,7 +584,7 @@ export function AIAnalysisModal({
                   icon={<Link2Off className="w-3 h-3 text-orange-500" />}
                   iconBg="bg-orange-100">
                   {suggestedEdgeRemovals.map((rem, i) => {
-                    const isApplied = appliedEdgeIdx.has(i);
+                    const isApplied = appliedEdgeIdx.has(i) || !!appliedEdgeRemovalIds?.has(rem.edgeId);
                     const isHighlit = highlightId === rem.edgeId;
                     // Find if there's a prerequisite connection not yet applied
                     const prereqKey  = rem.prerequisiteConnectionId ?? null;
@@ -754,7 +777,7 @@ export function AIAnalysisModal({
                   icon={<ClipboardList className="w-3 h-3 text-sky-500" />}
                   iconBg="bg-sky-100">
                   {suggestedTaskUpdates.map((upd, i) => {
-                    const isApplied = appliedTaskIdx.has(i);
+                    const isApplied = appliedTaskIdx.has(i) || !!appliedTaskNodeIds?.has(upd.nodeId);
                     const isHighlit = highlightId === upd.nodeId;
                     return (
                       <div key={i} ref={el => { taskRefs.current[i] = el; }}
