@@ -61,7 +61,7 @@ export default function Home() {
   const importInput = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const workflowCache = useRef<Record<string, any> | null>(null);
-  const resetAppliedSuggestionsRef = useRef<() => void>(() => {});
+  const reconcileAfterUndoRef = useRef<(state: import('@/lib/serverState').ServerGraphState | null) => void>(() => {});
 
   // ── Composed hooks ─────────────────────────────────────────────────────────
   const { fullServerState, setFullServerState } = useGraphState();
@@ -95,7 +95,7 @@ export default function Home() {
     if (!cur) return;
     const prev = popUndo(cur);
     if (prev) await applyHistoryState(prev);
-    resetAppliedSuggestionsRef.current();
+    reconcileAfterUndoRef.current(prev ?? null);
   }, [popUndo, applyHistoryState]);
 
   const handleRedo = useCallback(async () => {
@@ -103,7 +103,7 @@ export default function Home() {
     if (!cur) return;
     const next = popRedo(cur);
     if (next) await applyHistoryState(next);
-    resetAppliedSuggestionsRef.current();
+    reconcileAfterUndoRef.current(next ?? null);
   }, [popRedo, applyHistoryState]);
 
   // Track 9: Keyboard shortcuts (Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo, Cmd+E = export, Cmd+K = search, ? = help)
@@ -153,7 +153,7 @@ export default function Home() {
     handleAddConnection, handleRemoveEntity,
     appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds, appliedNewNodeIds,
     appliedAIGroupIds,
-    resetAppliedSuggestions,
+    reconcileAfterUndo,
     aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,
     handleRemoveEdge, handleAddNewNode, handleUpdateTasks, handleApplyGroupUpdate,
     aiDebugLog, setAiDebugLog,
@@ -164,7 +164,7 @@ export default function Home() {
   );
 
   const [activeHierarchyGroupId, setActiveHierarchyGroupId] = useState<string | null>(null);
-  resetAppliedSuggestionsRef.current = resetAppliedSuggestions;
+  reconcileAfterUndoRef.current = reconcileAfterUndo;
 
   // ── AI analysis canvas highlights ─────────────────────────────────────────
   // Nodes from AI suggestions that are pending removal (not yet applied) → amber glow
@@ -432,10 +432,9 @@ export default function Home() {
           onOpenSettings={() => setShowAISettings(true)}
           onGenerationStart={handleGenerationStart}
           onGenerationError={handleGenerationError}
-          isDemoMode={isDemoMode}
         />
         <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
-          onSave={handleSaveAiConfig} currentConfig={aiConfig} isDemoMode={isDemoMode} />
+          onSave={handleSaveAiConfig} currentConfig={aiConfig} />
         {debugModal}
       </>
     );
@@ -1069,7 +1068,7 @@ export default function Home() {
 
       {/* AI Modals */}
       <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
-        onSave={handleSaveAiConfig} currentConfig={aiConfig} isDemoMode={isDemoMode} />
+        onSave={handleSaveAiConfig} currentConfig={aiConfig} />
       <AIAnalysisModal
         isOpen={showAIAnalysis}
         isLoading={aiAnalysisLoading}
@@ -1106,7 +1105,6 @@ export default function Home() {
         onClose={() => { setShowAIUpdate(false); setAiUpdateResult(null); setAiUpdateError(null); }}
         onSubmit={handleAiUpdate}
         onApply={handleApplyUpdate}
-        isDemoMode={isDemoMode}
       />
 
       {debugModal}

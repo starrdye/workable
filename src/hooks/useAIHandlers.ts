@@ -507,9 +507,69 @@ export function useAIHandlers(
     onCanvasMutation?.();
   };
 
-  const resetAppliedSuggestions = () => {
-    setAppliedRemovalIds(new Set());
-    setAppliedConnectionKeys(new Set());
+  /**
+   * After an undo/redo, reconcile applied-suggestion sets against the restored state.
+   * Only marks a suggestion as still-applied if the change it made is still present,
+   * so buttons re-enable automatically when their action was actually undone.
+   */
+  const reconcileAfterUndo = (newState: ServerGraphState | null) => {
+    if (!newState) {
+      // No state available — full reset
+      setAppliedRemovalIds(new Set());
+      setAppliedConnectionKeys(new Set());
+      setAppliedEdgeRemovalIds(new Set());
+      setAppliedNewNodeIds(new Set());
+      setAppliedAIGroupIds(new Set());
+      return;
+    }
+
+    const customEdgeIds = new Set((newState.customEdges ?? []).map(e => e.id));
+    const customNodeIds = new Set((newState.customNodes ?? []).map(n => n.id));
+    const groupIds      = new Set((newState.settings?.workflowGroups ?? []).map(g => g.id));
+    const presentNodeIds = new Set([
+      ...Object.keys(newState.baselinePositions  ?? {}),
+      ...Object.keys(newState.ecosystemPositions ?? {}),
+      ...(newState.customNodes ?? []).map(n => n.id),
+    ]);
+
+    // Add-connection: keep key only if the "-opt" edge still exists in customEdges
+    setAppliedConnectionKeys(prev => {
+      const next = new Set<string>();
+      for (const key of prev) {
+        if (customEdgeIds.has(`${key}-opt`)) next.add(key);
+      }
+      return next;
+    });
+
+    // Add-new-node: keep tempId only if a customNode with that prefix still exists
+    setAppliedNewNodeIds(prev => {
+      const next = new Set<string>();
+      for (const tempId of prev) {
+        const stillPresent = Array.from(customNodeIds).some(id => id.startsWith(`${tempId}_`));
+        if (stillPresent) next.add(tempId);
+      }
+      return next;
+    });
+
+    // Group update: keep groupId only if the group still exists
+    setAppliedAIGroupIds(prev => {
+      const next = new Set<string>();
+      for (const gid of prev) {
+        if (groupIds.has(gid)) next.add(gid);
+      }
+      return next;
+    });
+
+    // Remove-node: keep id only if the node is STILL absent from the state
+    setAppliedRemovalIds(prev => {
+      const next = new Set<string>();
+      for (const nodeId of prev) {
+        if (!presentNodeIds.has(nodeId)) next.add(nodeId);
+      }
+      return next;
+    });
+
+    // Remove-edge: core edges are hard to verify → reset all edge removals on undo
     setAppliedEdgeRemovalIds(new Set());
   };
 
@@ -824,7 +884,7 @@ export function useAIHandlers(
     handleAddConnection, handleRemoveEntity,
     appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds, appliedNewNodeIds,
     appliedAIGroupIds,
-    resetAppliedSuggestions,
+    reconcileAfterUndo,
     // new suggestion types
     aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,
     // handlers
