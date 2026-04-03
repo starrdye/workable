@@ -4,7 +4,7 @@
 // Track 8b  — vb0.2: delegates to useAIEngine for mode-aware routing.
 // Track 14d — vb0.21: runAnalyze uses streaming SSE so analysis text appears live.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { loadAIConfig, type AIConfig, AI_CONFIG_KEY } from '@/components/AISettingsModal';
 import { PROVIDERS, type AIProvider } from '@/lib/aiClient';
@@ -29,6 +29,7 @@ export function useAIHandlers(
   setSelectedId: Dispatch<SetStateAction<string | null>>,
   setSelectedType: Dispatch<SetStateAction<'node' | 'edge' | null>>,
   pushSnapshot: (state: ServerGraphState) => void,
+  language: string,
   onCanvasMutation?: () => void,
 ) {
   // ── AI Config ──────────────────────────────────────────────────────────────
@@ -67,17 +68,23 @@ export function useAIHandlers(
   const [aiSuggestedTaskUpdates,   setAiSuggestedTaskUpdates]   = useState<SuggestedTaskUpdate[]>([]);
   const [aiSuggestionPlan,         setAiSuggestionPlan]         = useState<{ phases: SuggestionPhase[] } | null>(null);
   const [aiSuggestedGroupUpdates,  setAiSuggestedGroupUpdates]  = useState<SuggestedGroupUpdate[]>([]);
+  const [aiAnalysisIsDemo,      setAiAnalysisIsDemo]      = useState(false);
 
   // Track which suggestions have already been applied so canvas can remove highlights
   const [appliedRemovalIds,     setAppliedRemovalIds]     = useState<Set<string>>(() => new Set());
   const [appliedConnectionKeys, setAppliedConnectionKeys] = useState<Set<string>>(() => new Set());
   const [appliedEdgeRemovalIds, setAppliedEdgeRemovalIds] = useState<Set<string>>(() => new Set());
+  /** Track IDs of suggested new nodes (tempId) that have been successfully applied */
+  const [appliedNewNodeIds,     setAppliedNewNodeIds]     = useState<Set<string>>(() => new Set());
   /**
    * vb0.22: IDs of workflow groups that were created by an AI "create group"
    * suggestion — used by GraphCanvas to render them with a distinct proposed-group
    * visual (dashed emerald border + pulse) so they stand out from manually-created groups.
    */
   const [appliedAIGroupIds, setAppliedAIGroupIds] = useState<Set<string>>(() => new Set());
+
+  // Ref guard: ensures demo auto-apply only runs once per analysis session
+  const demoAutoApplied = useRef(false);
 
   // ── AI Update state ────────────────────────────────────────────────────────
   const [aiUpdateLoading, setAiUpdateLoading] = useState(false);
@@ -100,11 +107,14 @@ export function useAIHandlers(
     setAiAnalysisLoading(true);
     setAiAnalysisStreamText('');
 
+    const isDemo = fullServerState?.settings?.templateId === 'demo-jack';
+
     const config = {
-      apiKey:   activeApiKey,
-      provider: aiConfig.provider,
-      model:    aiConfig.models[aiConfig.provider],
+      apiKey:   isDemo ? 'demo-mock-key' : activeApiKey,
+      provider: isDemo ? 'demo' as AIProvider : aiConfig.provider,
+      model:    isDemo ? 'demo-model' : aiConfig.models[aiConfig.provider],
       baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
+      lang:     language,
     };
 
     // Distributed engine doesn't support streaming — use buffered path
@@ -151,6 +161,7 @@ export function useAIHandlers(
   /** Apply a completed analysis result (shared by streaming onDone + buffered path) */
   const applyAnalysisData = (data: Record<string, unknown>, engine: 'monolithic' | 'distributed') => {
     setAiAnalysis(data.analysis as string);
+    setAiAnalysisIsDemo(!!data.isDemo);
     setAiSuggestedConnections((data.suggestedConnections ?? []) as SuggestedConnection[]);
     setAiSuggestedRemovals((data.suggestedRemovals ?? []) as SuggestedRemoval[]);
     setAiSuggestedEdgeRemovals((data.suggestedEdgeRemovals ?? []) as SuggestedEdgeRemoval[]);
@@ -169,7 +180,8 @@ export function useAIHandlers(
 
   // Opens the modal; only auto-fetches when no cached result exists
   const handleAiAnalyze = async () => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
+    const isDemo = fullServerState?.settings?.templateId === 'demo-jack';
+    if (!isDemo && !activeApiKey) { setShowAISettings(true); return; }
     setShowAIAnalysis(true);
     if (!aiAnalysis && !aiAnalysisError && !aiAnalysisLoading) {
       await runAnalyze();
@@ -179,6 +191,7 @@ export function useAIHandlers(
   // Clear all analysis state without re-running (e.g. when a new workflow/template is loaded)
   const resetAnalysis = () => {
     setAiAnalysis(null);
+    setAiAnalysisIsDemo(false);
     setAiAnalysisError(null);
     setAiSuggestedConnections([]);
     setAiSuggestedRemovals([]);
@@ -186,13 +199,96 @@ export function useAIHandlers(
     setAppliedRemovalIds(new Set());
     setAppliedConnectionKeys(new Set());
     setAppliedEdgeRemovalIds(new Set());
+    setAppliedNewNodeIds(new Set());
     setAppliedAIGroupIds(new Set());
     setAiSuggestedEdgeRemovals([]);
     setAiSuggestedNewNodes([]);
     setAiSuggestedTaskUpdates([]);
     setAiSuggestedGroupUpdates([]);
     setAiSuggestionPlan(null);
+    demoAutoApplied.current = false;
   };
+
+  // Demo mode: once analysis loads, auto-apply suggested new nodes as improvement-only additions
+  useEffect(() => {
+    if (!aiAnalysisIsDemo || demoAutoApplied.current || aiSuggestedNewNodes.length === 0) return;
+    demoAutoApplied.current = true;
+
+    const newEdges = aiSuggestedNewNodes.flatMap(node => [
+      ...node.connectFrom.map(srcId => ({
+        id: `${srcId}-${node.tempId}-demo`, source: srcId, target: node.tempId,
+        sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+      })),
+      ...node.connectTo.map(tgtId => ({
+        id: `${node.tempId}-${tgtId}-demo`, source: node.tempId, target: tgtId,
+        sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+      })),
+    ]);
+
+    const newNodes = aiSuggestedNewNodes.map(node => ({
+        id: node.tempId,
+        labelInitials: node.label.slice(0, 2).toUpperCase(),
+        label: node.label,
+        nodeType: 'neural' as const,
+        role: node.role as 'person' | 'tool' | 'external' | 'output',
+        source: 'ai-generated' as const,
+        position: { x: 0, y: 0 } as { x: number; y: number },
+    }));
+
+    (async () => {
+      for (const node of newNodes) {
+        await put({ action: 'addNode', node });
+        const summary = aiSuggestedNewNodes.find(n => n.tempId === node.id)?.summary;
+        await put({ action: 'updateMetadata', id: node.id, metadata: { name: node.label, role: node.role, summary: summary } });
+      }
+      for (const edge of newEdges) {
+        await put({ action: 'addEdge', edge });
+      }
+      await put({ action: 'incrementalLayout', nodeIds: newNodes.map(n => n.id) });
+      onCanvasMutation?.();
+    })();
+
+    // Optimistic local state update
+    setFullServerState(prev => {
+      if (!prev) return prev;
+      const newNodes = aiSuggestedNewNodes.map(node => ({
+        id: node.tempId,
+        labelInitials: node.label.slice(0, 2).toUpperCase(),
+        label: node.label,
+        nodeType: 'neural' as const,
+        role: node.role as 'person' | 'tool' | 'external' | 'output',
+        source: 'ai-generated' as const,
+        position: { x: 0, y: 0 } as { x: number; y: number },
+      }));
+      const newEdges = aiSuggestedNewNodes.flatMap(node => [
+        ...node.connectFrom.map(srcId => ({
+          id: `${srcId}-${node.tempId}-demo`, source: srcId, target: node.tempId,
+          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+        })),
+        ...node.connectTo.map(tgtId => ({
+          id: `${node.tempId}-${tgtId}-demo`, source: node.tempId, target: tgtId,
+          sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+        })),
+      ]);
+      return {
+        ...prev,
+        customNodes: [
+          ...(prev.customNodes ?? []).filter(n => !newNodes.find(nn => nn.id === n.id)),
+          ...newNodes,
+        ],
+        customEdges: [
+          ...(prev.customEdges ?? []).filter(e => !newEdges.find(ne => ne.id === e.id)),
+          ...newEdges,
+        ],
+      };
+    });
+
+    // Server layout is already triggered sequentially above; UI will catch up
+    setTimeout(() => {
+      onCanvasMutation?.();
+    }, 300);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiAnalysisIsDemo, aiSuggestedNewNodes.length]);
 
   // Re-run fresh analysis, clearing the previous result and applied tracking
   const handleReAnalyze = async () => {
@@ -201,20 +297,19 @@ export function useAIHandlers(
   };
 
   const handleAiUpdate = async (prompt: string) => {
-    if (!activeApiKey) { setShowAISettings(true); return; }
+    const isDemo = fullServerState?.settings?.templateId === 'demo-jack';
+    if (!isDemo && !activeApiKey) { setShowAISettings(true); return; }
     setAiUpdateResult(null);
     setAiUpdateError(null);
     setAiUpdateLoading(true);
     try {
+      const updateConfig = isDemo
+        ? { apiKey: 'demo', provider: 'demo' as AIProvider, model: 'demo-mock', baseUrl: undefined, lang: language }
+        : { apiKey: activeApiKey, provider: aiConfig.provider, model: aiConfig.models[aiConfig.provider], baseUrl: aiConfig.baseUrls?.[aiConfig.provider], lang: language };
       const { data, aborted, engine } = await aiEngine.runUpdate(
         prompt,
         fullServerState,
-        {
-          apiKey:   activeApiKey,
-          provider: aiConfig.provider,
-          model:    aiConfig.models[aiConfig.provider],
-          baseUrl:  aiConfig.baseUrls?.[aiConfig.provider],
-        },
+        updateConfig,
       );
 
       // If aborted (mode toggled mid-flight), silently discard
@@ -332,6 +427,23 @@ export function useAIHandlers(
 
     setShowAIUpdate(false);
     setAiUpdateResult(null);
+
+    // vb0.23: Optimistic state update for bulk removal cases in handleApplyUpdate
+    setFullServerState(prev => {
+      if (!prev || result.remove.nodeIds.length === 0) return prev;
+      const newBaseline = { ...(prev.baselinePositions ?? {}) };
+      const newEcosystem = { ...(prev.ecosystemPositions ?? {}) };
+      result.remove.nodeIds.forEach(id => {
+        delete newBaseline[id];
+        delete newEcosystem[id];
+      });
+      return {
+        ...prev,
+        baselinePositions: newBaseline,
+        ecosystemPositions: newEcosystem,
+        // (Other fields are updated by the subsequent fetch/poll, but prune positions now to avoid ghosts)
+      };
+    });
   };
 
   const handleAddConnection = async (conn: SuggestedConnection) => {
@@ -355,8 +467,16 @@ export function useAIHandlers(
 
     setFullServerState(prev => {
       if (!prev) return prev;
+      const newBaseline = { ...(prev.baselinePositions ?? {}) };
+      const newEcosystem = { ...(prev.ecosystemPositions ?? {}) };
+      orphanedIds.forEach(id => {
+        delete newBaseline[id];
+        delete newEcosystem[id];
+      });
       return {
         ...prev,
+        baselinePositions: newBaseline,
+        ecosystemPositions: newEcosystem,
         customNodes: (prev.customNodes ?? []).filter(n => !orphanedIds.includes(n.id)),
         customEdges: [...(prev.customEdges ?? []).filter(e => e.id !== edgeId && !orphanedIds.includes(e.source) && !orphanedIds.includes(e.target)), newEdge],
       };
@@ -364,6 +484,13 @@ export function useAIHandlers(
     // Mark as applied so canvas removes the suggested-arc highlight
     const key = `${conn.sourceId}-${conn.targetId}`;
     setAppliedConnectionKeys(prev => { const next = new Set(prev); next.add(key); return next; });
+
+    // vb0.24: If this connection targets a suggested new node, mark it applied
+    const targetNodeSuggestion = aiSuggestedNewNodes.find(sn => sn.tempId === conn.targetId);
+    if (targetNodeSuggestion) {
+      setAppliedNewNodeIds(prev => { const next = new Set(prev); next.add(targetNodeSuggestion.tempId); return next; });
+    }
+
     onCanvasMutation?.();
   };
 
@@ -418,13 +545,25 @@ export function useAIHandlers(
     }
     // Re-run incremental layout for the new node
     await put({ action: 'incrementalLayout', nodeIds: [nodeId] });
-    setFullServerState(prev => prev ? {
-      ...prev,
-      customNodes: [
-        ...(prev.customNodes ?? []).filter(n => n.id !== node.replacesNodeId),
-        { id: nodeId, labelInitials: node.label.slice(0, 2).toUpperCase(), label: node.label, nodeType: 'neural', role: node.role as 'person' | 'tool' | 'external' | 'output', source: 'ai-generated', position: { x: 0, y: 0 } },
-      ],
-    } : prev);
+    setAppliedNewNodeIds(prev => { const next = new Set(prev); next.add(node.tempId); return next; });
+    setFullServerState(prev => {
+      if (!prev) return prev;
+      const newBaseline = { ...(prev.baselinePositions ?? {}) };
+      const newEcosystem = { ...(prev.ecosystemPositions ?? {}) };
+      if (node.replacesNodeId) {
+        delete newBaseline[node.replacesNodeId];
+        delete newEcosystem[node.replacesNodeId];
+      }
+      return {
+        ...prev,
+        baselinePositions: newBaseline,
+        ecosystemPositions: newEcosystem,
+        customNodes: [
+          ...(prev.customNodes ?? []).filter(n => n.id !== node.replacesNodeId),
+          { id: nodeId, labelInitials: node.label.slice(0, 2).toUpperCase(), label: node.label, nodeType: 'neural', role: node.role as 'person' | 'tool' | 'external' | 'output', source: 'ai-generated', position: { x: 0, y: 0 } },
+        ],
+      };
+    });
   };
 
   const handleUpdateTasks = async (update: SuggestedTaskUpdate) => {
@@ -485,23 +624,32 @@ export function useAIHandlers(
         }
       }
       await put({ action: 'deleteNode', nodeId: removal.id });
-      setFullServerState(prev => prev ? {
-        ...prev,
-        customNodes: (prev.customNodes ?? []).filter(n => n.id !== removal.id),
-        customEdges: [
-          ...(prev.customEdges ?? []).filter(
-            e => e.source !== removal.id && e.target !== removal.id
-          ),
-          ...edgesToReroute
-            .map(edge => {
-              const newSource = edge.source === removal.id ? removal.mergeTargetId! : edge.source;
-              const newTarget = edge.target === removal.id ? removal.mergeTargetId! : edge.target;
-              if (newSource === newTarget) return null;
-              return { ...edge, id: `${newSource}-${newTarget}-merged`, source: newSource, target: newTarget };
-            })
-            .filter((e): e is NonNullable<typeof e> => e !== null),
-        ],
-      } : prev);
+      setFullServerState(prev => {
+        if (!prev) return prev;
+        const newBaseline = { ...(prev.baselinePositions ?? {}) };
+        const newEcosystem = { ...(prev.ecosystemPositions ?? {}) };
+        delete newBaseline[removal.id];
+        delete newEcosystem[removal.id];
+        return {
+          ...prev,
+          baselinePositions: newBaseline,
+          ecosystemPositions: newEcosystem,
+          customNodes: (prev.customNodes ?? []).filter(n => n.id !== removal.id),
+          customEdges: [
+            ...(prev.customEdges ?? []).filter(
+              e => e.source !== removal.id && e.target !== removal.id
+            ),
+            ...edgesToReroute
+              .map(edge => {
+                const newSource = edge.source === removal.id ? removal.mergeTargetId! : edge.source;
+                const newTarget = edge.target === removal.id ? removal.mergeTargetId! : edge.target;
+                if (newSource === newTarget) return null;
+                return { ...edge, id: `${newSource}-${newTarget}-merged`, source: newSource, target: newTarget };
+              })
+              .filter((e): e is NonNullable<typeof e> => e !== null),
+          ],
+        };
+      });
 
     } else if (removal.action === 'automate') {
       // Create a replacement tool node then remove the original
@@ -537,35 +685,64 @@ export function useAIHandlers(
       }
       await put({ action: 'deleteNode', nodeId: removal.id });
       await put({ action: 'incrementalLayout', nodeIds: [toolNodeId] });
-      setFullServerState(prev => prev ? {
-        ...prev,
-        customNodes: [
-          ...(prev.customNodes ?? []).filter(n => n.id !== removal.id),
-          { id: toolNodeId, labelInitials: '⚙', label: toolLabel, nodeType: 'neural' as const, role: 'tool' as const, source: 'ai-generated' as const, position: { x: 0, y: 0 } },
-        ],
-        customEdges: [
-          ...(prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
-          ...edgesToReroute.map(edge => ({
-            ...edge,
-            id: `${edge.source === removal.id ? toolNodeId : edge.source}-${edge.target === removal.id ? toolNodeId : edge.target}`,
-            source: edge.source === removal.id ? toolNodeId : edge.source,
-            target: edge.target === removal.id ? toolNodeId : edge.target,
-          })),
-        ],
-      } : prev);
+      setFullServerState(prev => {
+        if (!prev) return prev;
+        const newBaseline = { ...(prev.baselinePositions ?? {}) };
+        const newEcosystem = { ...(prev.ecosystemPositions ?? {}) };
+        delete newBaseline[removal.id];
+        delete newEcosystem[removal.id];
+        return {
+          ...prev,
+          baselinePositions: newBaseline,
+          ecosystemPositions: newEcosystem,
+          customNodes: [
+            ...(prev.customNodes ?? []).filter(n => n.id !== removal.id),
+            { id: toolNodeId, labelInitials: '⚙', label: toolLabel, nodeType: 'neural' as const, role: 'tool' as const, source: 'ai-generated' as const, position: { x: 0, y: 0 } },
+          ],
+          customEdges: [
+            ...(prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
+            ...edgesToReroute.map(edge => ({
+              ...edge,
+              id: `${edge.source === removal.id ? toolNodeId : edge.source}-${edge.target === removal.id ? toolNodeId : edge.target}`,
+              source: edge.source === removal.id ? toolNodeId : edge.source,
+              target: edge.target === removal.id ? toolNodeId : edge.target,
+            })),
+          ],
+        };
+      });
 
     } else {
       // Default: remove entirely
       put({ action: 'deleteNode', nodeId: removal.id });
-      setFullServerState(prev => prev ? {
+    setFullServerState(prev => {
+      if (!prev) return prev;
+      const newNodes = (prev.customNodes ?? []).filter(n => n.id !== removal.id);
+      const newEdges = (prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id);
+      const newBaseline = { ...(prev.baselinePositions ?? {}) };
+      const newEcosystem = { ...(prev.ecosystemPositions ?? {}) };
+      delete newBaseline[removal.id];
+      delete newEcosystem[removal.id];
+
+      return {
         ...prev,
-        customNodes: (prev.customNodes ?? []).filter(n => n.id !== removal.id),
-        customEdges: (prev.customEdges ?? []).filter(e => e.source !== removal.id && e.target !== removal.id),
-      } : prev);
-    }
+        customNodes: newNodes,
+        customEdges: newEdges,
+        baselinePositions: newBaseline,
+        ecosystemPositions: newEcosystem,
+      };
+    });
+  }
 
     if (selectedId === removal.id) { setSelectedId(null); setSelectedType(null); }
     setAppliedRemovalIds(prev => { const next = new Set(prev); next.add(removal.id); return next; });
+
+    // vb0.24: If automation creates a replacement that matches a suggested new node, mark it as applied
+    if (removal.action === 'automate') {
+      const match = aiSuggestedNewNodes.find(sn => 
+        sn.replacesNodeId === removal.id || sn.label.toLowerCase() === removal.name.toLowerCase()
+      );
+      if (match) setAppliedNewNodeIds(prev => { const next = new Set(prev); next.add(match.tempId); return next; });
+    }
   };
 
   const handleApplyGroupUpdate = (upd: SuggestedGroupUpdate) => {
@@ -634,7 +811,7 @@ export function useAIHandlers(
     showAIUpdate,   setShowAIUpdate,
     showDebugLog,   setShowDebugLog,
     // analyze
-    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText,
+    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText, aiAnalysisIsDemo,
     aiSuggestedConnections, aiSuggestedRemovals,
     aiAnalysisTimestamp,
     handleAiAnalyze, handleReAnalyze, resetAnalysis,
@@ -643,7 +820,7 @@ export function useAIHandlers(
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     // analysis actions
     handleAddConnection, handleRemoveEntity,
-    appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds,
+    appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds, appliedNewNodeIds,
     appliedAIGroupIds,
     resetAppliedSuggestions,
     // new suggestion types

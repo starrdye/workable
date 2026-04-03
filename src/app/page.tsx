@@ -35,6 +35,110 @@ const ROLE_CHIPS = [
   { id: "output",   label: "Output",   color: "#10B981" },
 ] as const;
 
+// ── Demo Mode Badge (clickable — opens demo story) ───────────────────────────
+
+function DemoBadge() {
+  const { t } = useLanguage();
+  const [showStory, setShowStory] = useState(false);
+
+  return (
+    <>
+      {/* Fixed bottom-right pill */}
+      <button
+        onClick={() => setShowStory(true)}
+        className="fixed bottom-5 right-5 z-[300] flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-2 rounded-2xl shadow-lg transition-colors cursor-pointer"
+        style={{ boxShadow: "0 4px 18px 0 rgba(16,185,129,0.35)" }}
+        title={t('demo.badge.title')}
+      >
+        <span className="text-sm leading-none" aria-hidden>🎭</span>
+        <div className="flex flex-col leading-tight text-left">
+          <span className="font-bold tracking-wide">{t('demo.badge.label')}</span>
+          <span className="font-normal opacity-80 text-[10px]">{t('demo.badge.sublabel')}</span>
+        </div>
+      </button>
+
+      {/* Demo story modal */}
+      {showStory && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 flex flex-col overflow-hidden border border-slate-100">
+
+            {/* Header */}
+            <div className="px-8 pt-7 pb-5 border-b border-slate-100 flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center shrink-0">
+                  <span className="text-xl">🎭</span>
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-800">{t('demo.story.title')}</h2>
+                  <p className="text-xs text-emerald-600 font-semibold mt-0.5">{t('demo.story.subtitle')}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowStory(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+                <span className="text-lg leading-none">×</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-8 py-6 space-y-4 overflow-y-auto max-h-[60vh]">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('demo.story.scenario.label')}</p>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  {t('demo.story.scenario.text')}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('demo.story.scripted.label')}</p>
+                <div className="space-y-2">
+                  {[
+                    { icon: "📝", label: t('demo.story.scripted.workflow.label'), detail: t('demo.story.scripted.workflow.text') },
+                    { icon: "🔍", label: t('demo.story.scripted.analyze.label'),  detail: t('demo.story.scripted.analyze.text') },
+                    { icon: "✏️", label: t('demo.story.scripted.update.label'),   detail: t('demo.story.scripted.update.text') },
+                    { icon: "🤖", label: t('demo.story.scripted.responses.label'), detail: t('demo.story.scripted.responses.text') },
+                  ].map(({ icon, label, detail }) => (
+                    <div key={label} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <span className="text-base shrink-0">{icon}</span>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-700">{label}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('demo.story.works.label')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    t('demo.story.works.export.png'),
+                    t('demo.story.works.export.csv'),
+                    t('demo.story.works.view.data'),
+                    t('demo.story.works.canvas.nav'),
+                    t('demo.story.works.selection'),
+                    t('demo.story.works.groups')
+                  ].map(f => (
+                    <span key={f} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full font-medium">✓ {f}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-8 pb-6 pt-4 border-t border-slate-100">
+              <button onClick={() => setShowStory(false)}
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors">
+                {t('demo.story.footer.button')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function Home() {
   const { t } = useLanguage();
 
@@ -135,20 +239,22 @@ export default function Home() {
     GROUP_COLORS,
   } = useWorkflowGroups(fullServerState, setFullServerState, setGroupFilters, pushSnapshot);
 
+  const { lang: language } = useLanguage();
+
   const {
     aiConfig, handleSaveAiConfig, activeApiKey,
     showAISettings, setShowAISettings,
     showAIAnalysis, setShowAIAnalysis,
     showAIUpdate,   setShowAIUpdate,
     showDebugLog,   setShowDebugLog,
-    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText,
+    aiAnalysis, aiAnalysisLoading, aiAnalysisError, aiAnalysisStreamText, aiAnalysisIsDemo,
     aiSuggestedConnections, aiSuggestedRemovals,
     aiAnalysisTimestamp,
     handleAiAnalyze, handleReAnalyze, resetAnalysis,
     aiUpdateLoading, aiUpdateResult, aiUpdateError,
     handleAiUpdate, handleApplyUpdate, setAiUpdateResult, setAiUpdateError,
     handleAddConnection, handleRemoveEntity,
-    appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds,
+    appliedRemovalIds, appliedConnectionKeys, appliedEdgeRemovalIds, appliedNewNodeIds,
     appliedAIGroupIds,
     resetAppliedSuggestions,
     aiSuggestedEdgeRemovals, aiSuggestedNewNodes, aiSuggestedTaskUpdates, aiSuggestedGroupUpdates, aiSuggestionPlan,
@@ -156,6 +262,7 @@ export default function Home() {
     aiDebugLog, setAiDebugLog,
   } = useAIHandlers(
     fullServerState, setFullServerState, selectedId, setSelectedId, setSelectedType, pushSnapshot,
+    language,
     () => { canvasRef.current?.triggerRefresh(); },
   );
 
@@ -180,6 +287,10 @@ export default function Home() {
   const pendingProposedGroupIds = Array.from(appliedAIGroupIds);
 
   const activeProviderMeta = PROVIDERS.find((p) => p.id === aiConfig.provider);
+
+  // ── Demo mode ──────────────────────────────────────────────────────────────
+  // This branch is permanently demo mode — no user selection needed.
+  const isDemoMode = true;
 
   // ── Workflow cache + tooltip ───────────────────────────────────────────────
   useEffect(() => {
@@ -226,6 +337,13 @@ export default function Home() {
       setAnalysisData(null);
     }
   }, [selectedId, selectedType, fullServerState]);
+
+  // Demo: auto-enable improvements view when analysis loads so canvas reflects suggested state
+  useEffect(() => {
+    if (aiAnalysisIsDemo && aiAnalysis) {
+      setShowImprovements(true);
+    }
+  }, [aiAnalysisIsDemo, aiAnalysis]);
 
   // ── Import helpers ─────────────────────────────────────────────────────────
 
@@ -418,9 +536,11 @@ export default function Home() {
           onOpenSettings={() => setShowAISettings(true)}
           onGenerationStart={handleGenerationStart}
           onGenerationError={handleGenerationError}
+          isDemoMode={isDemoMode}
         />
         <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
-          onSave={handleSaveAiConfig} currentConfig={aiConfig} />
+          onSave={handleSaveAiConfig} currentConfig={aiConfig} isDemoMode={isDemoMode} />
+        {isDemoMode && <DemoBadge />}
         {debugModal}
       </>
     );
@@ -500,10 +620,10 @@ export default function Home() {
 
           {/* AI Analyze */}
           <button onClick={handleAiAnalyze}
-            title={activeApiKey ? t('toolbar.aiAnalyze.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiAnalyze.noKey')}
+            title={(activeApiKey || isDemoMode) ? t('toolbar.aiAnalyze.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiAnalyze.noKey')}
             aria-label={t('toolbar.aiAnalyze')}
             className={`shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
-              activeApiKey
+              (activeApiKey || isDemoMode)
                 ? "border-indigo-300 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
@@ -512,11 +632,11 @@ export default function Home() {
           </button>
 
           {/* AI Update */}
-          <button onClick={() => { if (!activeApiKey) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
-            title={activeApiKey ? t('toolbar.aiUpdate.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiUpdate.noKey')}
+          <button onClick={() => { if (!activeApiKey && !isDemoMode) { setShowAISettings(true); return; } setShowAIUpdate(true); }}
+            title={(activeApiKey || isDemoMode) ? t('toolbar.aiUpdate.title').replace('{provider}', activeProviderMeta?.name ?? "AI") : t('toolbar.aiUpdate.noKey')}
             aria-label={t('toolbar.aiUpdate')}
             className={`shrink-0 whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
-              activeApiKey
+              (activeApiKey || isDemoMode)
                 ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
                 : "border-gray-300 text-gray-400 hover:bg-gray-50"
             }`}>
@@ -561,7 +681,7 @@ export default function Home() {
       </header>
 
       {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden relative">
 
         {/* Mobile sidebar backdrop */}
         {showMobileSidebar && (
@@ -961,7 +1081,7 @@ export default function Home() {
         </aside>
 
         {/* ── Main canvas ── */}
-        <main className="flex-1 relative bg-[#F8FAFC] overflow-hidden">
+        <main className="flex-1 relative bg-[#F8FAFC] overflow-hidden min-h-[70vh] md:min-h-0">
 
           {/* Track 15a — Skeleton placeholder nodes while AI is generating */}
           {isGeneratingWorkflow && <SkeletonCanvas />}
@@ -1054,12 +1174,13 @@ export default function Home() {
 
       {/* AI Modals */}
       <AISettingsModal isOpen={showAISettings} onClose={() => setShowAISettings(false)}
-        onSave={handleSaveAiConfig} currentConfig={aiConfig} />
+        onSave={handleSaveAiConfig} currentConfig={aiConfig} isDemoMode={isDemoMode} />
       <AIAnalysisModal
         isOpen={showAIAnalysis}
         isLoading={aiAnalysisLoading}
         analysis={aiAnalysis}
         streamText={aiAnalysisStreamText}
+        isDemo={aiAnalysisIsDemo}
         suggestedConnections={aiSuggestedConnections}
         suggestedEdgeRemovals={aiSuggestedEdgeRemovals}
         suggestedRemovals={aiSuggestedRemovals}
@@ -1079,6 +1200,8 @@ export default function Home() {
         analysisTimestamp={aiAnalysisTimestamp}
         appliedConnectionKeys={appliedConnectionKeys}
         appliedRemovalIds={appliedRemovalIds}
+        appliedNewNodeIds={appliedNewNodeIds}
+        fullServerState={fullServerState}
       />
       <AIUpdateModal
         isOpen={showAIUpdate}
@@ -1088,7 +1211,11 @@ export default function Home() {
         onClose={() => { setShowAIUpdate(false); setAiUpdateResult(null); setAiUpdateError(null); }}
         onSubmit={handleAiUpdate}
         onApply={handleApplyUpdate}
+        isDemoMode={isDemoMode}
       />
+
+      {/* Demo mode badge — fixed bottom-right */}
+      {isDemoMode && <DemoBadge />}
 
       {debugModal}
 
@@ -1161,6 +1288,11 @@ export default function Home() {
           </div>
         </div>
       )}
+      {/* ── Demo Mode Badge ── */}
+      <div className="fixed bottom-6 left-6 z-[100] flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm pointer-events-none select-none animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <Zap className="w-3.5 h-3.5 fill-emerald-500" />
+        <span className="text-[11px] font-bold uppercase tracking-widest">Demo Environment</span>
+      </div>
     </div>
   );
 }
