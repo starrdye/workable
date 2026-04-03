@@ -155,6 +155,16 @@ Name and save any canvas state to the built-in Workflow Library. Load it back in
 
 ---
 
+### 📂 Workflow Group Hierarchy
+Organize your canvas into levels. Create parent-subgroup relationships to manage complex processes. The sidebar automatically indents subgroups and provides a recursive node count (Parent = Parent Nodes + Subgroup Nodes) for a true high-level overview.
+
+<div align="center">
+  <img src="./public/demo/group_hierarchy.png" alt="Group Hierarchy and Sidebar Editor" width="800px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <p><i>Use the "Move to..." icon in the sidebar to reorganize your phases. Circular dependency protection is built-in.</i></p>
+</div>
+
+---
+
 ## 🚀 Quick Start
 
 ```bash
