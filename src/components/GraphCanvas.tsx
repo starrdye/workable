@@ -1226,8 +1226,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
           __html: [
             ...seqStyles,
             `@keyframes proposedGroupPulse {
-            0%,100% { opacity: 1; }
-            50%     { opacity: 0.55; }
+            0%,100% { opacity: 1;    filter: drop-shadow(0 0 4px rgba(16,185,129,0.45)); }
+            50%     { opacity: 0.88; filter: drop-shadow(0 0 14px rgba(16,185,129,1.0)) drop-shadow(0 0 5px rgba(16,185,129,0.7)); }
           }`,
           ].join("\n")
         }} />
@@ -1531,8 +1531,9 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 <path
                   key={`${pair.sourceId}-${pair.targetId}-suggested`}
                   d={d} fill="none"
-                  stroke="#10B981" strokeWidth={2.5} strokeDasharray="9 5" opacity={0.8}
-                  style={{ filter: "drop-shadow(0 0 5px rgba(16,185,129,0.65))", pointerEvents: "none" }}
+                  stroke="#10B981" strokeWidth={3} strokeDasharray="9 5" opacity={0.92}
+                  className="proposed-arc"
+                  style={{ pointerEvents: "none" }}
                 />
               );
             })}

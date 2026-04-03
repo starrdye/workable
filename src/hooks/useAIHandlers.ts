@@ -449,10 +449,12 @@ export function useAIHandlers(
   const handleAddConnection = async (conn: SuggestedConnection) => {
     if (fullServerState) pushSnapshot(fullServerState);
     const edgeId = `${conn.sourceId}-${conn.targetId}-opt`;
-    // improvement-only edge: hidden in Current Workflow, emerald-highlighted in Optimised Workflow
+    // Applied edge becomes a permanent normal edge — visible in both Current and Optimised views,
+    // with no special colouring. The "proposed" dashed-arc overlay is removed by adding the key
+    // to appliedConnectionKeys; the edge itself is a regular custom edge from this point on.
     const newEdge = {
       id: edgeId, source: conn.sourceId, target: conn.targetId,
-      sequence: 1, weight: 1, isCustom: true, isImprovementOnly: true,
+      sequence: 1, weight: 1, isCustom: true,
     };
     await put({ action: 'addEdge', edge: newEdge });
 

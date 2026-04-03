@@ -105,6 +105,8 @@ export interface GlobalSettings {
    * default Ridgeview nodes with their own custom node set.
    */
   hiddenCoreNodes?: string[];
+  /** Identifier of the loaded template (e.g. 'demo-jack'). Used to gate demo AI responses. */
+  templateId?: string;
 }
 
 export interface ServerGraphState {

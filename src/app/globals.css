@@ -18,6 +18,8 @@ body {
 }
 
 /* ================= ANIMATIONS & EFFECTS ================= */
+
+/* Amber pulse — bottleneck nodes */
 .bottleneck-glow {
   box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2), 0 0 20px rgba(245, 158, 11, 0.4);
   animation: pulse-amber 1.5s infinite;
@@ -26,6 +28,15 @@ body {
   0%   { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2), 0 0 15px rgba(245, 158, 11, 0.3); }
   50%  { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.4), 0 0 25px rgba(245, 158, 11, 0.6); }
   100% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2), 0 0 15px rgba(245, 158, 11, 0.3); }
+}
+
+/* Emerald pulse — proposed AI suggestion arcs (SVG path) */
+.proposed-arc {
+  animation: pulse-emerald-arc 1.5s ease-in-out infinite;
+}
+@keyframes pulse-emerald-arc {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.55)); }
+  50%       { filter: drop-shadow(0 0 14px rgba(16, 185, 129, 1.0)) drop-shadow(0 0 5px rgba(16, 185, 129, 0.8)); }
 }
 
 @keyframes shoot-signal { 
