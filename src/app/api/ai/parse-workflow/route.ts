@@ -234,12 +234,21 @@ function sanitizeGroups(groups: AIGroup[], nodeIds: Set<string>): WorkflowGroup[
     idMap.set(g.id, canonical);
   });
 
-  // Nodes in subgroups should NOT also appear in top-level groups (avoid double rendering).
-  // Collect all nodeIds claimed by subgroups first.
-  const subgroupNodeIds = new Set<string>();
-  rawGroups.forEach(g => {
-    if (g.parentGroupId) g.nodeIds.forEach(id => subgroupNodeIds.add(id));
-  });
+  // Recursively collect all nodeIds for a group (own + all descendants from sanitization tree)
+  const getSubtreeNodeIds = (groupId: string): string[] => {
+    const g = rawGroups.find(x => x.id === groupId);
+    if (!g) return [];
+    
+    // Direct nodes
+    const ids = [...g.nodeIds];
+    // Immediate children nodes (recursive)
+    rawGroups
+      .filter(child => child.parentGroupId === groupId)
+      .forEach(child => {
+        ids.push(...getSubtreeNodeIds(child.id));
+      });
+    return ids;
+  };
 
   const result: WorkflowGroup[] = [];
   rawGroups.forEach((g, i) => {
@@ -247,10 +256,10 @@ function sanitizeGroups(groups: AIGroup[], nodeIds: Set<string>): WorkflowGroup[
     const isSubgroup = !!g.parentGroupId;
     const parentCanonical = g.parentGroupId ? (idMap.get(g.parentGroupId) ?? g.parentGroupId) : undefined;
 
-    // For top-level groups: exclude nodes already owned by a subgroup
-    const ownedIds = isSubgroup
-      ? g.nodeIds.filter(id => nodeIds.has(id))
-      : g.nodeIds.filter(id => nodeIds.has(id) && !subgroupNodeIds.has(id));
+    // A group's effective nodeIds should be all its own nodes PLUS all descendants.
+    // This ensures node counts in the Sidebar are correct.
+    const rawOwnedIds = getSubtreeNodeIds(g.id);
+    const ownedIds = Array.from(new Set(rawOwnedIds)).filter(id => nodeIds.has(id));
 
     if (ownedIds.length === 0 && !isSubgroup) return; // skip empty top-level groups
 

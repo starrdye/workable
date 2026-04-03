@@ -173,7 +173,7 @@ function buildNodes(
     // with amber border + text so the glow reads clearly when showImprovements is on.
     const isUpgr = id === "cy" && showImprovements;
     const border = isUpgr ? "#10B981" : s.border;
-    const text   = isUpgr ? "#10B981" : s.text;
+    const text = isUpgr ? "#10B981" : s.text;
     return {
       id, x: p.x, y: p.y,
       initials: BASE_LABELS[id].initials,
@@ -472,12 +472,14 @@ function buildSvgExport(
 
   // ── Workflow group bounding boxes ────────────────────────────────────────
   const GROUP_PAD = 34;
-  const allNodeIds = (groupId: string): string[] => {
+  const getRecursiveNodes = (groupId: string, visited: Set<string>): string[] => {
+    if (visited.has(groupId)) return [];
+    visited.add(groupId);
     const grp = allGroups.find((g) => g.id === groupId);
     if (!grp) return [];
     return [
       ...grp.nodeIds,
-      ...allGroups.filter((g) => g.parentGroupId === groupId).flatMap((child) => allNodeIds(child.id)),
+      ...allGroups.filter((g) => g.parentGroupId === groupId).flatMap((child) => getRecursiveNodes(child.id, visited)),
     ];
   };
   const bboxOf = (nodeIds: string[]) => {
@@ -494,7 +496,7 @@ function buildSvgExport(
     };
   };
   const renderGroupSvg = (group: { id: string; name: string; color: string; nodeIds: string[]; parentGroupId?: string }, isSubgroup: boolean) => {
-    const ids = isSubgroup ? group.nodeIds : allNodeIds(group.id);
+    const ids = getRecursiveNodes(group.id, new Set());
     const b = bboxOf(ids);
     if (!b) return "";
     const { minX, maxX, minY, maxY, count } = b;
@@ -641,6 +643,39 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     );
     const nodeMap = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
 
+    /** Pre-calculate recursive membership and depth for every group to ensure performance and correct layering. */
+    const groupHierarchy = useMemo(() => {
+      const gList = serverState?.settings?.workflowGroups ?? [];
+      const nodesMap: Record<string, string[]> = {};
+      const depthMap: Record<string, number> = {};
+
+      const compute = (gid: string, visited: Set<string>, depth: number): string[] => {
+        if (visited.has(gid)) return []; // Safety: prevent infinite recursion on cycles
+        visited.add(gid);
+        const g = gList.find(x => x.id === gid);
+        if (!g) return [];
+
+        depthMap[gid] = Math.max(depthMap[gid] ?? 0, depth);
+        const members = [...g.nodeIds];
+        // Find children
+        for (const child of gList) {
+          if (child.parentGroupId === gid) {
+            members.push(...compute(child.id, visited, depth + 1));
+          }
+        }
+        const unique = Array.from(new Set(members));
+        nodesMap[gid] = unique;
+        return unique;
+      };
+
+      // First pass: root groups (distance from root defines rendering depth)
+      gList.filter(g => !g.parentGroupId).forEach(root => compute(root.id, new Set(), 0));
+      // Second pass: catch any orphaned subgroup islands
+      gList.forEach(g => { if (depthMap[g.id] === undefined) compute(g.id, new Set(), 0); });
+
+      return { nodesMap, depthMap };
+    }, [serverState?.settings?.workflowGroups]);
+
     // ── Search + Filter visibility ──────────────────────────────────────────
     /** Set of node IDs that pass current search query. null = no search active. */
     const searchMatchIds = useMemo(() => {
@@ -656,13 +691,12 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     /** Set of node IDs in any of the active filter groups. null = no group filter. */
     const groupFilterNodeIds = useMemo(() => {
       if (!activeFilters.groupIds.length) return null;
-      const groupSet = new Set(activeFilters.groupIds);
       const ids = new Set<string>();
-      (serverState?.settings?.workflowGroups ?? []).forEach((g) => {
-        if (groupSet.has(g.id)) g.nodeIds.forEach((id) => ids.add(id));
+      activeFilters.groupIds.forEach(gid => {
+        (groupHierarchy.nodesMap[gid] ?? []).forEach(nid => ids.add(nid));
       });
       return ids;
-    }, [activeFilters.groupIds, serverState?.settings?.workflowGroups]);
+    }, [activeFilters.groupIds, groupHierarchy]);
 
     /** Compute per-node visibility opacity: 1 = visible, 0.12 = dimmed */
     function nodeOpacity(nodeId: string): number {
@@ -719,13 +753,22 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
       const contentW = maxX - minX;
       const contentH = maxY - minY;
       const scale = Math.min(rect.width / contentW, rect.height / contentH, 1.5);
-      const x = (rect.width  - contentW * scale) / 2 - minX * scale;
+      const x = (rect.width - contentW * scale) / 2 - minX * scale;
       const y = (rect.height - contentH * scale) / 2 - minY * scale;
       const next = { x, y, scale };
       vtRef.current = next;
       setViewTransform(next);
     }, [canvasNodes, serverState]);
 
+    const didInitialFit = useRef(false);
+    // Auto-fit viewport the first time canvasNodes populates so nodes are always
+    // centred and scaled to the actual canvas size regardless of window dimensions.
+    useEffect(() => {
+      if (canvasNodes.length > 0 && !didInitialFit.current) {
+        didInitialFit.current = true;
+        requestAnimationFrame(() => fitAllToView());
+      }
+    }, [canvasNodes.length, fitAllToView]);
     const clientToCanvas = useCallback((clientX: number, clientY: number) => {
       const rect = canvasRef.current!.getBoundingClientRect();
       const vt = vtRef.current;
@@ -834,20 +877,10 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     // ── Task dot popup ────────────────────────────────────────────────────────
     const [taskPopup, setTaskPopup] = useState<{ task: NodeTask; px: number; py: number } | null>(null);
 
-    const didInitialFit = useRef(false);
     useEffect(() => {
       if (!serverState) return;
       setCanvasNodes(buildNodes(serverState.baselinePositions, serverState.customNodes, showImprovements));
     }, [serverState, showImprovements]);
-
-    // Auto-fit viewport the first time canvasNodes populates (covers initial load
-    // and cold-start re-seed so nodes are always centred regardless of canvas size).
-    useEffect(() => {
-      if (canvasNodes.length > 0 && !didInitialFit.current) {
-        didInitialFit.current = true;
-        requestAnimationFrame(() => fitAllToView());
-      }
-    }, [canvasNodes.length, fitAllToView]);
 
     useEffect(() => {
       Promise.all([
@@ -1159,14 +1192,14 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
     });
 
     // ── Level-of-Detail thresholds ────────────────────────────────────────────
-    // LOD 2 (full)     scale ≥ 0.60 : nodes + edges + task dots + labels
-    // LOD 1 (mid)      scale ≥ 0.30 : task dots hidden
-    // LOD 0 (abstract) scale <  0.30 : only workflow group regions visible
-    const LOD_TASKS = 0.60;
-    const LOD_ABSTRACT = 0.30;
+    // LOD 2 (full)     scale ≥ 0.90 : nodes + edges + task dots + labels
+    // LOD 1 (mid)      scale ≥ 0.40 : task dots hidden
+    // LOD 0 (abstract) scale <  0.40 : only workflow group regions visible
+    const LOD_TASKS = 0.90;
+    const LOD_ABSTRACT = 0.40;
     const showTasks = viewTransform.scale >= LOD_TASKS;
     const showNodes = viewTransform.scale >= LOD_ABSTRACT;
-    const showLabels = viewTransform.scale >= 0.50;
+    const showLabels = viewTransform.scale >= 0.90;
 
     // ── Render ────────────────────────────────────────────────────────────────
     return (
@@ -1188,13 +1221,15 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
         {/* Blueprint dot background */}
         <div className="absolute inset-0 pointer-events-none opacity-40"
           style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "30px 30px" }} />
-        <style dangerouslySetInnerHTML={{ __html: [
-          ...seqStyles,
-          `@keyframes proposedGroupPulse {
+        <style dangerouslySetInnerHTML={{
+          __html: [
+            ...seqStyles,
+            `@keyframes proposedGroupPulse {
             0%,100% { opacity: 1; }
             50%     { opacity: 0.55; }
           }`,
-        ].join("\n") }} />
+          ].join("\n")
+        }} />
 
         {/* ── Pan/zoom transform container ── */}
         <div style={{
@@ -1218,17 +1253,7 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               const isLOD = viewTransform.scale < 0.50;
               const isAbstract = !showNodes;
 
-              // Recursively collect all node IDs for a group including its subgroups.
-              const allNodeIds = (groupId: string): string[] => {
-                const grp = allGroups.find(g => g.id === groupId);
-                if (!grp) return [];
-                return [
-                  ...grp.nodeIds,
-                  ...allGroups
-                    .filter(g => g.parentGroupId === groupId)
-                    .flatMap(child => allNodeIds(child.id)),
-                ];
-              };
+
 
               // Bounding box of a set of node IDs (returns null if no positioned members).
               const bbox = (nodeIds: string[]) => {
@@ -1250,8 +1275,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
               const subGroups = allGroups.filter(g => !!g.parentGroupId);
 
               const renderGroup = (group: typeof allGroups[0], isSubgroup: boolean) => {
-                // Parents expand to encompass all descendant nodes.
-                const ids = isSubgroup ? group.nodeIds : allNodeIds(group.id);
+                // Use pre-calculated recursive member list for bounding box calculation
+                const ids = groupHierarchy.nodesMap[group.id] ?? [];
                 const b = bbox(ids);
                 if (!b) return null;
                 const { minX, maxX, minY, maxY, count } = b;
@@ -1273,38 +1298,31 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 const dash = isProposed ? "6 4" : isSubgroup ? undefined : (isAbstract ? undefined : "8 4");
                 const rx = isSubgroup ? 12 : 18;
 
-                // In abstract mode (nodes hidden) the label moves to the bbox
-                // center and scales up so the group is identifiable at a glance.
+                // Center labels for ALL zoom levels (track: 'for all zoom level, make the gourp text appears in the middle')
                 const cx = (minX + maxX) / 2;
                 const cy = (minY + maxY) / 2;
 
-                const labelX = isAbstract
-                  ? cx
-                  : minX + (isSubgroup ? 10 : 14);
-                const labelY = isAbstract
-                  ? cy
-                  : minY + (isLOD
-                    ? (isSubgroup ? 20 : 24)
-                    : (isSubgroup ? 14 : 16));
-                const labelAnchor = isAbstract ? "middle" : "start";
-                const labelBaseline = isAbstract ? "middle" : "auto";
+                const labelX = cx;
+                const labelY = cy;
+
                 const labelSize = isAbstract
                   ? (isSubgroup ? 18 : 30)
-                  : isLOD ? (isSubgroup ? 11 : 14)
-                    : (isSubgroup ? 9 : 11);
+                  : (isSubgroup ? 14 : 18);
 
-                // Label container pill — sized by estimated text width.
-                const labelText = `${group.name}${(isAbstract || isLOD) ? ` · ${count}` : ""}`;
-                const pillPadX = isAbstract ? (isSubgroup ? 14 : 20) : (isSubgroup ? 8 : 10);
-                const pillPadY = isAbstract ? (isSubgroup ? 7 : 10) : (isSubgroup ? 4 : 5);
-                const charW = labelSize * 0.58;
-                const pillW = labelText.length * charW + pillPadX * 2;
-                const pillH = labelSize + pillPadY * 2;
-                const pillX = isAbstract ? cx - pillW / 2 : labelX - pillPadX;
-                const pillY = isAbstract ? cy - pillH / 2 : labelY - labelSize - pillPadY;
-                const pillRx = pillH / 2;
-                const pillFill = isProposed ? "#10B98130" : group.color + (isSubgroup ? "30" : "18");
-                const pillStroke = isProposed ? "#10B981BB" : group.color + (isSubgroup ? "BB" : "77");
+                // Group-level filtering (track: 'grey out the workgroups too')
+                const isFiltered = searchQuery.trim() !== "" || activeFilters.roles.length > 0 || activeFilters.groupIds.length > 0;
+                let groupOpacity = 1.0;
+                if (isFiltered) {
+                  const nameMatch = searchQuery.trim() !== "" && group.name.toLowerCase().includes(searchQuery.toLowerCase());
+                  const groupSelectMatch = activeFilters.groupIds.includes(group.id);
+                  const nodeMatch = ids.some(nid => nodeOpacity(nid) === 1);
+                  if (!nameMatch && !groupSelectMatch && !nodeMatch) {
+                    groupOpacity = 0.15;
+                  }
+                }
+
+                // Always show the full name centered. (Track: 'remove the border, fill for the group name text container')
+                const labelText = group.name;
                 const textColor = isProposed ? "#059669" : group.color;
 
                 return (
@@ -1312,6 +1330,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                     key={group.id}
                     style={{
                       pointerEvents: "none",
+                      opacity: groupOpacity,
+                      transition: "opacity 0.3s",
                       ...(isProposed ? { animation: "proposedGroupPulse 2s ease-in-out infinite" } : {}),
                     }}
                   >
@@ -1322,13 +1342,6 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       fill={fill} stroke={stroke}
                       strokeWidth={strokeW} strokeDasharray={dash}
                     />
-                    {/* Label container pill */}
-                    <rect
-                      x={pillX} y={pillY} width={pillW} height={pillH}
-                      rx={pillRx} ry={pillRx}
-                      fill={pillFill} stroke={pillStroke}
-                      strokeWidth={isAbstract ? (isSubgroup ? 1.5 : 2) : 1}
-                    />
                     <text
                       x={labelX}
                       y={labelY}
@@ -1338,8 +1351,8 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                       stroke={textColor}
                       strokeWidth={isAbstract ? (isSubgroup ? 0.6 : 0.8) : 0}
                       paintOrder="stroke fill"
-                      textAnchor={labelAnchor}
-                      dominantBaseline={labelBaseline}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
                       style={{ userSelect: "none" }}
                       opacity={isSubgroup ? 0.9 : 1}
                     >
@@ -1349,10 +1362,13 @@ export const GraphCanvas = forwardRef<GraphCanvasRef, GraphCanvasProps>(
                 );
               };
 
+              const sortedGroups = [...allGroups].sort((a, b) =>
+                (groupHierarchy.depthMap[a.id] ?? 0) - (groupHierarchy.depthMap[b.id] ?? 0)
+              );
+
               return (
                 <>
-                  {topLevel.map(g => renderGroup(g, false))}
-                  {subGroups.map(g => renderGroup(g, true))}
+                  {sortedGroups.map(g => renderGroup(g, !!g.parentGroupId))}
                 </>
               );
             })()}

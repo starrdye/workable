@@ -41,9 +41,9 @@ export function resolveNodeOverlaps(
   padY = 70
 ): PositionMap {
   const result = { ...positions };
-  const MIN_DIST_X = 75;  // 32px glyph radius + horizontal breathing room
-  const MIN_DIST_Y = 110; // 32px glyph radius + ~50px label + vertical breathing
-  const allIds   = Object.keys(result);
+  const MIN_DIST_X = 120; // 32px glyph radius + ~80px label + horizontal breathing
+  const MIN_DIST_Y = 140; // 32px glyph radius + ~100px multi-line label + vertical breathing
+  const allIds = Object.keys(result);
   for (let pass = 0; pass < 8; pass++) {
     let moved = false;
     for (let i = 0; i < allIds.length; i++) {
@@ -134,9 +134,9 @@ export function groupAwareLayout(
   /** Optional edge list — used to identify the hub (most-connected) node. */
   edges?: LayoutEdge[],
 ): PositionMap {
-  const GC_PAD  = 34;   // must match GraphCanvas PAD constant
-  const GC_SZ   = 56;   // must match GraphCanvas node element size
-  const SEP_GAP = 16;   // minimum pixel gap between non-sharing group boxes
+  const GC_PAD = 34;   // must match GraphCanvas PAD constant
+  const GC_SZ = 56;   // must match GraphCanvas node element size
+  const SEP_GAP = 32;   // minimum pixel gap between non-sharing group boxes
 
   // ── Recursively collect all nodeIds for a group (own + all descendants) ──
   const effNodeIds = (groupId: string): string[] => {
@@ -156,6 +156,18 @@ export function groupAwareLayout(
     .filter((g) => !g.parentGroupId || !groupIdSet.has(g.parentGroupId))
     .map((g)    => ({ g, effIds: effNodeIds(g.id) }))
     .filter(({ effIds }) => effIds.some((id) => positions[id]));
+
+  // ── Identify standalone (lone) nodes not in any group ────────────────────
+  const groupedNodeIds = new Set(topLevel.flatMap(g => g.effIds));
+  const loneNodeIds = Object.keys(positions).filter(id => !groupedNodeIds.has(id));
+  
+  // Add lone nodes as "virtual groups" so they benefit from gravity + collision
+  loneNodeIds.forEach(id => {
+    topLevel.push({
+      g: { id, nodeIds: [id] },
+      effIds: [id]
+    });
+  });
 
   if (topLevel.length < 2) return positions;
 
@@ -183,9 +195,10 @@ export function groupAwareLayout(
   }
 
   // Estimate canvas height so Y clamping keeps nodes on-screen.
+  // Increased from +150 to +350 to allow more room for AABB overlap resolution.
   const canvasH = Math.max(
-    720,
-    Math.max(...Object.values(positions).map((p) => p.y)) + 150,
+    800,
+    Math.max(...Object.values(positions).map((p) => p.y)) + 350,
   );
 
   // ── Working position copy ─────────────────────────────────────────────────
@@ -233,10 +246,10 @@ export function groupAwareLayout(
   // Gravity is kept very light so it cannot overpower the AABB collision push.
   // (Original 0.04 allowed gravity to pull a group back faster than a small
   // collision correction could push it out, causing persistent overlap.)
-  const GRAVITY       = 0.012;  // gentle hub pull — must not defeat collision
-  const TENSION       = 0.08;   // pull sharing groups toward each other (soft)
-  const COOLING_RATE  = 0.982;  // gravity + tension decay rate per iteration
-  const ITERATIONS    = 280;    // max iterations before forced stop
+  const GRAVITY = 0.012;  // gentle hub pull — must not defeat collision
+  const TENSION = 0.08;   // pull sharing groups toward each other (soft)
+  const COOLING_RATE = 0.985;  // slightly slower decay for more resolution time
+  const ITERATIONS = 400;    // more iterations for better settlement of complex graphs
 
   let temperature = 1.0;
 

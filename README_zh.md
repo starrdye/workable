@@ -155,6 +155,16 @@
 
 ---
 
+### 📂 工作流分组层级
+将你的画布组织为多个层级。创建父子分组关系，以管理复杂的流程。侧边栏会自动缩进子分组，并提供递归节点计数（父组 = 父组节点 + 所有子组节点），实现真正的高层级概览。
+
+<div align="center">
+  <img src="./public/demo/group_hierarchy.png" alt="分组层级与侧边栏编辑器" width="800px" style="border-radius: 12px; border: 1px solid #E2E8F0;"/>
+  <p><i>使用侧边栏中的"移动到..."图标重新组织你的各阶段。内置循环依赖保护。</i></p>
+</div>
+
+---
+
 ## 🚀 快速开始
 
 ```bash
