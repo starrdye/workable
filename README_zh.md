@@ -27,8 +27,8 @@
   <br/>
 
   <p>
-    <a href="https://workable-kappa.vercel.app/">
-      <img src="https://img.shields.io/badge/立即体验-在线演示-6366F1?style=for-the-badge&logo=vercel" alt="在线演示"/>
+    <a href="https://workable-demo.tooboss.com/">
+      <img src="https://img.shields.io/badge/立即体验-在线演示-6366F1?style=for-the-badge" alt="在线演示"/>
     </a>
   </p>
 </div>
@@ -39,7 +39,18 @@
 
 大多数工作流工具要求你从零开始拖放搭建。Workable 反其道而行之。
 
-你只需用自然语言描述工作的实际流转方式——谁负责什么、涉及哪些工具、哪里容易卡壳。Workable 的 AI 会将其解析为交互式关系图，将相关步骤归入命名阶段，为每个节点分配任务，并立即标记出瓶颈所在。体验 [在线演示](https://workable-kappa.vercel.app/)，立刻看到效果。
+你只需用自然语言描述工作的实际流转方式——谁负责什么、涉及哪些工具、哪里容易卡壳。Workable 的 AI 会将其解析为交互式关系图，将相关步骤归入命名阶段，为每个节点分配任务，并立即标记出瓶颈所在。体验 [在线演示](https://workable-demo.tooboss.com/)，立刻看到效果。
+
+---
+
+## 📺 视频演示
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=4TtM_sJ6Hyo">
+    <img src="https://img.youtube.com/vi/4TtM_sJ6Hyo/maxresdefault.jpg" alt="Workable 演示视频" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  </a>
+  <p><i>点击上方图片在 YouTube 观看完整演练 (中文)</i></p>
+</div>
 
 ---
 

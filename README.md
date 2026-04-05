@@ -27,8 +27,8 @@
   <br/>
 
   <p>
-    <a href="https://workable-kappa.vercel.app/">
-      <img src="https://img.shields.io/badge/TRY_IT_NOW-LIVE_DEMO-6366F1?style=for-the-badge&logo=vercel" alt="Live Demo"/>
+    <a href="https://workable-demo.tooboss.com/">
+      <img src="https://img.shields.io/badge/TRY_IT_NOW-LIVE_DEMO-6366F1?style=for-the-badge" alt="Live Demo"/>
     </a>
   </p>
 </div>
@@ -39,7 +39,18 @@
 
 Most workflow tools make you drag and drop from scratch. Workable flips that. 
 
-You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. Try the [Live Demo](https://workable-kappa.vercel.app/) to see it in action.
+You write (or paste) a plain-English description of how work actually flows — who does what, which tools are involved, where things get stuck. Workable's AI parses it into an interactive graph, groups related steps into named phases, assigns tasks to each node, and immediately flags the bottlenecks. Try the [Live Demo](https://workable-demo.tooboss.com/) to see it in action.
+
+---
+
+## 📺 Video Demo
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=l7Gm6z4NUcM">
+    <img src="https://img.youtube.com/vi/l7Gm6z4NUcM/maxresdefault.jpg" alt="Workable Demo Video" width="800px" style="border-radius: 8px; border: 1px solid #E2E8F0;"/>
+  </a>
+  <p><i>Click above to watch the full walkthrough on YouTube (English)</i></p>
+</div>
 
 ---
 
