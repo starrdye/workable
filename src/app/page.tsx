@@ -1286,11 +1286,6 @@ export default function Home() {
           </div>
         </div>
       )}
-      {/* ── Demo Mode Badge ── */}
-      <div className="fixed bottom-6 left-6 z-[100] flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm pointer-events-none select-none animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <Zap className="w-3.5 h-3.5 fill-emerald-500" />
-        <span className="text-[11px] font-bold uppercase tracking-widest">Demo Environment</span>
-      </div>
     </div>
   );
 }
