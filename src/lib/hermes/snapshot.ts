@@ -3,6 +3,7 @@
  */
 
 import fs from 'fs';
+import { USE_HERMES_EDIT } from '@/lib/featureFlags';
 import type { HermesSnapshot, HermesTaskDetail } from './types';
 import { boardDbPath, readBoards, readCurrentBoardSlug, readProfiles, readProjects, resolveHermesHome } from './roster';
 import { readBoard, readTaskHistory } from './kanban';
@@ -62,6 +63,7 @@ export function readSnapshot(opts: SnapshotOptions = {}): HermesSnapshot {
     bottleneck: detectBottleneck(metrics, profiles),
     generatedAt: now,
     sample,
+    editable: USE_HERMES_EDIT && !sample,
     warnings,
   };
 }

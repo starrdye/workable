@@ -67,6 +67,11 @@ export default function Home() {
   /** Incremented on every undo/redo so AIAnalysisModal can reset its local applied state */
   const [undoResetKey, setUndoResetKey] = useState(0);
 
+  // ?open=canvas skips the start screen — the link the MCP push_to_canvas tool returns.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("open") === "canvas") setIsAppStarted(true);
+  }, []);
+
   // ── Composed hooks ─────────────────────────────────────────────────────────
   const { fullServerState, setFullServerState } = useGraphState();
 

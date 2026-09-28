@@ -5,8 +5,8 @@
  * metrics from the board, its cards, and the bottleneck call-out.
  */
 
-import { AlertTriangle, CheckCircle2, History } from "lucide-react";
-import type { HermesSnapshot } from "@/lib/hermes/types";
+import { AlertTriangle, CheckCircle2, History, Pencil } from "lucide-react";
+import type { HermesProfile, HermesSnapshot } from "@/lib/hermes/types";
 import { HUMAN_ID, formatDuration } from "@/lib/hermes/metrics";
 import { DOT_COLORS } from "./TeamCanvas";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -15,6 +15,8 @@ interface Props {
   snapshot: HermesSnapshot;
   selectedId: string | null;
   onOpenReplay: (taskId: string) => void;
+  /** Present when editing is on. */
+  onEdit?: (profile: HermesProfile) => void;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "bad" | "warn" }) {
@@ -27,7 +29,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "ba
   );
 }
 
-export function HermesSidePanel({ snapshot, selectedId, onOpenReplay }: Props) {
+export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: Props) {
   const { t } = useLanguage();
   const id = selectedId ?? snapshot.bottleneck?.profileId ?? snapshot.profiles.find(p => p.isDefault)?.id ?? null;
   const bottleneck = snapshot.bottleneck;
@@ -52,6 +54,12 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <Header eyebrow={profile.isDefault ? t("hermes.orchestrator") : t("hermes.side.worker")} title={profile.name} sub={profile.description} />
+      {onEdit && (
+        <button type="button" onClick={() => onEdit(profile)}
+          className="inline-flex w-fit items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1 text-[12.5px] text-slate-700 hover:bg-gray-50">
+          <Pencil className="h-3.5 w-3.5" />{t("hermes.edit.editButton")}
+        </button>
+      )}
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
         <dt className="text-slate-500">{t("hermes.side.model")}</dt><dd className="font-mono text-xs text-slate-700 break-all">{profile.model ?? "—"}</dd>

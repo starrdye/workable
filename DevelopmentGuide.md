@@ -511,6 +511,39 @@ src/hooks/useHermesSnapshot.ts    polls every 2.5s while the tab is visible
 
 **Safety.** Nothing under `src/lib/hermes` writes to disk. `hermes.test.ts` builds a fake HERMES_HOME in a temp dir and checks that the board DB's hash is unchanged after reads.
 
+### Phase 3: editing (WORKABLE_HERMES_EDIT)
+
+```
+src/lib/hermes/edit/
+  plan.ts    planAddAgent / planEditAgent / planAddProject → EditPlan (changes to diff + steps); never writes
+  apply.ts   applyPlan: stale check (sha256 guards) → backup → steps in order, stop on first failure
+  soul.ts    worker SOUL.md from an existing worker (rules block copied verbatim); team-table row
+  diff.ts    line diff + context collapsing for the preview
+src/app/api/hermes/plan    POST { op, input } → EditPlanView
+src/app/api/hermes/apply   POST { planId } → EditApplyResult (each plan runs once; 30-min expiry)
+src/components/hermes/EditDialog.tsx   form → review → apply
+```
+
+- **Everything goes through the hermes CLI** (`profile install` from a staged distribution folder, `profile describe`, `config set`, `kanban boards create`, `project create`). The only direct writes are the staging folder under the OS temp dir and the orchestrator's `SOUL.md` team table; `applyPlan` refuses any write outside HERMES_HOME or staging.
+- **Plans live on `globalThis`** so the separately bundled `/plan` and `/apply` routes share them.
+- **Secrets are never copied.** New profiles reuse the template worker's `api_key: ${VAR}` reference; the preview tells the user which variable to set.
+
+### Phase 4: MCP server
+
+```
+mcp/server.ts            stdio transport; sampling or WORKABLE_AI_* direct provider
+src/lib/mcp/tools.ts     generateWorkflow / analyzeBottlenecks / patchWorkflow / pushToCanvas
+src/lib/mcp/graphStore.ts  graphs by id (g_xxxxxxxxxx) under ~/.workable/graphs
+src/lib/workflowGraph.ts   portable graph ↔ ServerGraphState, applyUpdate (patch), canvas import body
+src/lib/parseWorkflow.ts   prompt + parsing moved out of /api/ai/parse-workflow, shared with MCP
+```
+
+- **Model calls.** `setGenerateTextOverride` in `aiClient.ts` routes every `generateText` call — including the agent layer's — through MCP `sampling/createMessage`, so the calling Hermes pays with its own model. Set `WORKABLE_AI_PROVIDER` / `WORKABLE_AI_MODEL` / `WORKABLE_AI_KEY` to call a provider directly instead; `WORKABLE_AI_REASONING_EFFORT=none` switches off Doubao thinking via `setDoubaoExtraBody`.
+- **Run it from anywhere with `--tsconfig`.** tsx resolves `@/` paths from the tsconfig it finds in the working directory; MCP clients start servers elsewhere.
+- **Stdout is the protocol.** `console.log` is redirected to stderr at startup.
+- **Hermes settings that matter:** `mcp_servers.workable.timeout: 600` (analysis runs one call per node), `sampling.max_tokens_cap: 8000`, and `auxiliary.mcp.reasoning_effort: none` for reasoning models.
+- **`?open=canvas`** opens the main page straight on the canvas; `push_to_canvas` returns that link.
+
 ---
 
 ## Feature Status

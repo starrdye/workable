@@ -136,6 +136,8 @@ export interface HermesSnapshot {
   generatedAt: number;
   /** True when the payload is illustrative sample data, not the live board. */
   sample: boolean;
+  /** True when WORKABLE_HERMES_EDIT is on, so the view offers edit controls. */
+  editable: boolean;
   warnings: string[];
 }
 
@@ -143,4 +145,22 @@ export interface HermesTaskDetail {
   task: HermesTask;
   events: HermesEvent[];
   runs: HermesRun[];
+}
+
+/** What the browser sees of an edit plan (no staging paths or file hashes). */
+export interface EditPlanView {
+  id: string;
+  op: 'add-agent' | 'edit-agent' | 'add-project';
+  title: string;
+  home: string;
+  changes: Array<{ path: string; label: string; before: string; after: string }>;
+  steps: Array<{ label: string; command: string }>;
+  warnings: string[];
+}
+
+export interface EditApplyResult {
+  ok: boolean;
+  steps: Array<{ label: string; ok: boolean; output: string }>;
+  backupDir: string | null;
+  error?: string;
 }

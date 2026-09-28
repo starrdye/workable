@@ -153,6 +153,31 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
 
 // ── Unified generation ─────────────────────────────────────────────────────
 
+/**
+ * Process-wide override for generateText. The MCP server sets this so every
+ * model call (including the agent layer's) goes through MCP sampling — i.e.
+ * the calling Hermes install's own model and key. Null in the web app.
+ */
+export type GenerateTextOverride = (options: {
+  systemPrompt: string;
+  userMessage: string;
+  maxTokens: number;
+  model: string;
+}) => Promise<GenerateResult>;
+
+let generateTextOverride: GenerateTextOverride | null = null;
+
+/** Extra fields merged into every Doubao (Ark) request body, e.g. { reasoning_effort: 'none' } to switch thinking off. */
+let doubaoExtraBody: Record<string, unknown> = {};
+
+export function setDoubaoExtraBody(extra: Record<string, unknown>): void {
+  doubaoExtraBody = { ...extra };
+}
+
+export function setGenerateTextOverride(fn: GenerateTextOverride | null): void {
+  generateTextOverride = fn;
+}
+
 export async function generateText(options: {
   provider: AIProvider;
   model: string;
@@ -163,6 +188,8 @@ export async function generateText(options: {
   baseUrl?: string;
 }): Promise<GenerateResult> {
   const { provider, model, apiKey, systemPrompt, userMessage, maxTokens = 2048, baseUrl } = options;
+
+  if (generateTextOverride) return generateTextOverride({ systemPrompt, userMessage, maxTokens, model });
 
   // ── Anthropic ─────────────────────────────────────────────────────────────
   if (provider === 'anthropic') {
@@ -212,6 +239,7 @@ export async function generateText(options: {
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
+          ...doubaoExtraBody,
           model,
           max_tokens: maxTokens,
           messages: [

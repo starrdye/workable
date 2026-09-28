@@ -7,13 +7,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Info, RefreshCw } from "lucide-react";
+import { ArrowLeft, Info, Plus, RefreshCw } from "lucide-react";
 import { useHermesSnapshot } from "@/hooks/useHermesSnapshot";
 import { HUMAN_ID } from "@/lib/hermes/metrics";
 import type { HermesEvent, HermesSnapshot } from "@/lib/hermes/types";
 import { TeamCanvas, DOT_COLORS, type HermesMode, type ReplayFocus } from "./TeamCanvas";
 import { HermesSidePanel } from "./HermesSidePanel";
 import { ReplayPanel } from "./ReplayPanel";
+import { EditDialog, type EditRequest } from "./EditDialog";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -31,6 +32,7 @@ export function HermesView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [replayTask, setReplayTask] = useState<string | null>(null);
   const [replayFocus, setReplayFocus] = useState<ReplayFocus | null>(null);
+  const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
   const { snapshot, error, loading, lastFetched, refresh } = useHermesSnapshot(board, sample);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -83,6 +85,12 @@ export function HermesView() {
               </button>
             ))}
           </div>
+          {snapshot.editable && (
+            <button type="button" onClick={() => setEditRequest({ op: "add-agent" })}
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[13px] font-medium text-indigo-700 hover:bg-indigo-100">
+              <Plus className="h-3.5 w-3.5" />{t("hermes.edit.addAgent")}
+            </button>
+          )}
           {snapshot.boards.length > 1 && (
             <select aria-label={t("hermes.board")} value={snapshot.board?.slug ?? ""} onChange={e => setBoard(e.target.value)}
               className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-slate-700">
@@ -128,8 +136,11 @@ export function HermesView() {
               )}
             </div>
             <aside className="border-t border-gray-200 p-4 lg:border-l lg:border-t-0" aria-live="polite">
-              {mode === "projects" ? <ProjectsPanel snapshot={snapshot} /> : (
-                <HermesSidePanel snapshot={snapshot} selectedId={selectedId} onOpenReplay={openReplay} />
+              {mode === "projects" ? (
+                <ProjectsPanel snapshot={snapshot} onAddProject={snapshot.editable ? () => setEditRequest({ op: "add-project" }) : undefined} />
+              ) : (
+                <HermesSidePanel snapshot={snapshot} selectedId={selectedId} onOpenReplay={openReplay}
+                  onEdit={snapshot.editable ? profile => setEditRequest({ op: "edit-agent", profile }) : undefined} />
               )}
             </aside>
           </div>
@@ -152,8 +163,13 @@ export function HermesView() {
           )}
         </div>
 
-        <p className="text-[12px] text-slate-400">{t("hermes.footer").replace("{home}", snapshot.home)}</p>
+        <p className="text-[12px] text-slate-400">
+          {(snapshot.editable ? t("hermes.footer.editable") : t("hermes.footer")).replace("{home}", snapshot.home)}
+        </p>
       </div>
+      {editRequest && (
+        <EditDialog request={editRequest} snapshot={snapshot} onClose={() => setEditRequest(null)} onApplied={refresh} />
+      )}
     </Shell>
   );
 }
@@ -206,7 +222,7 @@ function EventTicker({ snapshot, onOpenReplay }: { snapshot: HermesSnapshot; onO
   );
 }
 
-function ProjectsPanel({ snapshot }: { snapshot: HermesSnapshot }) {
+function ProjectsPanel({ snapshot, onAddProject }: { snapshot: HermesSnapshot; onAddProject?: () => void }) {
   const { t } = useLanguage();
   const boardOf = (slug: string | null) => snapshot.boards.find(b => b.slug === slug);
   return (
@@ -238,6 +254,12 @@ function ProjectsPanel({ snapshot }: { snapshot: HermesSnapshot }) {
           ))}
         </ul>
       </div>
+      {onAddProject && (
+        <button type="button" onClick={onAddProject}
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[13px] font-medium text-indigo-700 hover:bg-indigo-100">
+          <Plus className="h-3.5 w-3.5" />{t("hermes.edit.addProject")}
+        </button>
+      )}
       <p className="rounded-lg border border-slate-200 px-2.5 py-2 text-[12px] leading-relaxed text-slate-500">{t("hermes.projects.note")}</p>
     </div>
   );

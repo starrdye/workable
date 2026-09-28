@@ -182,7 +182,16 @@ If you run a local [Hermes](https://hermes-agent.nousresearch.com) agent team, W
 - **Projects**: boards and projects, and a reminder of where memory is and isn't separated.
 - **Replay**: step through one card's history and see how long each profile held it.
 
-The view is read-only: it opens the kanban database in read-only mode and never writes to `~/.hermes`. Turn it on with `NEXT_PUBLIC_WORKABLE_HERMES=true` in `.env.local` (set `HERMES_HOME` if your install isn't at `~/.hermes`), then use the **Hermes** button in the header.
+By default the view is read-only: it opens the kanban database in read-only mode and never writes to `~/.hermes`. Turn it on with `NEXT_PUBLIC_WORKABLE_HERMES=true` in `.env.local` (set `HERMES_HOME` if your install isn't at `~/.hermes`), then use the **Hermes** button in the header.
+
+**Editing (optional).** With `WORKABLE_HERMES_EDIT=true`, you can add an agent, edit a profile's description or model, or create a project with its own board. Every change is shown first as a diff plus the exact `hermes` commands it will run; nothing is written until you press Apply, and every file it touches is backed up under `$HERMES_HOME/backups/workable/`. New workers copy the rules block from an existing worker word for word and never get desktop control. Try it on a separate test install (`HERMES_HOME=~/.hermes-test`) first.
+
+**MCP server.** `npm run mcp` starts a stdio MCP server so an agent system can use Workable without the UI: `generate_workflow`, `analyze_bottlenecks`, `patch_workflow` and `push_to_canvas`. By default it asks the calling client to run each prompt (MCP sampling), so Workable needs no API key of its own. To register it with Hermes:
+
+```bash
+hermes mcp add workable --command node --env WORKABLE_URL=http://localhost:3000 \
+  --args <repo>/node_modules/tsx/dist/cli.mjs --tsconfig <repo>/tsconfig.json <repo>/mcp/server.ts
+```
 
 ---
 

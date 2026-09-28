@@ -25,3 +25,10 @@ export const USE_VIEWPORT_CULLING = process.env.WORKABLE_USE_VIEWPORT === 'true'
  * NEXT_PUBLIC_ so the toolbar link can check it in the browser too.
  */
 export const USE_HERMES = process.env.NEXT_PUBLIC_WORKABLE_HERMES === 'true';
+
+/**
+ * Hermes plugin, phase 3: allow the /hermes view to change the Hermes install
+ * (add agents, edit profiles, add projects) after the user approves a diff.
+ * Server-only on purpose; off unless set.
+ */
+export const USE_HERMES_EDIT = process.env.WORKABLE_HERMES_EDIT === 'true';
