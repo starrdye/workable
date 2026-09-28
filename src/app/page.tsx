@@ -11,8 +11,10 @@ import { KeyboardHelpModal } from "@/components/KeyboardHelpModal";
 import {
   Zap, Download, FileText, Upload, Settings, Sparkles, ChevronLeft,
   LayoutGrid, Search, X, ChevronDown, ChevronRight, Plus, Trash2, Pencil, GitMerge,
-  Undo2, Redo2, BookOpen, Keyboard, Clock, PanelLeft,
+  Undo2, Redo2, BookOpen, Keyboard, Clock, PanelLeft, Bot,
 } from "lucide-react";
+import Link from "next/link";
+import { USE_HERMES } from "@/lib/featureFlags";
 import { PROVIDERS } from "@/lib/aiClient";
 
 // ── Custom hooks (Track 8b) ────────────────────────────────────────────────────
@@ -550,6 +552,15 @@ export default function Home() {
             <Settings className="w-4 h-4" />
             {activeApiKey && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white" />}
           </button>
+
+          {/* Hermes plugin: live map of the local agent team */}
+          {USE_HERMES && (
+            <Link href="/hermes" title={t('toolbar.hermes.title')}
+              className="text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5">
+              <Bot className="w-4 h-4 shrink-0" />
+              {t('toolbar.hermes')}
+            </Link>
+          )}
 
           {/* AI Engine toggle (vb0.2) */}
           <AIEngineToggle compact />

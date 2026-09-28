@@ -19,3 +19,9 @@ export const USE_GROUP_AGENTS = process.env.WORKABLE_USE_GROUP_AGENTS === 'true'
 
 /** Phase 5: Enable viewport-based culling and LOD rendering. */
 export const USE_VIEWPORT_CULLING = process.env.WORKABLE_USE_VIEWPORT === 'true';
+
+/**
+ * Hermes plugin: read-only map of a local Hermes agent team at /hermes.
+ * NEXT_PUBLIC_ so the toolbar link can check it in the browser too.
+ */
+export const USE_HERMES = process.env.NEXT_PUBLIC_WORKABLE_HERMES === 'true';

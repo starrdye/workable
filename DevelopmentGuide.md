@@ -486,6 +486,33 @@ At each depth level, affected agents receive the trigger context and decide inde
 
 ---
 
+## Hermes Plugin (feat/hermes-plugin)
+
+A read-only map of a local Hermes agent team at `/hermes`, gated by `NEXT_PUBLIC_WORKABLE_HERMES=true` (`USE_HERMES` in `featureFlags.ts`). `HERMES_HOME` overrides the default `~/.hermes`.
+
+```
+src/lib/hermes/
+  types.ts      JSON shapes shared by the API and the view
+  roster.ts     HERMES_HOME, profiles (profile.yaml + config.yaml), boards, projects.db
+  kanban.ts     board DB reads (tasks, task_events, task_runs), opened { readonly: true }
+  metrics.ts    pure: status mapping, edges, per-profile metrics, bottleneck, timeByHolder
+  sample.ts     labelled example cards built on the real roster, for empty boards
+  snapshot.ts   one call that assembles a HermesSnapshot
+  layout.ts     fixed hub-and-spoke layout (you + orchestrator on top, workers below)
+src/app/api/hermes/snapshot       GET ?board=&sample=1
+src/app/api/hermes/task/[id]      GET one card's events and runs (Replay)
+src/components/hermes/            HermesView, TeamCanvas, HermesSidePanel, ReplayPanel
+src/hooks/useHermesSnapshot.ts    polls every 2.5s while the tab is visible
+```
+
+**Mapping.** The default profile is the orchestrator and gets a roster edge to every other profile; board actors that aren't profiles (CLI, chat) map to the `__you` node. Hermes's nine statuses fold into Workable's five task dots (`triage/todo/ready/scheduled → todo`, `running → in-progress`). Events become hand-offs: `created` (creator → assignee), `review_requested` (implementer → reviewer), `changes_requested`, `completed` (worker → creator); everything else is shown on the node it happened on.
+
+**Metrics.** Seven-day window. Review wait is measured from `review_requested` to the next review-exit event; success rate counts `completed` and `review_requested` run outcomes. `loadScore` weights blocked cards and stale reviews highest, and anything at or above 0.3 can be called out as the bottleneck.
+
+**Safety.** Nothing under `src/lib/hermes` writes to disk. `hermes.test.ts` builds a fake HERMES_HOME in a temp dir and checks that the board DB's hash is unchanged after reads.
+
+---
+
 ## Feature Status
 
 | Feature | Status | Branch |

@@ -174,6 +174,16 @@ Organize your canvas into levels. Create parent-subgroup relationships to manage
   <p><i>Use the "Move to..." icon in the sidebar to reorganize your phases. Circular dependency protection is built-in.</i></p>
 </div>
 
+### 🛰️ Hermes Team Map (experimental)
+If you run a local [Hermes](https://hermes-agent.nousresearch.com) agent team, Workable can draw it at `/hermes`: profiles become nodes, delegation becomes edges, and kanban cards become live task dots. Four views of the same graph:
+
+- **Team**: who does what, with each profile's model and whether it runs unattended.
+- **Live**: task dots, pulses along edges as cards are handed off, and an amber glow on the current bottleneck, computed from real run history (blocked cards, stale reviews, failure rate).
+- **Projects**: boards and projects, and a reminder of where memory is and isn't separated.
+- **Replay**: step through one card's history and see how long each profile held it.
+
+The view is read-only: it opens the kanban database in read-only mode and never writes to `~/.hermes`. Turn it on with `NEXT_PUBLIC_WORKABLE_HERMES=true` in `.env.local` (set `HERMES_HOME` if your install isn't at `~/.hermes`), then use the **Hermes** button in the header.
+
 ---
 
 ## 🚀 Quick Start

@@ -61,3 +61,19 @@ body {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* ================= HERMES VIEW ================= */
+
+/* Amber pulse around the bottleneck node (SVG rect stroke) */
+.hermes-glow {
+  stroke: rgba(245, 158, 11, 0.35);
+  stroke-width: 10;
+  animation: hermes-glow 1.6s ease-in-out infinite;
+}
+@keyframes hermes-glow {
+  50% { stroke-width: 16; stroke: rgba(245, 158, 11, 0.2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hermes-glow { animation: none; }
+  .hermes-anim { display: none; }
+}
