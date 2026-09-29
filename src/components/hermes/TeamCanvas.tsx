@@ -7,7 +7,7 @@
 
 import { useMemo } from "react";
 import type { DotStatus, HermesSnapshot, HermesTask, ProfileMetrics } from "@/lib/hermes/types";
-import { HUMAN_ID } from "@/lib/hermes/metrics";
+import { HUMAN_ID, formatDuration } from "@/lib/hermes/metrics";
 import { NODE_H, NODE_W, edgePath, findEdgeFor, layoutTeam } from "@/lib/hermes/layout";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -62,6 +62,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
   const layout = useMemo(() => layoutTeam(snapshot.profiles), [snapshot.profiles]);
   const profileIds = useMemo(() => new Set(snapshot.profiles.map(p => p.id)), [snapshot.profiles]);
   const metricsById = useMemo(() => new Map(snapshot.metrics.map(m => [m.profileId, m])), [snapshot.metrics]);
+  const activityById = useMemo(() => new Map((snapshot.activity ?? []).map(a => [a.profileId, a])), [snapshot.activity]);
   const tasksByNode = useMemo(() => {
     const map = new Map<string, HermesTask[]>();
     for (const task of snapshot.tasks) {
@@ -148,7 +149,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         return (
           <g key={e.id} opacity={dim ? 0.3 : 1}>
             <path id={`hp-${e.id}`} d={d} fill="none" stroke={hot ? "#4F46E5" : "#94A3B8"} strokeWidth={hot ? 2.4 : 1.6}
-              strokeDasharray={e.kind === "observed" ? "4 4" : undefined}
+              strokeDasharray={e.kind === "observed" ? "4 4" : e.kind === "chat" ? "1.5 4" : undefined}
               markerEnd={`url(#${hot ? "h-arr-a" : "h-arr"})`} />
             <path id={`hpr-${e.id}`} d={edgePath(b, a)} fill="none" stroke="none" />
             {mode === "team" && e.source !== HUMAN_ID && (() => {
@@ -193,19 +194,26 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         const blocked = tasks.filter(x => x.dot === "blocked").length;
         const running = tasks.filter(x => x.dot === "in-progress").length;
         const review = tasks.filter(x => x.dot === "review").length;
+        const act = activityById.get(box.id);
+        const chattedAgo = act?.lastActiveAt ? snapshot.generatedAt - act.lastActiveAt : null;
         let status = "";
-        if (blocked) status = `${blocked} ${t("hermes.status.blocked")}`;
+        if (act?.working) status = `${t("hermes.status.replying")}${act.step ? ` · ${act.step}` : ""}`;
+        else if (blocked) status = `${blocked} ${t("hermes.status.blocked")}`;
         else if (review && profile?.isDefault) status = `${review} ${t("hermes.status.inReview")}`;
         else if (running) status = `${running} ${t("hermes.status.running")}`;
         else if (tasks.length) status = `${tasks.length} ${t("hermes.status.cards")}`;
+        else if (chattedAgo != null && chattedAgo < 3600) status = t("hermes.status.chatted").replace("{t}", formatDuration(chattedAgo));
         else status = t("hermes.status.idle");
-        const statusColor = blocked ? "#EF4444" : review && profile?.isDefault && m && m.load >= 0.3 ? "#D97706" : "#64748B";
+        const statusColor = act?.working ? "#4F46E5" : blocked ? "#EF4444" : review && profile?.isDefault && m && m.load >= 0.3 ? "#D97706" : "#64748B";
 
         return (
           <g key={box.id} role="button" tabIndex={0} aria-label={name} aria-pressed={selected}
             className="cursor-pointer outline-none" opacity={involved(box.id) ? 1 : 0.35}
             onClick={() => onSelect(box.id)}
             onKeyDown={ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onSelect(box.id); } }}>
+            {(mode === "live" || mode === "team") && act?.working && (
+              <rect x={box.x} y={box.y} width={NODE_W} height={NODE_H} rx={12} fill="none" className="hermes-working" />
+            )}
             {bottleneckId === box.id && (
               <rect x={box.x} y={box.y} width={NODE_W} height={NODE_H} rx={12} fill="none" className="hermes-glow" />
             )}
@@ -218,6 +226,9 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
             <text x={box.x + 50} y={box.y + 27} fontSize={13.5} fontWeight={600} fill="#1E293B">{truncate(name, 19)}</text>
             <text x={box.x + 50} y={box.y + 43} fontSize={10.5} fill="#64748B" fontFamily="ui-monospace, monospace">{truncate(sub, 22)}</text>
 
+            {mode === "team" && act?.working && (
+              <text x={box.x + NODE_W - 14} y={box.y + 20} textAnchor="end" fontSize={10} fill="#4F46E5" fontFamily="ui-monospace, monospace">{t("hermes.status.replying")}</text>
+            )}
             {(mode === "live" || mode === "replay") && !isHuman && (
               <g>
                 {visibleDots.map((task, i) => (

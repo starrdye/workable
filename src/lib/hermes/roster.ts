@@ -10,12 +10,48 @@ import os from 'os';
 import path from 'path';
 import { parse as parseYaml } from 'yaml';
 import Database from 'better-sqlite3';
-import type { HermesBoard, HermesProfile, HermesProject } from './types';
+import type { HermesBoard, HermesHomeOption, HermesProfile, HermesProject } from './types';
 
 export function resolveHermesHome(): string {
   const fromEnv = process.env.HERMES_HOME?.trim();
   if (fromEnv) return fromEnv.startsWith('~') ? path.join(os.homedir(), fromEnv.slice(1)) : fromEnv;
   return path.join(os.homedir(), '.hermes');
+}
+
+function expandHome(p: string): string {
+  const t = p.trim();
+  return t.startsWith('~') ? path.join(os.homedir(), t.slice(1)) : t;
+}
+
+/**
+ * Installs the view can switch between. HERMES_HOME (the primary, and the only
+ * one edits may change) comes first; WORKABLE_HERMES_HOMES adds more, as
+ * "label=path" or plain paths, comma-separated.
+ */
+export function resolveHermesHomes(): HermesHomeOption[] {
+  const out: HermesHomeOption[] = [];
+  const add = (label: string, p: string) => {
+    const abs = path.resolve(expandHome(p));
+    if (!abs) return;
+    const existing = out.find(h => h.path === abs);
+    if (existing) { // a label in WORKABLE_HERMES_HOMES renames an install already listed
+      existing.label = label;
+      existing.id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || existing.id;
+      return;
+    }
+    let id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'hermes';
+    while (out.some(h => h.id === id)) id += '-2';
+    out.push({ id, label, path: abs });
+  };
+  const nameOf = (p: string) => path.basename(expandHome(p)).replace(/^\./, '') || 'hermes';
+  const primary = resolveHermesHome();
+  add(nameOf(primary), primary);
+  for (const entry of (process.env.WORKABLE_HERMES_HOMES ?? '').split(',').map(e => e.trim()).filter(Boolean)) {
+    const eq = entry.indexOf('=');
+    if (eq > 0) add(entry.slice(0, eq).trim(), entry.slice(eq + 1));
+    else add(nameOf(entry), entry);
+  }
+  return out;
 }
 
 function readYaml(file: string): Record<string, unknown> {

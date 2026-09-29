@@ -29,8 +29,8 @@ export interface HermesEdge {
   id: string;
   source: string;
   target: string;
-  /** 'roster' = implied by the team structure; 'observed' = seen on the board. */
-  kind: 'roster' | 'observed';
+  /** 'roster' = implied by the team structure; 'observed' = seen on the board; 'chat' = you chat with it directly. */
+  kind: 'roster' | 'observed' | 'chat';
   /** Number of cards that flowed source → target (observed edges only). */
   count: number;
 }
@@ -121,8 +121,44 @@ export interface HermesProject {
   boardSlug: string | null;
 }
 
+/** One direct chat with a profile (terminal, desktop app, messaging), from its session store. */
+export interface ChatSession {
+  id: string;
+  /** Where the chat happened: cli, desktop, oneshot, telegram, … */
+  source: string;
+  title: string;
+  lastAt: number;
+  messages: number;
+  /** True while the profile is still producing its reply. */
+  working: boolean;
+  /** What it's doing right now, e.g. "thinking" or "used terminal". */
+  step: string | null;
+}
+
+export interface ProfileActivity {
+  profileId: string;
+  working: boolean;
+  step: string | null;
+  current: ChatSession | null;
+  lastActiveAt: number | null;
+  chats24h: number;
+  recent: ChatSession[];
+}
+
+/** A Hermes install Workable can show (from WORKABLE_HERMES_HOMES). */
+export interface HermesHomeOption {
+  id: string;
+  label: string;
+  path: string;
+}
+
 export interface HermesSnapshot {
   home: string;
+  /** Id of the install shown, and the installs the viewer can switch between. */
+  homeId: string;
+  homes: HermesHomeOption[];
+  /** Live chat activity per profile. */
+  activity: ProfileActivity[];
   board: HermesBoard | null;
   boards: HermesBoard[];
   projects: HermesProject[];

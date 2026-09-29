@@ -31,7 +31,7 @@ export function ReplayPanel({ snapshot, taskId, onTaskChange, onFocus }: Props) 
   const cardOptions = useMemo(() => {
     const seen = new Map<string, string>();
     for (const task of snapshot.tasks) seen.set(task.id, task.title);
-    for (const e of snapshot.events) if (!seen.has(e.taskId)) seen.set(e.taskId, e.taskTitle);
+    for (const e of snapshot.events) if (!e.kind.startsWith('chat_') && !seen.has(e.taskId)) seen.set(e.taskId, e.taskTitle);
     return [...seen.entries()];
   }, [snapshot.tasks, snapshot.events]);
 
@@ -47,7 +47,9 @@ export function ReplayPanel({ snapshot, taskId, onTaskChange, onFocus }: Props) 
       if (task) setDetail({ task, events: snapshot.events.filter(e => e.taskId === taskId).sort((a, b) => a.id - b.id), runs: [] });
       return;
     }
-    const qs = snapshot.board ? `?board=${encodeURIComponent(snapshot.board.slug)}` : "";
+    const q = new URLSearchParams({ home: snapshot.homeId });
+    if (snapshot.board) q.set("board", snapshot.board.slug);
+    const qs = `?${q}`;
     fetch(`/api/hermes/task/${encodeURIComponent(taskId)}${qs}`, { cache: "no-store" })
       .then(async res => {
         const body = await res.json();

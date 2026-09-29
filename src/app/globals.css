@@ -77,3 +77,16 @@ body {
   .hermes-glow { animation: none; }
   .hermes-anim { display: none; }
 }
+
+/* Indigo ring around a profile that is replying right now */
+.hermes-working {
+  stroke: rgba(79, 70, 229, 0.35);
+  stroke-width: 6;
+  animation: hermes-working 1.2s ease-in-out infinite;
+}
+@keyframes hermes-working {
+  50% { stroke-width: 12; stroke: rgba(79, 70, 229, 0.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hermes-working { animation: none; }
+}

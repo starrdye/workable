@@ -143,7 +143,7 @@ describe('readSnapshot (live board)', () => {
     expect(byKind('created')).toMatchObject({ from: 'default', to: 'researcher', at: null });
     expect(byKind('claimed')).toMatchObject({ from: null, to: null, at: 'researcher' });
     expect(byKind('review_requested')).toMatchObject({ from: 'researcher', to: 'default', summary: 'Brief ready' });
-    expect(s.events[0].id).toBeGreaterThan(s.events[s.events.length - 1].id); // newest first
+    expect(s.events.map(e => e.createdAt)).toEqual([...s.events.map(e => e.createdAt)].sort((a, b) => b - a)); // newest first
   });
 
   it('builds roster edges plus observed flows from outside the team', () => {

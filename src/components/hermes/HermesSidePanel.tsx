@@ -50,6 +50,7 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
   const m = snapshot.metrics.find(x => x.profileId === profile.id);
   const cards = snapshot.tasks.filter(task => task.assignee === profile.id);
   const isBottleneck = bottleneck?.profileId === profile.id;
+  const act = snapshot.activity?.find(a => a.profileId === profile.id);
 
   return (
     <div className="flex flex-col gap-4">
@@ -95,6 +96,24 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
           {m.lastError && (
             <p className="rounded-lg bg-red-50 px-2.5 py-2 font-mono text-[11.5px] leading-snug text-red-700 break-words">{m.lastError.split("\n")[0]}</p>
           )}
+        </section>
+      )}
+
+      {act && act.recent.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{t("hermes.side.chats")} · {act.chats24h}</div>
+          <ul className="flex flex-col gap-1.5">
+            {act.recent.map(c => (
+              <li key={c.id} className={`rounded-lg px-2 py-1.5 text-[12.5px] ${c.working ? "bg-indigo-50 ring-1 ring-indigo-200" : "bg-slate-50"}`}>
+                <div className="text-slate-700">{c.title}</div>
+                <div className="flex gap-2 font-mono text-[10.5px] text-slate-400">
+                  <span>{c.source}</span>
+                  <span>{c.working ? `${t("hermes.status.replying")}${c.step ? ` · ${c.step}` : ""}` : `${formatDuration(snapshot.generatedAt - c.lastAt)} ${t("hermes.side.ago")}`}</span>
+                  <span>{c.messages} {t("hermes.side.msgs")}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

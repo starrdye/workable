@@ -16,7 +16,7 @@ export interface HermesSnapshotState {
   refresh: () => void;
 }
 
-export function useHermesSnapshot(board: string | null, sample: boolean, paused = false): HermesSnapshotState {
+export function useHermesSnapshot(board: string | null, sample: boolean, paused = false, home: string | null = null): HermesSnapshotState {
   const [snapshot, setSnapshot] = useState<HermesSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,6 +28,7 @@ export function useHermesSnapshot(board: string | null, sample: boolean, paused 
     inFlight.current = true;
     try {
       const qs = new URLSearchParams();
+      if (home) qs.set('home', home);
       if (board) qs.set('board', board);
       if (sample) qs.set('sample', '1');
       const res = await fetch(`/api/hermes/snapshot?${qs}`, { cache: 'no-store' });
@@ -42,7 +43,7 @@ export function useHermesSnapshot(board: string | null, sample: boolean, paused 
       inFlight.current = false;
       setLoading(false);
     }
-  }, [board, sample]);
+  }, [board, sample, home]);
 
   useEffect(() => {
     fetchOnce();

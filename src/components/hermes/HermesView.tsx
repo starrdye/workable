@@ -29,12 +29,13 @@ export function HermesView() {
   const { t } = useLanguage();
   const [mode, setMode] = useState<HermesMode>("live");
   const [board, setBoard] = useState<string | null>(null);
+  const [homeId, setHomeId] = useState<string | null>(null);
   const [sample, setSample] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [replayTask, setReplayTask] = useState<string | null>(null);
   const [replayFocus, setReplayFocus] = useState<ReplayFocus | null>(null);
   const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
-  const { snapshot, error, loading, lastFetched, refresh } = useHermesSnapshot(board, sample);
+  const { snapshot, error, loading, lastFetched, refresh } = useHermesSnapshot(board, sample, false, homeId);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Re-render every second so "updated Ns ago" stays honest.
@@ -94,6 +95,13 @@ export function HermesView() {
               className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[13px] font-medium text-indigo-700 hover:bg-indigo-100">
               <Plus className="h-3.5 w-3.5" />{t("hermes.edit.addAgent")}
             </button>
+          )}
+          {snapshot.homes.length > 1 && (
+            <select aria-label={t("hermes.install")} value={snapshot.homeId}
+              onChange={e => { setHomeId(e.target.value); setBoard(null); setSelectedId(null); setReplayTask(null); }}
+              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-slate-700" title={snapshot.home}>
+              {snapshot.homes.map(h => <option key={h.id} value={h.id}>{h.label}</option>)}
+            </select>
           )}
           {snapshot.boards.length > 1 && (
             <select aria-label={t("hermes.board")} value={snapshot.board?.slug ?? ""} onChange={e => setBoard(e.target.value)}
@@ -217,8 +225,10 @@ function EventTicker({ snapshot, onOpenReplay }: { snapshot: HermesSnapshot; onO
         <li key={e.id} className="truncate">
           <span className="text-slate-400">{clock(e.createdAt)}</span>{" "}
           <b className="font-medium text-slate-700">{line(e)}</b>{" "}
-          {e.kind}{" "}
-          <button type="button" onClick={() => onOpenReplay(e.taskId)} className="text-indigo-600 hover:underline">{e.taskId}</button>
+          {e.kind === "chat_message" ? t("hermes.ticker.asked") : e.kind === "chat_reply" ? t("hermes.ticker.replied") : e.kind}{" "}
+          {e.kind.startsWith("chat_") ? null : (
+            <button type="button" onClick={() => onOpenReplay(e.taskId)} className="text-indigo-600 hover:underline">{e.taskId}</button>
+          )}
           {` "${e.taskTitle}"`}{e.summary ? ` · ${e.summary}` : ""}
         </li>
       ))}

@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!USE_HERMES) return NextResponse.json({ error: 'Hermes plugin is off.' }, { status: 404 });
   const { id } = await params;
   try {
-    const detail = readTaskDetail(id, { board: req.nextUrl.searchParams.get('board') });
+    const detail = readTaskDetail(id, { board: req.nextUrl.searchParams.get('board'), homeId: req.nextUrl.searchParams.get('home') });
     if (!detail) return NextResponse.json({ error: `Card ${id} not found on this board.` }, { status: 404 });
     return NextResponse.json(detail, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {

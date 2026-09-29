@@ -3,6 +3,7 @@
  *
  * Query: ?board=<slug>  pick a board (defaults to Hermes's current board)
  *        ?sample=1      fill an empty board with labelled example cards
+ *        ?home=<id>     which install (from WORKABLE_HERMES_HOMES; default HERMES_HOME)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
   const params = req.nextUrl.searchParams;
   try {
-    const snapshot = readSnapshot({ board: params.get('board'), sampleIfEmpty: params.get('sample') === '1' });
+    const snapshot = readSnapshot({ board: params.get('board'), homeId: params.get('home'), sampleIfEmpty: params.get('sample') === '1' });
     return NextResponse.json(snapshot, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     const status = err instanceof HermesNotFoundError ? 404 : 500;

@@ -182,6 +182,8 @@ If you run a local [Hermes](https://hermes-agent.nousresearch.com) agent team, W
 - **Projects**: boards and projects, and a reminder of where memory is and isn't separated.
 - **Replay**: step through one card's history and see how long each profile held it.
 
+**Live chats.** Besides the kanban board, the map reads each profile's session store (read-only: titles, times and tool names, never message text). A profile you're chatting with shows **replying · thinking / used terminal** while it works, your messages and its replies pulse along the edge, and the side panel lists its recent chats. Add more installs with `WORKABLE_HERMES_HOMES=test=~/.hermes-test,personal=~/.hermes` to switch between them in the toolbar; edits only ever apply to `HERMES_HOME`.
+
 By default the view is read-only: it opens the kanban database in read-only mode and never writes to `~/.hermes`. Turn it on with `NEXT_PUBLIC_WORKABLE_HERMES=true` in `.env.local` (set `HERMES_HOME` if your install isn't at `~/.hermes`), then use the **Hermes** button in the header.
 
 **Editing (optional).** With `WORKABLE_HERMES_EDIT=true`, you can add an agent, edit a profile's description or model, or create a project with its own board. Every change is shown first as a diff plus the exact `hermes` commands it will run; nothing is written until you press Apply, and every file it touches is backed up under `$HERMES_HOME/backups/workable/`. New workers copy the rules block from an existing worker word for word and never get desktop control. Try it on a separate test install (`HERMES_HOME=~/.hermes-test`) first.
