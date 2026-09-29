@@ -46,6 +46,11 @@ describe('embed proxy', () => {
     }
   });
 
+  it('lets the frame fetch page payloads for client navigation', () => {
+    const res = proxy(req('/hermes?_rsc=abc', { origin: 'null' }));
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
   it('answers preflights and serves fonts to the frame', () => {
     expect(proxy(req('/api/graph-state', { method: 'OPTIONS', origin: 'null' })).status).toBe(204);
     expect(proxy(req('/_next/static/media/x.woff2', { origin: 'null' })).headers.get('access-control-allow-origin')).toBe('*');

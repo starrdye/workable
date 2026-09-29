@@ -86,7 +86,7 @@ const graphInput = {
 
 server.registerTool('generate_workflow', {
   title: 'Generate workflow',
-  description: 'Map a process described in plain English into a workflow graph (people, tools, hand-offs, phases). Returns a graphId for the other tools and a compact summary.',
+  description: 'Map a process described in plain English into a workflow graph (people, tools, hand-offs, phases). Returns a graphId for the other tools, a compact summary, and chatCard: put chatCard on its own line in your reply so the user sees the graph inline.',
   inputSchema: { description: z.string().min(3).describe('The process to map, in plain English.') },
 }, wrap(input => generateWorkflow(ctx, input)));
 
@@ -98,7 +98,7 @@ server.registerTool('analyze_bottlenecks', {
 
 server.registerTool('patch_workflow', {
   title: 'Patch workflow',
-  description: 'Apply a plain-English change to a workflow graph (add, remove or rename steps, reassign tasks). Returns a new graphId; the original is kept.',
+  description: 'Apply a plain-English change to a workflow graph (add, remove or rename steps, reassign tasks). Returns a new graphId (the original is kept) and chatCard to show the updated graph inline.',
   inputSchema: { ...graphInput, change: z.string().min(3).describe('The change to make, in plain English.') },
 }, wrap(input => patchWorkflow(ctx, input)));
 

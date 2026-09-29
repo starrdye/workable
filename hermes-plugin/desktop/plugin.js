@@ -2,7 +2,9 @@
  * Workable window for the Hermes desktop app.
  *
  * Shows Workable (http://localhost:3000) in a pane beside the chat, plus a full
- * page in the sidebar. Workable runs in the SDK's sandboxed frame; the embed
+ * page in the sidebar. When the agent writes ::workable-graph{id="g_…"} on its
+ * own line (the MCP tools hand it that line as chatCard), the message shows a
+ * live card of that workflow. Workable runs in the SDK's sandboxed frame; the embed
  * token lets it call its own API from there (see src/proxy.ts in the workable
  * repo — WORKABLE_EMBED_TOKEN in .env.local must match EMBED_TOKEN below).
  * Editing Hermes stays in the browser: the frame is read-only for that.
@@ -19,7 +21,8 @@ import {
   ROUTES_AREA,
   SandboxedFrame,
   SegmentedControl,
-  SIDEBAR_NAV_AREA
+  SIDEBAR_NAV_AREA,
+  TRANSCRIPT_DIRECTIVE_AREA
 } from '@hermes/plugin-sdk'
 import { useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
@@ -36,6 +39,46 @@ const PATHS = { team: '/hermes', canvas: '/?open=canvas' }
 function frameUrl(view) {
   const path = PATHS[view]
   return WORKABLE_URL + path + (path.includes('?') ? '&' : '?') + 'embed=' + encodeURIComponent(EMBED_TOKEN)
+}
+
+const GRAPH_ID = /^g_[a-z0-9]{10}$/
+
+/** Inline card for ::workable-graph{id="g_…"}. Attributes are untrusted model output. */
+function WorkflowChatCard({ attrs, streaming }) {
+  const id = typeof attrs.id === 'string' ? attrs.id : ''
+  if (!GRAPH_ID.test(id)) return null
+  if (streaming) {
+    return jsx('div', {
+      className: 'my-1 rounded-md border border-(--ui-border) px-3 py-2 text-xs text-(--ui-text-tertiary)',
+      children: 'Workable workflow…'
+    })
+  }
+  return jsxs('div', {
+    className: 'my-1 overflow-hidden rounded-md border border-(--ui-border)',
+    style: { maxWidth: '680px' },
+    children: [
+      jsx(SandboxedFrame, {
+        src: WORKABLE_URL + '/embed/graph/' + id + '?embed=' + encodeURIComponent(EMBED_TOKEN),
+        title: 'Workable workflow ' + id,
+        sandbox: 'allow-scripts',
+        className: 'block w-full border-0',
+        style: { height: '380px' }
+      }),
+      jsxs('div', {
+        className: 'flex items-center gap-2 border-t border-(--ui-border) px-2 py-1 text-[0.6875rem] text-(--ui-text-tertiary)',
+        children: [
+          jsx('span', { className: 'font-mono', children: id }),
+          jsx('div', { className: 'flex-1' }),
+          jsx(Button, {
+            variant: 'ghost',
+            size: 'xs',
+            onClick: () => host.navigate('/workable'),
+            children: 'Open Workable'
+          })
+        ]
+      })
+    ]
+  })
 }
 
 function WorkableWindow({ os }) {
@@ -108,6 +151,11 @@ export default {
         id: 'nav',
         area: SIDEBAR_NAV_AREA,
         data: { path: '/workable', label: 'Workable', codicon: 'type-hierarchy' }
+      },
+      {
+        id: 'graph-card',
+        area: TRANSCRIPT_DIRECTIVE_AREA,
+        data: { name: 'workable-graph', render: props => jsx(WorkflowChatCard, props) }
       },
       {
         id: 'open',

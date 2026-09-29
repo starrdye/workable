@@ -72,6 +72,7 @@ describe('MCP tools', () => {
   it('generate_workflow parses, lays out and stores the graph', async () => {
     const out = await generateWorkflow(ctx, { description: 'Analyst onboarding' });
     expect(out.nodeCount).toBe(3);
+    expect(out.chatCard).toBe(`::workable-graph{id="${out.graphId}"}`);
     expect(out.workflow.nodes.map(n => n.name)).toEqual(['HR', 'IT', 'New Analyst']);
     expect(out.workflow.edges[0]).toMatchObject({ from: 'HR', to: 'IT', name: 'Start date' });
     const g = ctx.store.get(out.graphId)!;

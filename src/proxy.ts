@@ -2,9 +2,9 @@
  * proxy.ts (Next 16 request middleware) — CORS for the Hermes desktop window.
  *
  * Requests from Workable's own pages are same-origin and pass straight
- * through. Requests with `Origin: null` come from a sandboxed frame; they are
- * allowed only with the embed token (WORKABLE_EMBED_TOKEN) and never for the
- * routes that change the Hermes install. Without this check, any website could
+ * through. Requests with `Origin: null` come from a sandboxed frame: pages and
+ * fonts get CORS headers, while /api calls need the embed token
+ * (WORKABLE_EMBED_TOKEN) and never reach the routes that change Hermes. Without this check, any website could
  * embed a sandboxed frame and read the local API.
  */
 
@@ -24,8 +24,9 @@ export function proxy(req: NextRequest) {
 
   if (req.method === 'OPTIONS') return new NextResponse(null, { status: 204, headers: CORS });
 
-  // Fonts are public build assets; the frame fetches them in CORS mode.
-  if (req.nextUrl.pathname.startsWith('/_next/static/media/') || req.nextUrl.pathname.startsWith('/__nextjs_font/')) {
+  // Pages, their RSC payloads (client navigation) and fonts carry no private
+  // data — that only comes from /api — so the frame may fetch them in CORS mode.
+  if (!req.nextUrl.pathname.startsWith('/api/')) {
     const res = NextResponse.next();
     res.headers.set('Access-Control-Allow-Origin', '*');
     return res;
@@ -44,4 +45,5 @@ export function proxy(req: NextRequest) {
   return res;
 }
 
-export const config = { matcher: ['/api/:path*', '/_next/static/media/:path*', '/__nextjs_font/:path*'] };
+// Everything except JS/CSS chunks (loaded as plain <script>/<link>, no CORS needed).
+export const config = { matcher: ['/((?!_next/static/chunks|_next/static/css).*)'] };

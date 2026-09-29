@@ -26,6 +26,13 @@ export interface ToolContext {
 
 export class ToolInputError extends Error {}
 
+/** Directive the Hermes desktop app renders as a live workflow card in chat. */
+export function chatCard(graphId: string): string {
+  return `::workable-graph{id="${graphId}"}`;
+}
+
+const CHAT_CARD_HINT = 'To show this workflow in the Hermes app, put chatCard on a line of its own in your reply.';
+
 /** Resolve a tool's graph input: a stored graphId, or an inline graph (which is then stored). */
 export function resolveGraph(ctx: ToolContext, input: { graphId?: string; graph?: unknown }): { id: string; graph: WorkflowGraph } {
   if (input.graphId) {
@@ -58,7 +65,10 @@ export async function generateWorkflow(ctx: ToolContext, input: { description: s
     settings: parsed.settings,
   };
   const graphId = ctx.store.put(graph);
-  return { graphId, nodeCount: parsed.nodeCount, edgeCount: parsed.edgeCount, warnings: parsed.warnings, workflow: summarizeGraph(graph) };
+  return {
+    graphId, nodeCount: parsed.nodeCount, edgeCount: parsed.edgeCount, warnings: parsed.warnings,
+    chatCard: chatCard(graphId), chatCardHint: CHAT_CARD_HINT, workflow: summarizeGraph(graph),
+  };
 }
 
 export async function analyzeBottlenecks(ctx: ToolContext, input: { graphId?: string; graph?: unknown }) {
@@ -92,6 +102,8 @@ export async function patchWorkflow(ctx: ToolContext, input: { graphId?: string;
   return {
     graphId,
     previousGraphId: id,
+    chatCard: chatCard(graphId),
+    chatCardHint: CHAT_CARD_HINT,
     summary: update.summary,
     changes: {
       addedNodes: update.add.nodes.map(n => n.name),
