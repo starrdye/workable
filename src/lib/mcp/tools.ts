@@ -80,10 +80,12 @@ export async function analyzeBottlenecks(ctx: ToolContext, input: { graphId?: st
     throw new Error(`All ${failed} node agents failed. Check the model connection (MCP sampling or WORKABLE_AI_* settings).`);
   }
   const optimize = orchestratorResultToOptimizeResponse(result);
+  const nameOf = (id: string) => graph.customNodes.find(n => n.id === id)?.label ?? id;
   return {
     graphId: id,
     bottlenecks: result.bottlenecks.map(b => ({ nodeId: b.nodeId, node: b.nodeName, reason: b.reason })),
-    suggestedConnections: result.proposedEdges.map(e => ({ from: e.source, to: e.target, reason: e.reason })),
+    // from/to are node ids that exist in the graph (the orchestrator drops made-up ones); names are for reading.
+    suggestedConnections: result.proposedEdges.map(e => ({ from: e.source, to: e.target, fromName: nameOf(e.source), toName: nameOf(e.target), reason: e.reason })),
     orphanWarnings: result.orphanWarnings.map(o => ({ node: o.nodeName, reason: o.reason })),
     conflicts: result.conflicts,
     agentsRun: result.responses.length,

@@ -414,3 +414,37 @@ describe('buildGroupIdLookup', () => {
     expect(buildGroupIdLookup([])).toEqual({});
   });
 });
+
+// ── Orchestrator: suggested connections point at real nodes ─────────────────
+// Regression: analyze_bottlenecks returned targets like "Human Resources" (a name),
+// "it-department" (made up) and an edge that already existed.
+
+import { AgentOrchestrator } from '../lib/agents/orchestrator';
+import type { AgentAction, AgentResponse, OrchestratorResult } from '../lib/agents/types';
+
+describe('AgentOrchestrator suggested connections', () => {
+  const state = createTestState();
+  const orc = new AgentOrchestrator(state, { provider: 'openai', apiKey: 'x', model: 'x' } as never);
+  const merge = (actions: Array<Partial<AgentAction>>): OrchestratorResult => {
+    const resp: AgentResponse = { nodeId: 'custom-1', nodeName: 'Bot Alpha', analysis: '', messagesOut: [], suggestedActions: actions as AgentAction[] };
+    return (orc as unknown as { mergeResponses: (r: AgentResponse[], ms: number) => OrchestratorResult }).mergeResponses([resp], 0);
+  };
+
+  it('resolves ids, names and slugs to real node ids', () => {
+    expect(orc.resolveNodeId('custom-2')).toBe('custom-2');
+    expect(orc.resolveNodeId('Finance Team')).toBe('custom-2');
+    expect(orc.resolveNodeId('finance-team')).toBe('custom-2');
+    expect(orc.resolveNodeId('it-department')).toBeNull();
+  });
+
+  it('keeps only new edges to nodes that exist', () => {
+    const r = merge([
+      { type: 'add_edge', targetNodeId: 'Finance Team', reason: 'by name' },
+      { type: 'add_edge', targetNodeId: 'finance_team', reason: 'duplicate proposal' },
+      { type: 'add_edge', targetNodeId: 'it-department', reason: 'made up' },
+      { type: 'add_edge', targetNodeId: 'xy', reason: 'already connected' },
+      { type: 'add_edge', targetNodeId: 'Bot Alpha', reason: 'self loop' },
+    ]);
+    expect(r.proposedEdges).toEqual([{ source: 'custom-1', target: 'custom-2', reason: 'by name' }]);
+  });
+});

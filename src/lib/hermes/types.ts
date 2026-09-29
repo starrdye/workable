@@ -50,6 +50,8 @@ export interface HermesTask {
   lastFailureError: string | null;
   tenant: string | null;
   projectId: string | null;
+  /** What the worker sent back: the card's result, else its latest run summary (first 300 chars). */
+  reply?: string | null;
 }
 
 export interface HermesEvent {

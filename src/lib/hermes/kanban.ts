@@ -14,6 +14,7 @@ interface TaskRow {
   id: string; title: string; assignee: string | null; created_by: string | null; status: string;
   priority: number | null; created_at: number; started_at: number | null; completed_at: number | null;
   consecutive_failures: number | null; last_failure_error: string | null; tenant: string | null; project_id: string | null;
+  result?: string | null; last_summary?: string | null;
 }
 
 interface EventRow {
@@ -42,6 +43,7 @@ function mapTask(r: TaskRow): HermesTask {
     lastFailureError: r.last_failure_error ? r.last_failure_error.slice(0, 300) : null,
     tenant: r.tenant || null,
     projectId: r.project_id || null,
+    reply: (r.result?.trim() || r.last_summary?.trim() || null)?.slice(0, 300) ?? null,
   };
 }
 
@@ -92,6 +94,17 @@ export function mapEvent(r: EventRow): HermesEvent {
   };
 }
 
+/** The reply columns, guarded so boards from older Hermes versions (no result column) still read. */
+function replyColumns(db: Database.Database): string {
+  const has = (table: string, col: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(c => c.name === col);
+  const result = has('tasks', 'result') ? 'tasks.result' : 'NULL';
+  const summary = has('task_runs', 'summary')
+    ? '(SELECT r.summary FROM task_runs r WHERE r.task_id = tasks.id ORDER BY r.id DESC LIMIT 1)'
+    : 'NULL';
+  return `${result} AS result, ${summary} AS last_summary`;
+}
+
 const EVENT_SELECT = `
   SELECT e.id, e.task_id, e.kind, e.payload, e.created_at,
          t.title, t.assignee, t.created_by, r.profile AS run_profile
@@ -120,7 +133,7 @@ export function readBoard(dbPath: string, opts: ReadBoardOptions): BoardData {
   try {
     const tasks = (db.prepare(`
       SELECT id, title, assignee, created_by, status, priority, created_at, started_at, completed_at,
-             consecutive_failures, last_failure_error, tenant, project_id
+             consecutive_failures, last_failure_error, tenant, project_id, ${replyColumns(db)}
       FROM tasks
       WHERE status != 'archived' AND (status != 'done' OR completed_at >= ?)
       ORDER BY priority DESC, created_at DESC`).all(opts.since) as TaskRow[]).map(mapTask);
@@ -156,7 +169,7 @@ export function readTaskHistory(dbPath: string, taskId: string): { task: HermesT
   try {
     const row = db.prepare(`
       SELECT id, title, assignee, created_by, status, priority, created_at, started_at, completed_at,
-             consecutive_failures, last_failure_error, tenant, project_id
+             consecutive_failures, last_failure_error, tenant, project_id, ${replyColumns(db)}
       FROM tasks WHERE id = ?`).get(taskId) as TaskRow | undefined;
     if (!row) return null;
     const events = (db.prepare(`${EVENT_SELECT} WHERE e.task_id = ? ORDER BY e.id ASC`).all(taskId) as EventRow[]).map(mapEvent);

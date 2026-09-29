@@ -9,10 +9,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronRight, Info, Plus, RefreshCw } from "lucide-react";
 import { useHermesSnapshot } from "@/hooks/useHermesSnapshot";
-import { HUMAN_ID } from "@/lib/hermes/metrics";
-import type { HermesEvent, HermesSnapshot } from "@/lib/hermes/types";
+import type { HermesSnapshot } from "@/lib/hermes/types";
 import { TeamCanvas, type HermesMode, type ReplayFocus } from "./TeamCanvas";
 import { TeamRoster } from "./TeamRoster";
+import { RequestsTable } from "./RequestsTable";
 import { type HermesMode as ThemeMode } from "@/lib/hermes/theme";
 import { useEmbedded, useHermesTheme } from "@/lib/hermes/useHermesTheme";
 import type { CSSProperties } from "react";
@@ -23,10 +23,6 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 const MODES: HermesMode[] = ["team", "live", "projects", "replay"];
-
-function clock(sec: number): string {
-  return new Date(sec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
 
 export function HermesView() {
   const { t } = useLanguage();
@@ -162,13 +158,20 @@ export function HermesView() {
 
         <div className="overflow-hidden rounded-xl border border-(--h-border) bg-(--h-surface)">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div ref={mapRef} className="hermes-dots overflow-x-auto bg-(--h-bg)">
-              {!snapshot.profiles.length ? (
-                <p className="p-8 text-sm text-(--h-muted)">{t("hermes.noProfiles").replace("{home}", snapshot.home)}</p>
-              ) : narrow && (mode === "team" || mode === "live") ? (
-                <TeamRoster snapshot={snapshot} selectedId={selectedId} onSelect={setSelectedId} />
-              ) : (
-                <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={setSelectedId} replayFocus={replayFocus} />
+            <div className="min-w-0">
+              <div ref={mapRef} className="hermes-dots overflow-x-auto bg-(--h-bg)">
+                {!snapshot.profiles.length ? (
+                  <p className="p-8 text-sm text-(--h-muted)">{t("hermes.noProfiles").replace("{home}", snapshot.home)}</p>
+                ) : narrow && (mode === "team" || mode === "live") ? (
+                  <TeamRoster snapshot={snapshot} selectedId={selectedId} onSelect={setSelectedId} />
+                ) : (
+                  <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={setSelectedId} replayFocus={replayFocus} />
+                )}
+              </div>
+              {mode === "live" && (
+                <div className="border-t border-(--h-border)">
+                  <RequestsTable snapshot={snapshot} onOpenCard={openReplay} onSelect={setSelectedId} />
+                </div>
               )}
             </div>
             <aside className="border-t border-(--h-border) p-4 lg:border-l lg:border-t-0" aria-live="polite">
@@ -181,18 +184,6 @@ export function HermesView() {
             </aside>
           </div>
 
-          {mode === "live" && (
-            <>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-(--h-border) px-4 py-2 text-[12px] text-(--h-muted)">
-                {([["working", "hermes.legend.working"], ["ok", "hermes.legend.replied"], ["bad", "hermes.legend.failed"], ["warn", "hermes.legend.attention"]] as const).map(([tone, key]) => (
-                  <span key={tone} className="inline-flex items-center gap-1.5">
-                    <i className="inline-block h-2 w-2 rounded-full" style={{ background: `var(--h-${tone === "working" ? "accent" : tone})` }} />{t(key)}
-                  </span>
-                ))}
-              </div>
-              <EventTicker snapshot={snapshot} onOpenReplay={openReplay} />
-            </>
-          )}
           {mode === "replay" && (
             <ReplayPanel snapshot={snapshot} taskId={replayTask} onTaskChange={setReplayTask} onFocus={handleFocus} />
           )}
@@ -237,35 +228,6 @@ function Shell({ children, toolbar, theme, embedded }: {
       )}
       <main>{children}</main>
     </div>
-  );
-}
-
-function EventTicker({ snapshot, onOpenReplay }: { snapshot: HermesSnapshot; onOpenReplay: (id: string) => void }) {
-  const { t } = useLanguage();
-  const name = (id: string | null) => {
-    if (!id) return "—";
-    if (id === HUMAN_ID || !snapshot.profiles.some(p => p.id === id)) return t("hermes.you");
-    return id.replace(/^personal-/, "");
-  };
-  const line = (e: HermesEvent) => e.from && e.to ? `${name(e.from)} → ${name(e.to)}` : name(e.at);
-  if (!snapshot.events.length) {
-    return <p className="border-t border-(--h-border) px-4 py-2.5 font-mono text-[12px] text-(--h-faint)">{t("hermes.ticker.empty")}</p>;
-  }
-  return (
-    <ol className="max-h-36 overflow-auto border-t border-(--h-border) px-4 py-2 font-mono text-[12px] leading-[1.8] text-(--h-muted)" aria-label={t("hermes.ticker.aria")}>
-      {snapshot.events.slice(0, 30).map(e => (
-        <li key={e.id} className="truncate">
-          <span className="text-(--h-faint)">{clock(e.createdAt)}</span>{" "}
-          <b className="font-medium text-(--h-text-2)">{line(e)}</b>{" "}
-          {e.kind === "chat_message" ? t("hermes.ticker.asked") : e.kind === "chat_reply" ? t("hermes.ticker.replied")
-            : e.kind === "chat_failed" ? <span className="text-(--h-bad)">{t("hermes.ticker.failed")}</span> : e.kind}{" "}
-          {e.kind.startsWith("chat_") ? null : (
-            <button type="button" onClick={() => onOpenReplay(e.taskId)} className="text-(--h-accent) hover:underline">{e.taskId}</button>
-          )}
-          {` "${e.taskTitle}"`}{e.summary ? ` · ${e.summary}` : ""}
-        </li>
-      ))}
-    </ol>
   );
 }
 

@@ -4,6 +4,7 @@
  * same code runs on live data, sample data and in tests.
  */
 
+import { humanError } from './errors';
 import type {
   Bottleneck, DotStatus, HermesEdge, HermesEvent, HermesProfile, HermesRun, HermesTask, ProfileMetrics,
 } from './types';
@@ -160,7 +161,7 @@ export function detectBottleneck(metrics: ProfileMetrics[], profiles: HermesProf
   if (top.blocked > 0) {
     return {
       profileId: top.profileId,
-      reason: `${name} has ${top.blocked} blocked card${top.blocked > 1 ? 's' : ''}${top.lastError ? `: ${top.lastError.split('\n')[0].slice(0, 120)}` : ''}.`,
+      reason: `${name} has ${top.blocked} blocked card${top.blocked > 1 ? 's' : ''}${top.lastError ? `: ${humanError(top.lastError)?.slice(0, 120)}` : ''}.`,
       suggestion: 'Check the error, then fix the cause (add backoff, split the card, or change the model) and unblock it.',
     };
   }

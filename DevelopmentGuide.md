@@ -525,11 +525,13 @@ src/lib/hermes/
   sample.ts     labelled example cards built on the real roster, for empty boards
   snapshot.ts   one call that assembles a HermesSnapshot (board + chats + metrics)
   watch.ts      fs.watch on session/board folders → debounced change callbacks
-  layout.ts     fixed hub-and-spoke layout (you + orchestrator on top, workers below)
+  layout.ts     fixed hub-and-spoke layout (you + orchestrator on top, workers below) and org-chart connectors
+  status.ts     pure: one status per agent + the Requests rows (who asked whom, did they reply)
+  errors.ts     Hermes run errors in plain words ("elapsed 50s > limit 45s" → "Timed out after 50s (limit 45s)")
 src/app/api/hermes/snapshot       GET ?home=&board=&sample=1
 src/app/api/hermes/stream         GET  Server-Sent Events: full snapshot on connect + on every Hermes write
 src/app/api/hermes/task/[id]      GET one card's events and runs (Replay)
-src/components/hermes/            HermesView, TeamCanvas, HermesSidePanel, ReplayPanel, EditDialog
+src/components/hermes/            HermesView, TeamCanvas, TeamRoster, RequestsTable, HermesSidePanel, ReplayPanel, EditDialog
 src/hooks/useHermesSnapshot.ts    EventSource on /stream; polling fallback; refetch on focus/online
 ```
 
@@ -543,15 +545,19 @@ src/hooks/useHermesSnapshot.ts    EventSource on /stream; polling fallback; refe
 |---|---|
 | user / tool / assistant with `finish_reason = tool_calls` | **replying** · thinking / calling a tool / used *tool* |
 | assistant, `finish_reason = stop` | **replied** |
-| assistant with `display_kind = failed_turn` or `finish_reason = error` | **reply failed** (red border) |
+| assistant with `display_kind = failed_turn` or `finish_reason = error` | **reply failed** |
 | assistant, `finish_reason = length` | **reply cut off** |
 | still "replying" after 10 min of silence | **no reply** |
 
-A working agent (replying, or running a kanban card) gets a 3px indigo border and a pulsing ring in every view. Your messages and its replies become `chat_message` / `chat_reply` / `chat_failed` events that pulse along a dotted You → profile edge and show in the ticker.
+A worker running a kanban card is also a session (`source = kanban`). It still drives the live "Working · thinking" state, but it is left out of the chat list, the You → profile edge and the Requests table, where the card row already stands for it.
+
+**Status (one per agent).** `status.ts` picks, in order: **Working** (mid-turn, or a running card) → **Waiting** (own cards queued) → the latest request **Failed** / **Blocked** → **Waiting on N** (cards it handed out that are still queued, running or in review — blocked cards have failed and are not counted) → **Review** → **Replied** → **Idle**. "Latest request" is the newer of the agent's latest card and its latest chat with you, so an old failure stops showing once a newer request succeeds. A card blocked after failed runs is "Failed"; one blocked by hand is "Blocked".
+
+**Requests table.** Under the map in Live mode (and under the roster in the desktop pane): one row per kanban card (creator → assignee) or chat (you → agent) from the last 24 h, newest first, each with a status block. Finished cards show what came back — the card's `result`, else its latest run summary — or "Finished without a reply"; failed ones show the plain-English error. The header counts every request in the window, not only the 20 rows shown. Clicking a card row opens Replay.
 
 **Live updates.** `/api/hermes/stream` sends a full snapshot as soon as the client connects, so every relaunch or reconnect starts from fresh data. `watch.ts` watches the install's folders (WAL writes land in `*-wal` files), debounces 120 ms, and the stream sends a new snapshot when anything changed, plus a forced one every 15 s so time-based states stay right. The hook falls back to 5 s polling while the stream is down and refetches on tab focus and network recovery.
 
-**Look and feel.** The Hermes view and the chat card paint with `--h-*` tokens scoped to `.hermes-root` (`globals.css`, light and `data-mode="dark"`). Inside the Hermes desktop app the plugin passes Hermes's live theme in the frame URL (`?mode=&bg=&surface=&sunk=&fg=&muted=&border=`); `src/lib/hermes/theme.ts` accepts only plain colour syntax and maps them onto the surface/text/border tokens, while semantic colours stay fixed: indigo = working, red = failed/blocked, amber = needs attention, green = replied. `src/lib/hermes/status.ts` computes one status per agent (tone, icon, label) shared by the map (`TeamCanvas`) and the stacked roster (`TeamRoster`), which replaces the map when it is narrower than 620px. Embedded, the page drops its own header and keeps only the controls. The desktop pane shows only the team view; the full canvas stays in the browser.
+**Look and feel.** The Hermes view and the chat card paint with `--h-*` tokens scoped to `.hermes-root` (`globals.css`, light and `data-mode="dark"`). Inside the Hermes desktop app the plugin passes Hermes's live theme in the frame URL (`?mode=&bg=&surface=&sunk=&fg=&muted=&border=`); `src/lib/hermes/theme.ts` accepts only plain colour syntax and maps them onto the surface/text/border tokens, while status colours stay fixed. Statuses follow the monday.com board idea — a solid colour block with one short word: **Waiting** blue `#579BFC`, **Working** orange `#FDAB3D`, **Replied** green `#00C875`, **Failed/Blocked** red `#E2445C`, **Review** purple `#A25DDC`, **Idle** grey (`--h-st-*` tokens). The same colour marks a bar on the agent's left edge; only an agent working right now also gets a coloured border. There is no looping animation — the small "live" dot is the only motion. The map (`TeamCanvas`) draws org-chart connectors (`treeBranch` in `layout.ts`): a neutral trunk and bus from the orchestrator, then one drop per worker coloured by its latest request, with a matching arrowhead; direct You → worker chats are not drawn. The stacked roster (`TeamRoster`) replaces the map when it is narrower than 620px. Embedded, the page drops its own header and keeps only the controls. The desktop pane shows only the team view; the full canvas stays in the browser.
 
 **Safety.** Nothing under `src/lib/hermes` (outside `edit/`) writes to disk. `hermes.test.ts` and `hermes-sessions.test.ts` build fake installs in a temp dir and check the databases' bytes are unchanged after reads.
 
@@ -587,6 +593,7 @@ src/lib/parseWorkflow.ts   prompt + parsing moved out of /api/ai/parse-workflow,
 - **Stdout is the protocol.** `console.log` is redirected to stderr at startup.
 - **Hermes settings that matter:** `mcp_servers.workable.timeout: 600` (analysis runs one call per node), `sampling.max_tokens_cap: 8000`, and `auxiliary.mcp.reasoning_effort: none` for reasoning models.
 - **`?open=canvas`** opens the main page straight on the canvas; `push_to_canvas` returns that link.
+- **Suggested connections are checked.** Node agents name targets loosely ("Human Resources", "it-department"). `AgentOrchestrator.resolveNodeId` maps ids, names and slugs to real node ids; `mergeResponses` drops edges to unknown nodes, self-loops, edges that already exist and repeat proposals. `analyze_bottlenecks` returns `from`/`to` ids plus `fromName`/`toName`.
 - **Chat card.** `generate_workflow` and `patch_workflow` return `chatCard` (`::workable-graph{id="g_…"}`) and tell the agent to put it on its own line. `GET /api/graphs/[id]` serves stored graphs; `/embed/graph/[id]` (`WorkflowCard`) draws one compactly with a "Show on canvas" button.
 
 ### Hermes desktop window (embed mode)
@@ -607,7 +614,10 @@ Keep experiments out of the personal install with a second `HERMES_HOME`:
 - `~/.hermes-test/setup-test.sh` rebuilds the team from the vault's deploy profiles, with a sandbox vault, no git push and computer use off.
 - `~/.hermes-test/use-test-model.sh` points every test profile at one cheap model (thinking off) and registers the Workable MCP server.
 - `~/.hermes-test/open-desktop.sh` opens the desktop app on the test install, reusing the existing Hermes code and Python (`HERMES_DESKTOP_HERMES_ROOT`, `HERMES_DESKTOP_PYTHON`).
-- Both installs share one Hermes code checkout: `hermes update` from either updates both, and the generated `.hermes/bin/hermes` launcher points at whichever install ran last.
+- Both installs share one Hermes code checkout: `hermes update` from either updates both, and the generated `.hermes/bin/hermes` launcher points at whichever install ran last. Running any `hermes` command with `HERMES_HOME=~/.hermes-test` can rewrite it to the test install's bare Python.
+- **Kanban cards need a running gateway.** The dispatcher lives inside the gateway (`hermes kanban daemon` is deprecated and refuses to start). Without one, cards the orchestrator creates stay `ready` and the view shows the workers as Waiting forever. Start it with `HERMES_HOME=~/.hermes-test hermes gateway run`; the test config sets `kanban.dispatch_interval_seconds: 10`.
+- **Workers need `HERMES_BIN`.** The dispatcher starts workers as `sys.executable -m hermes_cli.main`; with the bare `tools/python` that fails with `No module named 'hermes_cli'` and the card is blocked as crashed. `~/.hermes-test/.env` sets `HERMES_BIN` to the shared launcher.
+- **Asking a worker not to reply doesn't make it fail** — it finishes the card with an acknowledgement. To test failures, give the card a short `max_runtime_seconds`; it times out twice and is blocked (shown as Failed).
 
 
 ---

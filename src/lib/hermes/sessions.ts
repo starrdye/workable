@@ -108,6 +108,7 @@ export function readProfileActivity(home: string, profile: HermesProfile, now: n
       SELECT m.id, m.session_id, m.role, m.finish_reason, ${kindCol === 'NULL' ? 'NULL' : 'm.display_kind'} AS display_kind, m.timestamp, s.title
       FROM messages m JOIN sessions s ON s.id = m.session_id
       WHERE m.timestamp >= ? AND m.active = 1
+        AND s.source != 'kanban' -- a worker running a card: the card is the hand-off, not a chat with you
         AND (m.role = 'user' OR (m.role = 'assistant' AND COALESCE(m.finish_reason, '') != 'tool_calls'))
       ORDER BY m.id DESC LIMIT 20`).all(now - CHAT_EVENT_WINDOW_S) as EventRow[];
 

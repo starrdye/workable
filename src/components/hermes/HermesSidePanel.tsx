@@ -9,8 +9,9 @@
 import { AlertTriangle, History, Pencil } from "lucide-react";
 import type { ChatSession, HermesProfile, HermesSnapshot, TurnOutcome } from "@/lib/hermes/types";
 import { HUMAN_ID, formatDuration } from "@/lib/hermes/metrics";
-import { agentStatus, roleOf, shortName, TONE_VARS, type StatusTone } from "@/lib/hermes/status";
-import { DOT_COLORS, agentColor, initials, useStatusLabel } from "./TeamCanvas";
+import { agentStatus, humanError, roleOf, shortName, TONE_VARS, type StatusTone } from "@/lib/hermes/status";
+import { DOT_COLORS, agentColor, initials, useStatusLabel, useStatusSub } from "./TeamCanvas";
+import { StatusBlock } from "./RequestsTable";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface Props {
@@ -22,7 +23,7 @@ interface Props {
 }
 
 const OUTCOME_TONE: Record<TurnOutcome, StatusTone> = {
-  working: "working", completed: "ok", failed: "bad", "cut-off": "warn", interrupted: "warn", none: "idle",
+  working: "working", completed: "ok", failed: "bad", "cut-off": "bad", interrupted: "bad", none: "idle",
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -38,23 +39,15 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: Sta
   return (
     <div className="rounded-lg bg-(--h-sunk) px-2.5 py-2">
       <div className="text-[10.5px] uppercase tracking-wide text-(--h-muted)">{label}</div>
-      <div className="font-mono text-sm tabular-nums" style={{ color: tone ? TONE_VARS[tone].fg : "var(--h-text)" }}>{value}</div>
+      <div className="font-mono text-sm tabular-nums" style={{ color: tone ? TONE_VARS[tone].bg : "var(--h-text)" }}>{value}</div>
     </div>
-  );
-}
-
-function Pill({ tone, icon, text }: { tone: StatusTone; icon?: string; text: string }) {
-  return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold"
-      style={{ color: TONE_VARS[tone].fg, background: TONE_VARS[tone].bg }}>
-      {icon && <span aria-hidden="true">{icon}</span>}<span className="truncate">{text}</span>
-    </span>
   );
 }
 
 export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: Props) {
   const { t } = useLanguage();
   const label = useStatusLabel();
+  const sub = useStatusSub();
   const id = selectedId ?? snapshot.profiles.find(p => agentStatus(snapshot, p.id).working)?.id
     ?? snapshot.bottleneck?.profileId ?? snapshot.profiles.find(p => p.isDefault)?.id ?? null;
   const bottleneck = snapshot.bottleneck;
@@ -79,6 +72,8 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
   const act = snapshot.activity?.find(a => a.profileId === profile.id);
   const hasBoardActivity = !!m && (m.queued + m.running + m.blocked + m.reviewQueue + m.runs > 0);
   const current: ChatSession | null = act?.current ?? null;
+  // A worker running a card is a session too; the Cards section covers those.
+  const chats = (act?.recent ?? []).filter(c => c.source !== "kanban");
 
   return (
     <div className="flex flex-col gap-5">
@@ -91,7 +86,7 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold text-(--h-text)">{shortName(profile)}</h2>
           <p className="text-[12.5px] text-(--h-muted)">{roleOf(profile)}</p>
-          <div className="mt-1.5"><Pill tone={st.tone} icon={st.icon} text={label(st)} /></div>
+          <div className="mt-1.5 flex items-center gap-2"><StatusBlock tone={st.tone} text={label(st)} className="min-w-[72px]" />{sub(st) && <span className="truncate text-[12px] text-(--h-faint)">{sub(st)}</span>}</div>
         </div>
         {onEdit && (
           <button type="button" onClick={() => onEdit(profile)} aria-label={t("hermes.edit.editButton")} title={t("hermes.edit.editButton")}
@@ -104,8 +99,8 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
 
       {/* Now */}
       {current && (
-        <div className="rounded-xl border-2 border-(--h-accent) bg-(--h-accent-soft) px-3 py-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-(--h-accent)">{t("hermes.side.workingOn")}</div>
+        <div className="rounded-lg border-l-4 border-(--h-st-working) bg-(--h-st-working-soft) px-3 py-2.5">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-(--h-text-2)">{t("hermes.side.workingOn")}</div>
           <div className="mt-0.5 text-[13px] text-(--h-text)">{current.title}</div>
           <div className="mt-1 font-mono text-[11px] text-(--h-muted)">{current.source}{current.step ? ` · ${current.step}` : ""}</div>
         </div>
@@ -120,21 +115,21 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
       )}
 
       {/* Chats */}
-      {act && act.recent.length > 0 && (
-        <Section title={`${t("hermes.side.chats")} · ${act.chats24h}`}>
+      {chats.length > 0 && (
+        <Section title={`${t("hermes.side.chats")} · ${chats.length}`}>
           <ul className="flex flex-col gap-1.5">
-            {act.recent.map(c => (
+            {chats.map(c => (
               <li key={c.id} className="rounded-lg bg-(--h-sunk) px-2.5 py-2 text-[12.5px]">
                 <div className="flex items-start gap-2">
                   <span className="min-w-0 flex-1 text-(--h-text-2)">{c.title}</span>
-                  {c.outcome !== "none" && <Pill tone={OUTCOME_TONE[c.outcome]} text={t(`hermes.outcome.${c.outcome}` as const)} />}
+                  {c.outcome !== "none" && <StatusBlock tone={OUTCOME_TONE[c.outcome]} text={t(`hermes.outcome.${c.outcome}` as const)} />}
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-x-2 font-mono text-[10.5px] text-(--h-faint)">
                   <span>{c.source}</span>
                   <span>{c.working ? (c.step ?? "") : `${formatDuration(snapshot.generatedAt - c.lastAt)} ${t("hermes.side.ago")}`}</span>
                   <span>{c.messages} {t("hermes.side.msgs")}</span>
                 </div>
-                {c.error && <div className="mt-1 break-words text-[11.5px] text-(--h-bad)">{c.error}</div>}
+                {c.error && <div className="mt-1 break-words text-[11.5px] text-(--h-st-stuck)">{humanError(c.error)}</div>}
               </li>
             ))}
           </ul>
@@ -172,7 +167,7 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
               tone={m.successRate != null && m.successRate < 0.7 ? "bad" : undefined} />
             <Stat label={t("hermes.side.medianRun")} value={formatDuration(m.medianRunSeconds)} />
           </div>
-          {m.lastError && <p className="rounded-lg bg-(--h-bad-soft) px-2.5 py-2 font-mono text-[11.5px] leading-snug text-(--h-bad) break-words">{m.lastError.split("\n")[0]}</p>}
+          {m.lastError && <p className="rounded-lg bg-(--h-bad-soft) px-2.5 py-2 font-mono text-[11.5px] leading-snug text-(--h-bad) break-words">{humanError(m.lastError)}</p>}
         </Section>
       ) : (
         <p className="text-[12px] text-(--h-faint)">{t("hermes.side.noBoard")}</p>

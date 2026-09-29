@@ -77,6 +77,32 @@ export class AgentOrchestrator {
     return [...coreIds, ...customIds];
   }
 
+  /** Loose key for matching a node reference: "IT Department", "it-department" and "it_department" all match. */
+  private static refKey(s: string): string {
+    return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  private nodeLookup: Map<string, string> | null = null;
+
+  /**
+   * Map whatever an agent wrote for a node — its id, its name, or a slug of
+   * either — to a real node id. Returns null for nodes that don't exist, so a
+   * made-up target never reaches the canvas.
+   */
+  resolveNodeId(ref: string | null | undefined): string | null {
+    if (!ref) return null;
+    if (!this.nodeLookup) {
+      const lookup = new Map<string, string>();
+      const custom = new Map(this.state.customNodes.map(n => [n.id, n.label]));
+      for (const id of this.getAllNodeIds()) {
+        const name = custom.get(id) ?? NODE_DATA[id]?.name;
+        for (const k of [id, name]) if (k && !lookup.has(AgentOrchestrator.refKey(k))) lookup.set(AgentOrchestrator.refKey(k), id);
+      }
+      this.nodeLookup = lookup;
+    }
+    return this.nodeLookup.get(AgentOrchestrator.refKey(ref)) ?? null;
+  }
+
   /**
    * Run a single node agent and return its response.
    */
@@ -259,6 +285,7 @@ export class AgentOrchestrator {
 
     // Track proposed edge additions for conflict detection
     const edgeProposals = new Map<string, string>(); // "src->tgt" → proposing nodeId
+    const existingEdges = new Set(this.state.customEdges.map(e => `${e.source}->${e.target}`));
 
     for (const resp of responses) {
       if (resp.tokenUsage) {
@@ -270,7 +297,7 @@ export class AgentOrchestrator {
         switch (action.type) {
           case 'flag_bottleneck':
             bottlenecks.push({
-              nodeId: action.targetNodeId ?? resp.nodeId,
+              nodeId: this.resolveNodeId(action.targetNodeId) ?? resp.nodeId,
               nodeName: resp.nodeName,
               reason: action.reason,
             });
@@ -278,23 +305,23 @@ export class AgentOrchestrator {
 
           case 'flag_orphan':
             orphanWarnings.push({
-              nodeId: action.targetNodeId ?? resp.nodeId,
+              nodeId: this.resolveNodeId(action.targetNodeId) ?? resp.nodeId,
               nodeName: resp.nodeName,
               reason: action.reason,
             });
             break;
 
-          case 'add_edge':
-            if (action.targetNodeId) {
-              const key = `${resp.nodeId}->${action.targetNodeId}`;
-              proposedEdges.push({
-                source: resp.nodeId,
-                target: action.targetNodeId,
-                reason: action.reason,
-              });
-              edgeProposals.set(key, resp.nodeId);
-            }
+          case 'add_edge': {
+            // Agents name the target loosely ("Human Resources", "it-department"); keep only
+            // edges to real nodes that aren't already connected or already proposed.
+            const target = this.resolveNodeId(action.targetNodeId);
+            if (!target || target === resp.nodeId) break;
+            const key = `${resp.nodeId}->${target}`;
+            if (existingEdges.has(key) || edgeProposals.has(key)) break;
+            proposedEdges.push({ source: resp.nodeId, target, reason: action.reason });
+            edgeProposals.set(key, resp.nodeId);
             break;
+          }
 
           case 'remove_edge':
             // Check if another agent proposed keeping this edge
