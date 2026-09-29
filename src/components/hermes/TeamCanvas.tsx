@@ -211,21 +211,24 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         else if (tasks.length) status = `${tasks.length} ${t("hermes.status.cards")}`;
         else status = t("hermes.status.idle");
         const failedRecently = mode === "live" && recentTurn && turn?.outcome === "failed";
-        const stroke = selected ? "#4F46E5" : failedRecently ? "#EF4444" : mode === "live" ? heatStroke(m) ?? "#E2E8F0" : "#E2E8F0";
+        // Working = replying to a chat or running a kanban card. It wins over every other border.
+        const working = !isHuman && (!!act?.working || running > 0);
+        const stroke = working || selected ? "#4F46E5" : failedRecently ? "#EF4444" : mode === "live" ? heatStroke(m) ?? "#E2E8F0" : "#E2E8F0";
+        const strokeWidth = working ? 3 : selected || stroke !== "#E2E8F0" ? 2 : 1.2;
 
         return (
           <g key={box.id} role="button" tabIndex={0} aria-label={name} aria-pressed={selected}
             className="cursor-pointer outline-none" opacity={involved(box.id) ? 1 : 0.35}
             onClick={() => onSelect(box.id)}
             onKeyDown={ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onSelect(box.id); } }}>
-            {(mode === "live" || mode === "team") && act?.working && (
+            {working && (
               <rect x={box.x} y={box.y} width={NODE_W} height={NODE_H} rx={12} fill="none" className="hermes-working" />
             )}
             {bottleneckId === box.id && (
               <rect x={box.x} y={box.y} width={NODE_W} height={NODE_H} rx={12} fill="none" className="hermes-glow" />
             )}
             <rect x={box.x} y={box.y} width={NODE_W} height={NODE_H} rx={12} fill="#FFFFFF" stroke={stroke}
-              strokeWidth={selected || stroke !== "#E2E8F0" ? 2 : 1.2} />
+              strokeWidth={strokeWidth} className={working ? "hermes-working-border" : undefined} />
             <circle cx={box.x + 28} cy={box.y + 30} r={14} fill={color} />
             <text x={box.x + 28} y={box.y + 34} textAnchor="middle" fontSize={isHuman ? 9 : 11} fontWeight={600} fill="#fff">
               {isHuman ? "YOU" : initials(profile?.isDefault ? profile.name : box.id)}
@@ -233,8 +236,8 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
             <text x={box.x + 50} y={box.y + 27} fontSize={13.5} fontWeight={600} fill="#1E293B">{truncate(name, 19)}</text>
             <text x={box.x + 50} y={box.y + 43} fontSize={10.5} fill="#64748B" fontFamily="ui-monospace, monospace">{truncate(sub, 22)}</text>
 
-            {mode === "team" && act?.working && (
-              <text x={box.x + NODE_W - 14} y={box.y + 20} textAnchor="end" fontSize={10} fill="#4F46E5" fontFamily="ui-monospace, monospace">{t("hermes.status.replying")}</text>
+            {mode !== "live" && working && (
+              <text x={box.x + NODE_W - 14} y={box.y + 20} textAnchor="end" fontSize={10} fill="#4F46E5" fontFamily="ui-monospace, monospace">{act?.working ? t("hermes.status.replying") : t("hermes.status.running")}</text>
             )}
             {(mode === "live" || mode === "replay") && !isHuman && (
               <g>

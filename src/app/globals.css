@@ -90,3 +90,14 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .hermes-working { animation: none; }
 }
+
+/* Solid indigo border on a working agent, breathing gently */
+.hermes-working-border {
+  animation: hermes-working-border 1.6s ease-in-out infinite;
+}
+@keyframes hermes-working-border {
+  50% { stroke: #818CF8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hermes-working-border { animation: none; }
+}
