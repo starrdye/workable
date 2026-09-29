@@ -27,10 +27,16 @@
    - [Message Passing & Cascades (Phase 3)](#message-passing--cascades-phase-3)
    - [Group-Level Governance (Phase 4)](#group-level-governance-phase-4)
    - [Infinite Canvas & Viewport (Phase 5)](#infinite-canvas--viewport-phase-5)
-6. [Feature Status](#feature-status)
-7. [Branch & Version History](#branch--version-history)
-8. [Development Patterns](#development-patterns)
-9. [Roadmap](#roadmap)
+6. [Hermes Plugin (feat/hermes-plugin)](#hermes-plugin-feathermes-plugin)
+   - [Reading Hermes](#reading-hermes-phases-12--live-activity)
+   - [Editing (Phase 3)](#phase-3-editing-workable_hermes_edit)
+   - [MCP server (Phase 4)](#phase-4-mcp-server)
+   - [Hermes desktop window](#hermes-desktop-window-embed-mode)
+   - [Testing against a separate install](#testing-against-a-separate-hermes-install)
+7. [Feature Status](#feature-status)
+8. [Branch & Version History](#branch--version-history)
+9. [Development Patterns](#development-patterns)
+10. [Roadmap](#roadmap)
 
 ---
 
@@ -488,28 +494,64 @@ At each depth level, affected agents receive the trigger context and decide inde
 
 ## Hermes Plugin (feat/hermes-plugin)
 
-A read-only map of a local Hermes agent team at `/hermes`, gated by `NEXT_PUBLIC_WORKABLE_HERMES=true` (`USE_HERMES` in `featureFlags.ts`). `HERMES_HOME` overrides the default `~/.hermes`.
+Connects Workable to a local [Hermes](https://hermes-agent.nousresearch.com) agent install in both directions:
+
+| Direction | What | Where |
+|---|---|---|
+| Workable reads Hermes | Live team map at `/hermes` (Team · Live · Projects · Replay) | `src/lib/hermes/`, `src/components/hermes/` |
+| Workable edits Hermes | Add agent / edit profile / new project, diff-previewed, via the `hermes` CLI | `src/lib/hermes/edit/` |
+| Hermes calls Workable | MCP server with 4 workflow tools | `mcp/server.ts`, `src/lib/mcp/` |
+| Workable inside Hermes | Desktop-app pane + inline workflow card in chat | `hermes-plugin/`, `src/proxy.ts` |
+
+### Configuration (`.env.local`)
+
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_WORKABLE_HERMES=true` | Turns the plugin on (`/hermes`, toolbar button, APIs) |
+| `HERMES_HOME=~/.hermes-test` | Primary install to show (default `~/.hermes`). The only install edits may change |
+| `WORKABLE_HERMES_HOMES=test=~/.hermes-test,personal=~/.hermes` | Extra installs for the toolbar switcher (`label=path`, comma-separated); read-only |
+| `WORKABLE_HERMES_EDIT=true` | Enables Phase 3 editing (server-only) |
+| `WORKABLE_EMBED_TOKEN=…` | Lets the Hermes desktop window reach the API from its sandboxed frame; written by `hermes-plugin/install.sh` |
+
+### Reading Hermes (phases 1–2 + live activity)
 
 ```
 src/lib/hermes/
   types.ts      JSON shapes shared by the API and the view
-  roster.ts     HERMES_HOME, profiles (profile.yaml + config.yaml), boards, projects.db
+  roster.ts     HERMES_HOME / WORKABLE_HERMES_HOMES, profiles (profile.yaml + config.yaml), boards, projects.db
   kanban.ts     board DB reads (tasks, task_events, task_runs), opened { readonly: true }
+  sessions.ts   live chat activity from each profile's state.db (turn state + outcome), read-only
   metrics.ts    pure: status mapping, edges, per-profile metrics, bottleneck, timeByHolder
   sample.ts     labelled example cards built on the real roster, for empty boards
-  snapshot.ts   one call that assembles a HermesSnapshot
+  snapshot.ts   one call that assembles a HermesSnapshot (board + chats + metrics)
+  watch.ts      fs.watch on session/board folders → debounced change callbacks
   layout.ts     fixed hub-and-spoke layout (you + orchestrator on top, workers below)
-src/app/api/hermes/snapshot       GET ?board=&sample=1
+src/app/api/hermes/snapshot       GET ?home=&board=&sample=1
+src/app/api/hermes/stream         GET  Server-Sent Events: full snapshot on connect + on every Hermes write
 src/app/api/hermes/task/[id]      GET one card's events and runs (Replay)
-src/components/hermes/            HermesView, TeamCanvas, HermesSidePanel, ReplayPanel
-src/hooks/useHermesSnapshot.ts    polls every 2.5s while the tab is visible
+src/components/hermes/            HermesView, TeamCanvas, HermesSidePanel, ReplayPanel, EditDialog
+src/hooks/useHermesSnapshot.ts    EventSource on /stream; polling fallback; refetch on focus/online
 ```
 
 **Mapping.** The default profile is the orchestrator and gets a roster edge to every other profile; board actors that aren't profiles (CLI, chat) map to the `__you` node. Hermes's nine statuses fold into Workable's five task dots (`triage/todo/ready/scheduled → todo`, `running → in-progress`). Events become hand-offs: `created` (creator → assignee), `review_requested` (implementer → reviewer), `changes_requested`, `completed` (worker → creator); everything else is shown on the node it happened on.
 
 **Metrics.** Seven-day window. Review wait is measured from `review_requested` to the next review-exit event; success rate counts `completed` and `review_requested` run outcomes. `loadScore` weights blocked cards and stale reviews highest, and anything at or above 0.3 can be called out as the bottleneck.
 
-**Safety.** Nothing under `src/lib/hermes` writes to disk. `hermes.test.ts` builds a fake HERMES_HOME in a temp dir and checks that the board DB's hash is unchanged after reads.
+**Chat activity.** Direct chats (terminal, desktop app, messaging) never touch the board, so `sessions.ts` reads each profile's `state.db`: sessions active in the last 24 h and each one's latest message. The desktop app stores its chats as *hidden* sessions, so hidden ones count. Only titles, timestamps, roles and tool names are read; the one exception is the first line of a failed reply. Turn state comes from the latest message:
+
+| Latest message | State shown |
+|---|---|
+| user / tool / assistant with `finish_reason = tool_calls` | **replying** · thinking / calling a tool / used *tool* |
+| assistant, `finish_reason = stop` | **replied** |
+| assistant with `display_kind = failed_turn` or `finish_reason = error` | **reply failed** (red border) |
+| assistant, `finish_reason = length` | **reply cut off** |
+| still "replying" after 10 min of silence | **no reply** |
+
+A working agent (replying, or running a kanban card) gets a 3px indigo border and a pulsing ring in every view. Your messages and its replies become `chat_message` / `chat_reply` / `chat_failed` events that pulse along a dotted You → profile edge and show in the ticker.
+
+**Live updates.** `/api/hermes/stream` sends a full snapshot as soon as the client connects, so every relaunch or reconnect starts from fresh data. `watch.ts` watches the install's folders (WAL writes land in `*-wal` files), debounces 120 ms, and the stream sends a new snapshot when anything changed, plus a forced one every 15 s so time-based states stay right. The hook falls back to 5 s polling while the stream is down and refetches on tab focus and network recovery.
+
+**Safety.** Nothing under `src/lib/hermes` (outside `edit/`) writes to disk. `hermes.test.ts` and `hermes-sessions.test.ts` build fake installs in a temp dir and check the databases' bytes are unchanged after reads.
 
 ### Phase 3: editing (WORKABLE_HERMES_EDIT)
 
@@ -543,6 +585,28 @@ src/lib/parseWorkflow.ts   prompt + parsing moved out of /api/ai/parse-workflow,
 - **Stdout is the protocol.** `console.log` is redirected to stderr at startup.
 - **Hermes settings that matter:** `mcp_servers.workable.timeout: 600` (analysis runs one call per node), `sampling.max_tokens_cap: 8000`, and `auxiliary.mcp.reasoning_effort: none` for reasoning models.
 - **`?open=canvas`** opens the main page straight on the canvas; `push_to_canvas` returns that link.
+- **Chat card.** `generate_workflow` and `patch_workflow` return `chatCard` (`::workable-graph{id="g_…"}`) and tell the agent to put it on its own line. `GET /api/graphs/[id]` serves stored graphs; `/embed/graph/[id]` (`WorkflowCard`) draws one compactly with a "Show on canvas" button.
+
+### Hermes desktop window (embed mode)
+
+```
+hermes-plugin/desktop/plugin.js   desktop plugin: Workable pane, /workable page, ⌘K commands, ::workable-graph card
+hermes-plugin/install.sh          copies it to $HERMES_HOME/desktop-plugins/workable/ with the embed token
+src/proxy.ts                      Next 16 request proxy: CORS + token check for the sandboxed frame
+src/lib/embed.ts                  adds ?embed=<token> to the page's own /api calls and EventSources
+```
+
+The Hermes SDK shows web content in `SandboxedFrame` (opaque origin), so Workable's own API calls are cross-origin there and browser storage throws. `proxy.ts` handles requests with `Origin: null`: pages, RSC payloads and fonts get CORS headers; `/api/*` needs `?embed=` to match `WORKABLE_EMBED_TOKEN`; `/api/hermes/plan` and `/apply` are always refused from the frame, so the window can never change Hermes. `src/lib/embed.ts` runs when the client bundle loads and patches `fetch` only inside a sandboxed frame. The desktop app loads plugins from the `HERMES_HOME` it was started with.
+
+### Testing against a separate Hermes install
+
+Keep experiments out of the personal install with a second `HERMES_HOME`:
+
+- `~/.hermes-test/setup-test.sh` rebuilds the team from the vault's deploy profiles, with a sandbox vault, no git push and computer use off.
+- `~/.hermes-test/use-test-model.sh` points every test profile at one cheap model (thinking off) and registers the Workable MCP server.
+- `~/.hermes-test/open-desktop.sh` opens the desktop app on the test install, reusing the existing Hermes code and Python (`HERMES_DESKTOP_HERMES_ROOT`, `HERMES_DESKTOP_PYTHON`).
+- Both installs share one Hermes code checkout: `hermes update` from either updates both, and the generated `.hermes/bin/hermes` launcher points at whichever install ran last.
+
 
 ---
 
@@ -600,6 +664,12 @@ src/lib/parseWorkflow.ts   prompt + parsing moved out of /api/ai/parse-workflow,
 | Distributed reasoning engine toggle | ✅ Complete | vb0.2 |
 | Token usage tracking in debug logs | ✅ Complete | vb0.2 |
 | PNG export | ✅ Complete | 0.1 |
+| Hermes team map (Team · Live · Projects · Replay, metrics, bottleneck) | ✅ Complete | feat/hermes-plugin |
+| Hermes editing (add agent, edit profile, new project; diff + CLI apply) | ✅ Complete | feat/hermes-plugin |
+| MCP server (generate / analyze / patch / push_to_canvas, sampling) | ✅ Complete | feat/hermes-plugin |
+| Workable window in the Hermes desktop app + inline workflow card | ✅ Complete | feat/hermes-plugin |
+| Live chat activity, turn outcomes, working-agent highlight (SSE push) | ✅ Complete | feat/hermes-plugin |
+| Hermes install switcher (`WORKABLE_HERMES_HOMES`) | ✅ Complete | feat/hermes-plugin |
 
 ---
 
@@ -617,6 +687,7 @@ src/lib/parseWorkflow.ts   prompt + parsing moved out of /api/ai/parse-workflow,
 | `0.37-personal` | Derived connections + workflow group memberships in metadata, template metadata overhaul, Workable brand icon + README |
 | `0.38-personal` | Endpoint ID caching (Doubao no longer wiped on load), post-import `resetLayout` pass so first-generation layout matches Reset Layout, orphaned subgroup fix in `groupAwareLayout`, explicit `connections`/`processes` in `metadataOverrides` type |
 | `0.39-personal` | AI Update feature: plain-English prompt applies any change to the live graph (add/update/remove nodes, edges, groups). Semantic snapshot context builder strips coordinates. Server-side patch validation guards protected nodes, validates IDs, auto-cascades edge removal. Two-panel modal: prompt input → colour-coded diff preview → sequential apply with `resetLayout` reflow. |
+| `feat/hermes-plugin` | Hermes integration. Read-only live team map at `/hermes` from profiles, kanban boards and each profile's session store, pushed over SSE; turn outcomes and working-agent highlight; install switcher. Diff-previewed edits through the `hermes` CLI. Stdio MCP server exposing generate/analyze/patch/push tools with MCP sampling. Hermes desktop plugin (Workable pane + `::workable-graph` chat card) behind a token-checked embed proxy. `parse-workflow` logic moved to `src/lib/parseWorkflow.ts`. |
 | `vb0.1` | Distributed agent architecture (5 phases, all additive/feature-flagged). Phase 1: SQLite persistence layer (schema + adapter). Phase 2: NodeAgent + AgentOrchestrator — ego-centric per-node prompts (~700–1,200 input tokens each vs. monolithic ~3,500–8,000 tokens for the whole graph). Phase 3: EventEmitter MessageBroker + BFS CascadeSimulator. Phase 4: GroupAgent with boundary context and inter-group negotiation. Phase 5: R-tree spatial index, LOD system, viewport-filtered state endpoint. |
 
 ---
