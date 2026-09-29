@@ -186,7 +186,6 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         const m = metricsById.get(box.id);
         const tasks = tasksByNode.get(box.id) ?? [];
         const selected = selectedId === box.id;
-        const stroke = selected ? "#4F46E5" : mode === "live" ? heatStroke(m) ?? "#E2E8F0" : "#E2E8F0";
         const name = isHuman ? t("hermes.you") : profile?.isDefault ? profile.name.replace(/^personal-/, "") : (profile?.id ?? box.id).replace(/^personal-/, "");
         const color = isHuman ? "#334155" : profile?.isDefault ? "#4F46E5" : workerColor.get(box.id) ?? "#64748B";
         const sub = isHuman ? t("hermes.you.sub") : profile?.isDefault ? `${t("hermes.orchestrator")} · ${shortModel(profile.model)}` : shortModel(profile?.model ?? null);
@@ -195,16 +194,24 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         const running = tasks.filter(x => x.dot === "in-progress").length;
         const review = tasks.filter(x => x.dot === "review").length;
         const act = activityById.get(box.id);
-        const chattedAgo = act?.lastActiveAt ? snapshot.generatedAt - act.lastActiveAt : null;
+        const turn = act?.lastTurn ?? null;
+        const turnAgo = turn?.outcomeAt ? snapshot.generatedAt - turn.outcomeAt : null;
+        const recentTurn = turnAgo != null && turnAgo < 3600;
+        const ago = turnAgo != null ? formatDuration(turnAgo) : "";
         let status = "";
-        if (act?.working) status = `${t("hermes.status.replying")}${act.step ? ` · ${act.step}` : ""}`;
-        else if (blocked) status = `${blocked} ${t("hermes.status.blocked")}`;
-        else if (review && profile?.isDefault) status = `${review} ${t("hermes.status.inReview")}`;
+        let statusColor = "#64748B";
+        if (act?.working) { status = `${t("hermes.status.replying")}${act.step ? ` · ${act.step}` : ""}`; statusColor = "#4F46E5"; }
+        else if (blocked) { status = `${blocked} ${t("hermes.status.blocked")}`; statusColor = "#EF4444"; }
+        else if (recentTurn && turn?.outcome === "failed") { status = t("hermes.status.failed").replace("{t}", ago); statusColor = "#EF4444"; }
+        else if (recentTurn && turn?.outcome === "cut-off") { status = t("hermes.status.cutoff").replace("{t}", ago); statusColor = "#D97706"; }
+        else if (recentTurn && turn?.outcome === "interrupted") { status = t("hermes.status.interrupted").replace("{t}", ago); statusColor = "#D97706"; }
+        else if (review && profile?.isDefault) { status = `${review} ${t("hermes.status.inReview")}`; statusColor = m && m.load >= 0.3 ? "#D97706" : "#64748B"; }
         else if (running) status = `${running} ${t("hermes.status.running")}`;
+        else if (recentTurn && turn?.outcome === "completed") { status = t("hermes.status.replied").replace("{t}", ago); statusColor = "#059669"; }
         else if (tasks.length) status = `${tasks.length} ${t("hermes.status.cards")}`;
-        else if (chattedAgo != null && chattedAgo < 3600) status = t("hermes.status.chatted").replace("{t}", formatDuration(chattedAgo));
         else status = t("hermes.status.idle");
-        const statusColor = act?.working ? "#4F46E5" : blocked ? "#EF4444" : review && profile?.isDefault && m && m.load >= 0.3 ? "#D97706" : "#64748B";
+        const failedRecently = mode === "live" && recentTurn && turn?.outcome === "failed";
+        const stroke = selected ? "#4F46E5" : failedRecently ? "#EF4444" : mode === "live" ? heatStroke(m) ?? "#E2E8F0" : "#E2E8F0";
 
         return (
           <g key={box.id} role="button" tabIndex={0} aria-label={name} aria-pressed={selected}

@@ -133,13 +133,23 @@ export interface ChatSession {
   working: boolean;
   /** What it's doing right now, e.g. "thinking" or "used terminal". */
   step: string | null;
+  /** How the latest turn in this chat ended (or 'working'). */
+  outcome: TurnOutcome;
+  /** When the latest turn ended or last progressed (unix seconds). */
+  outcomeAt: number | null;
+  /** First line of the error for a failed turn. */
+  error: string | null;
 }
+
+export type TurnOutcome = 'working' | 'completed' | 'failed' | 'cut-off' | 'interrupted' | 'none';
 
 export interface ProfileActivity {
   profileId: string;
   working: boolean;
   step: string | null;
   current: ChatSession | null;
+  /** The most recent chat's latest turn (working or finished). */
+  lastTurn: ChatSession | null;
   lastActiveAt: number | null;
   chats24h: number;
   recent: ChatSession[];

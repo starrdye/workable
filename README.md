@@ -182,7 +182,7 @@ If you run a local [Hermes](https://hermes-agent.nousresearch.com) agent team, W
 - **Projects**: boards and projects, and a reminder of where memory is and isn't separated.
 - **Replay**: step through one card's history and see how long each profile held it.
 
-**Live chats.** Besides the kanban board, the map reads each profile's session store (read-only: titles, times and tool names, never message text). A profile you're chatting with shows **replying · thinking / used terminal** while it works, your messages and its replies pulse along the edge, and the side panel lists its recent chats. Add more installs with `WORKABLE_HERMES_HOMES=test=~/.hermes-test,personal=~/.hermes` to switch between them in the toolbar; edits only ever apply to `HERMES_HOME`.
+**Live chats.** Besides the kanban board, the map reads each profile's session store (read-only: titles, times and tool names, never message text). Updates are pushed over a live stream (`/api/hermes/stream`) the moment Hermes writes, so a profile shows **replying · thinking / used terminal** as soon as you send a message, then **replied**, **reply failed**, **cut off** or **no reply**. Your messages and its replies pulse along the edge, and the side panel lists its recent chats. Every reconnect starts from a full fresh snapshot. Add more installs with `WORKABLE_HERMES_HOMES=test=~/.hermes-test,personal=~/.hermes` to switch between them in the toolbar; edits only ever apply to `HERMES_HOME`.
 
 By default the view is read-only: it opens the kanban database in read-only mode and never writes to `~/.hermes`. Turn it on with `NEXT_PUBLIC_WORKABLE_HERMES=true` in `.env.local` (set `HERMES_HOME` if your install isn't at `~/.hermes`), then use the **Hermes** button in the header.
 

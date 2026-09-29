@@ -6,13 +6,14 @@ import os from 'os';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { readActivity, turnState, TURN_STALE_S } from '@/lib/hermes/sessions';
+import { readActivity, turnOutcome, turnState, TURN_STALE_S } from '@/lib/hermes/sessions';
 import { HUMAN_ID } from '@/lib/hermes/metrics';
 import type { HermesProfile } from '@/lib/hermes/types';
 
 const NOW = 1_790_650_000;
 let home: string;
 
+// Clerk rows need the 7th column (display_kind); others are padded with null.
 const profile = (id: string, isDefault = false): HermesProfile =>
   ({ id, name: id, description: '', model: null, isDefault, unattended: !isDefault, disabledToolsets: [] });
 
@@ -23,11 +24,12 @@ function makeDb(file: string, rows: { sessions: unknown[][]; messages: unknown[]
     CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT, started_at REAL NOT NULL,
       last_activity_at REAL, message_count INTEGER DEFAULT 0, ended_at REAL, hidden INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL,
-      content TEXT, tool_name TEXT, finish_reason TEXT, timestamp REAL NOT NULL, active INTEGER NOT NULL DEFAULT 1);`);
+      content TEXT, tool_name TEXT, finish_reason TEXT, timestamp REAL NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+      display_kind TEXT);`);
   const s = db.prepare('INSERT INTO sessions (id, source, title, started_at, last_activity_at, message_count, ended_at, hidden) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   rows.sessions.forEach(r => s.run(...r));
-  const m = db.prepare('INSERT INTO messages (session_id, role, content, tool_name, finish_reason, timestamp) VALUES (?, ?, ?, ?, ?, ?)');
-  rows.messages.forEach(r => m.run(...r));
+  const m = db.prepare('INSERT INTO messages (session_id, role, content, tool_name, finish_reason, timestamp, display_kind) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  rows.messages.forEach(r => m.run(...[...r, ...Array(7 - r.length).fill(null)]));
   db.close();
 }
 
@@ -50,6 +52,14 @@ beforeAll(() => {
       ['s_live', 'tool', 'output', 'terminal', null, NOW - 5],
     ],
   });
+  // Clerk: its last turn failed, in a hidden desktop session (how the desktop app stores chats).
+  makeDb(path.join(home, 'profiles/clerk/state.db'), {
+    sessions: [['s_fail', 'desktop', 'Bot Chat', NOW - 300, NOW - 200, 2, null, 1]],
+    messages: [
+      ['s_fail', 'user', 'hello', null, null, NOW - 260],
+      ['s_fail', 'assistant', 'Your request was not processed.\nSend it again.', null, null, NOW - 200, 'failed_turn'],
+    ],
+  });
 });
 
 afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -65,6 +75,14 @@ describe('turnState', () => {
     expect(turnState(msg('assistant', { finish_reason: 'stop' }), NOW)).toEqual({ working: false, step: null });
   });
 
+  it('reports how a finished turn ended', () => {
+    expect(turnOutcome({ ...msg('assistant', { finish_reason: 'stop' }) }, NOW).outcome).toBe('completed');
+    expect(turnOutcome({ ...msg('assistant'), display_kind: 'failed_turn', error_line: 'Not processed' }, NOW)).toMatchObject({ outcome: 'failed', error: 'Not processed' });
+    expect(turnOutcome({ ...msg('assistant', { finish_reason: 'error' }) }, NOW).outcome).toBe('failed');
+    expect(turnOutcome({ ...msg('assistant', { finish_reason: 'length' }) }, NOW).outcome).toBe('cut-off');
+    expect(turnOutcome(msg('user', {}, TURN_STALE_S + 1), NOW).outcome).toBe('interrupted');
+  });
+
   it('treats an abandoned turn as idle', () => {
     expect(turnState(msg('user', {}, TURN_STALE_S + 1), NOW).working).toBe(false);
     expect(turnState(undefined, NOW).working).toBe(false);
@@ -74,16 +92,19 @@ describe('turnState', () => {
 describe('readActivity', () => {
   const profiles = [profile('default', true), profile('assistant'), profile('clerk')];
 
+
   it('shows who is replying right now and what they are doing', () => {
     const { activity } = readActivity(home, profiles, NOW);
     const a = activity.find(x => x.profileId === 'assistant')!;
-    expect(a).toMatchObject({ working: true, step: 'used terminal', chats24h: 1 });
+    expect(a).toMatchObject({ working: true, step: 'used terminal', chats24h: 2 });
     expect(a.current).toMatchObject({ id: 's_live', source: 'desktop', title: 'Draft captions' });
-    expect(a.recent.map(r => r.id)).toEqual(['s_live']); // hidden session left out
+    expect(a.recent.map(r => r.id)).toEqual(['s_live', 's_hidden']); // the desktop app's hidden sessions count
 
     const lead = activity.find(x => x.profileId === 'default')!;
     expect(lead).toMatchObject({ working: false, chats24h: 1, lastActiveAt: NOW - 1200 });
-    expect(activity.find(x => x.profileId === 'clerk')).toMatchObject({ working: false, chats24h: 0, recent: [] });
+    const clerk = activity.find(x => x.profileId === 'clerk')!;
+    expect(clerk).toMatchObject({ working: false, chats24h: 1 });
+    expect(clerk.lastTurn).toMatchObject({ outcome: 'failed', error: 'Your request was not processed.', source: 'desktop' });
   });
 
   it('turns your messages and finished replies into hand-offs, without message text', () => {
@@ -94,6 +115,7 @@ describe('readActivity', () => {
     const lead = events.filter(e => e.taskId === 's_done').map(e => [e.kind, e.from, e.to]);
     expect(lead).toEqual([['chat_reply', 'default', HUMAN_ID], ['chat_message', HUMAN_ID, 'default']]);
     expect(JSON.stringify(events)).not.toContain('secret text');
+    expect(events.filter(e => e.taskId === 's_fail').map(e => e.kind)).toEqual(['chat_failed', 'chat_message']);
   });
 
   it('never modifies the session store', () => {

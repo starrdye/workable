@@ -104,13 +104,17 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
           <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{t("hermes.side.chats")} · {act.chats24h}</div>
           <ul className="flex flex-col gap-1.5">
             {act.recent.map(c => (
-              <li key={c.id} className={`rounded-lg px-2 py-1.5 text-[12.5px] ${c.working ? "bg-indigo-50 ring-1 ring-indigo-200" : "bg-slate-50"}`}>
-                <div className="text-slate-700">{c.title}</div>
-                <div className="flex gap-2 font-mono text-[10.5px] text-slate-400">
+              <li key={c.id} className={`rounded-lg px-2 py-1.5 text-[12.5px] ${c.working ? "bg-indigo-50 ring-1 ring-indigo-200" : c.outcome === "failed" ? "bg-red-50 ring-1 ring-red-200" : "bg-slate-50"}`}>
+                <div className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1 text-slate-700">{c.title}</span>
+                  <OutcomeChip outcome={c.outcome} />
+                </div>
+                <div className="flex flex-wrap gap-x-2 font-mono text-[10.5px] text-slate-400">
                   <span>{c.source}</span>
-                  <span>{c.working ? `${t("hermes.status.replying")}${c.step ? ` · ${c.step}` : ""}` : `${formatDuration(snapshot.generatedAt - c.lastAt)} ${t("hermes.side.ago")}`}</span>
+                  <span>{c.working ? (c.step ?? "") : `${formatDuration(snapshot.generatedAt - c.lastAt)} ${t("hermes.side.ago")}`}</span>
                   <span>{c.messages} {t("hermes.side.msgs")}</span>
                 </div>
+                {c.error && <div className="mt-1 break-words font-mono text-[11px] text-red-700">{c.error}</div>}
               </li>
             ))}
           </ul>
@@ -139,6 +143,19 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
       </section>
     </div>
   );
+}
+
+function OutcomeChip({ outcome }: { outcome: import("@/lib/hermes/types").TurnOutcome }) {
+  const { t } = useLanguage();
+  if (outcome === "none") return null;
+  const style: Record<string, string> = {
+    working: "bg-indigo-100 text-indigo-700",
+    completed: "bg-emerald-50 text-emerald-700",
+    failed: "bg-red-100 text-red-700",
+    "cut-off": "bg-amber-50 text-amber-700",
+    interrupted: "bg-amber-50 text-amber-700",
+  };
+  return <span className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase ${style[outcome]}`}>{t(`hermes.outcome.${outcome}` as const)}</span>;
 }
 
 function Header({ eyebrow, title, sub }: { eyebrow: string; title: string; sub: string }) {

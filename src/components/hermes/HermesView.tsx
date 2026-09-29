@@ -35,7 +35,7 @@ export function HermesView() {
   const [replayTask, setReplayTask] = useState<string | null>(null);
   const [replayFocus, setReplayFocus] = useState<ReplayFocus | null>(null);
   const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
-  const { snapshot, error, loading, lastFetched, refresh } = useHermesSnapshot(board, sample, false, homeId);
+  const { snapshot, error, loading, lastFetched, connection, refresh } = useHermesSnapshot(board, sample, false, homeId);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Re-render every second so "updated Ns ago" stays honest.
@@ -118,7 +118,8 @@ export function HermesView() {
           <span className={`inline-flex items-center gap-1.5 font-mono text-[11.5px] ${stale ? "text-red-600" : "text-emerald-600"}`}
             title={stale ? error ?? "" : snapshot.home}>
             <i className={`inline-block h-1.5 w-1.5 rounded-full ${stale ? "bg-red-500" : "bg-emerald-500 animate-pulse"}`} />
-            {stale ? t("hermes.status.stale") : ago == null ? "" : t("hermes.status.updated").replace("{n}", String(ago))}
+            {stale ? t("hermes.status.stale") : connection === "live" ? t("hermes.conn.live")
+              : ago == null ? "" : `${t("hermes.conn.polling")} · ${t("hermes.status.updated").replace("{n}", String(ago))}`}
           </span>
         </>
       }>
@@ -225,7 +226,8 @@ function EventTicker({ snapshot, onOpenReplay }: { snapshot: HermesSnapshot; onO
         <li key={e.id} className="truncate">
           <span className="text-slate-400">{clock(e.createdAt)}</span>{" "}
           <b className="font-medium text-slate-700">{line(e)}</b>{" "}
-          {e.kind === "chat_message" ? t("hermes.ticker.asked") : e.kind === "chat_reply" ? t("hermes.ticker.replied") : e.kind}{" "}
+          {e.kind === "chat_message" ? t("hermes.ticker.asked") : e.kind === "chat_reply" ? t("hermes.ticker.replied")
+            : e.kind === "chat_failed" ? <span className="text-red-600">{t("hermes.ticker.failed")}</span> : e.kind}{" "}
           {e.kind.startsWith("chat_") ? null : (
             <button type="button" onClick={() => onOpenReplay(e.taskId)} className="text-indigo-600 hover:underline">{e.taskId}</button>
           )}
