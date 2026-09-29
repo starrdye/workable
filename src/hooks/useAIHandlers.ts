@@ -43,7 +43,7 @@ export function useAIHandlers(
 
   const handleSaveAiConfig = (config: AIConfig) => {
     setAiConfig(config);
-    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
+    try { localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config)); } catch { /* storage unavailable (e.g. sandboxed frame) */ }
   };
 
   const activeApiKey = aiConfig.keys[aiConfig.provider]?.trim() ?? '';

@@ -186,6 +186,8 @@ By default the view is read-only: it opens the kanban database in read-only mode
 
 **Editing (optional).** With `WORKABLE_HERMES_EDIT=true`, you can add an agent, edit a profile's description or model, or create a project with its own board. Every change is shown first as a diff plus the exact `hermes` commands it will run; nothing is written until you press Apply, and every file it touches is backed up under `$HERMES_HOME/backups/workable/`. New workers copy the rules block from an existing worker word for word and never get desktop control. Try it on a separate test install (`HERMES_HOME=~/.hermes-test`) first.
 
+**Window in the Hermes app.** `bash hermes-plugin/install.sh` installs a desktop plugin that adds a **Workable** pane beside the Hermes chat (Team map or Canvas), a sidebar page and ⌘K commands. The pane shows Workable in Hermes's sandboxed frame; `src/proxy.ts` lets that frame reach Workable's API only with the `WORKABLE_EMBED_TOKEN` the script puts in `.env.local`, and never lets it change Hermes. Adding or editing agents stays in the browser.
+
 **MCP server.** `npm run mcp` starts a stdio MCP server so an agent system can use Workable without the UI: `generate_workflow`, `analyze_bottlenecks`, `patch_workflow` and `push_to_canvas`. By default it asks the calling client to run each prompt (MCP sampling), so Workable needs no API key of its own. To register it with Hermes:
 
 ```bash

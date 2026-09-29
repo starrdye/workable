@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ServerGraphState } from '@/lib/serverState';
+import { withEmbedToken } from '@/lib/embed';
 
 const LS_KEY = 'workable_current_state';
 const POLL_INTERVAL_MS = 3000;
@@ -116,7 +117,7 @@ export function useGraphState() {
 
       // Track 3: Try SSE; fall back to polling on error
       if (typeof EventSource !== 'undefined') {
-        const es = new EventSource('/api/graph-state/stream');
+        const es = new EventSource(withEmbedToken('/api/graph-state/stream'));
         sseRef.current = es;
 
         es.onmessage = (event) => {

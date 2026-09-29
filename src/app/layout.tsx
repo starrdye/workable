@@ -4,6 +4,7 @@ import "./globals.css";
 import { DevErrorFilter } from "@/components/DevErrorFilter";
 import { AIEngineProvider } from "@/contexts/AIEngineContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
+import { EmbedBridge } from "@/components/EmbedBridge";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -27,6 +28,7 @@ export default function RootLayout({
       <body className={`${inter.variable} antialiased`}>
         {/* Suppress chrome-extension errors in dev only — never ships to production */}
         {process.env.NODE_ENV === "development" && <DevErrorFilter />}
+        <EmbedBridge />
         <LanguageProvider>
           <AIEngineProvider>
             {children}

@@ -15,6 +15,7 @@ import { TeamCanvas, DOT_COLORS, type HermesMode, type ReplayFocus } from "./Tea
 import { HermesSidePanel } from "./HermesSidePanel";
 import { ReplayPanel } from "./ReplayPanel";
 import { EditDialog, type EditRequest } from "./EditDialog";
+import { isEmbedded } from "@/lib/embed";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -70,6 +71,9 @@ export function HermesView() {
   }
 
   const empty = !snapshot.sample && snapshot.tasks.length === 0 && snapshot.events.length === 0;
+  // Inside the Hermes window edits are refused (src/proxy.ts), so don't offer them there.
+  const embedded = isEmbedded();
+  const editable = snapshot.editable && !embedded;
   const ago = lastFetched ? Math.max(0, Math.round((nowMs - lastFetched) / 1000)) : null;
   const stale = !!error;
 
@@ -85,7 +89,7 @@ export function HermesView() {
               </button>
             ))}
           </div>
-          {snapshot.editable && (
+          {editable && (
             <button type="button" onClick={() => setEditRequest({ op: "add-agent" })}
               className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[13px] font-medium text-indigo-700 hover:bg-indigo-100">
               <Plus className="h-3.5 w-3.5" />{t("hermes.edit.addAgent")}
@@ -137,10 +141,10 @@ export function HermesView() {
             </div>
             <aside className="border-t border-gray-200 p-4 lg:border-l lg:border-t-0" aria-live="polite">
               {mode === "projects" ? (
-                <ProjectsPanel snapshot={snapshot} onAddProject={snapshot.editable ? () => setEditRequest({ op: "add-project" }) : undefined} />
+                <ProjectsPanel snapshot={snapshot} onAddProject={editable ? () => setEditRequest({ op: "add-project" }) : undefined} />
               ) : (
                 <HermesSidePanel snapshot={snapshot} selectedId={selectedId} onOpenReplay={openReplay}
-                  onEdit={snapshot.editable ? profile => setEditRequest({ op: "edit-agent", profile }) : undefined} />
+                  onEdit={editable ? profile => setEditRequest({ op: "edit-agent", profile }) : undefined} />
               )}
             </aside>
           </div>
@@ -164,7 +168,7 @@ export function HermesView() {
         </div>
 
         <p className="text-[12px] text-slate-400">
-          {(snapshot.editable ? t("hermes.footer.editable") : t("hermes.footer")).replace("{home}", snapshot.home)}
+          {(editable ? t("hermes.footer.editable") : embedded && snapshot.editable ? t("hermes.footer.embedded") : t("hermes.footer")).replace("{home}", snapshot.home)}
         </p>
       </div>
       {editRequest && (
