@@ -551,6 +551,8 @@ A working agent (replying, or running a kanban card) gets a 3px indigo border an
 
 **Live updates.** `/api/hermes/stream` sends a full snapshot as soon as the client connects, so every relaunch or reconnect starts from fresh data. `watch.ts` watches the install's folders (WAL writes land in `*-wal` files), debounces 120 ms, and the stream sends a new snapshot when anything changed, plus a forced one every 15 s so time-based states stay right. The hook falls back to 5 s polling while the stream is down and refetches on tab focus and network recovery.
 
+**Look and feel.** The Hermes view and the chat card paint with `--h-*` tokens scoped to `.hermes-root` (`globals.css`, light and `data-mode="dark"`). Inside the Hermes desktop app the plugin passes Hermes's live theme in the frame URL (`?mode=&bg=&surface=&sunk=&fg=&muted=&border=`); `src/lib/hermes/theme.ts` accepts only plain colour syntax and maps them onto the surface/text/border tokens, while semantic colours stay fixed: indigo = working, red = failed/blocked, amber = needs attention, green = replied. `src/lib/hermes/status.ts` computes one status per agent (tone, icon, label) shared by the map (`TeamCanvas`) and the stacked roster (`TeamRoster`), which replaces the map when it is narrower than 620px. Embedded, the page drops its own header and keeps only the controls. The desktop pane shows only the team view; the full canvas stays in the browser.
+
 **Safety.** Nothing under `src/lib/hermes` (outside `edit/`) writes to disk. `hermes.test.ts` and `hermes-sessions.test.ts` build fake installs in a temp dir and check the databases' bytes are unchanged after reads.
 
 ### Phase 3: editing (WORKABLE_HERMES_EDIT)

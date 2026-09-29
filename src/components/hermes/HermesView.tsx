@@ -5,17 +5,20 @@
  * agent team. Team / Live / Projects / Replay are views of the same graph.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Info, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronRight, Info, Plus, RefreshCw } from "lucide-react";
 import { useHermesSnapshot } from "@/hooks/useHermesSnapshot";
 import { HUMAN_ID } from "@/lib/hermes/metrics";
 import type { HermesEvent, HermesSnapshot } from "@/lib/hermes/types";
-import { TeamCanvas, DOT_COLORS, type HermesMode, type ReplayFocus } from "./TeamCanvas";
+import { TeamCanvas, type HermesMode, type ReplayFocus } from "./TeamCanvas";
+import { TeamRoster } from "./TeamRoster";
+import { type HermesMode as ThemeMode } from "@/lib/hermes/theme";
+import { useEmbedded, useHermesTheme } from "@/lib/hermes/useHermesTheme";
+import type { CSSProperties } from "react";
 import { HermesSidePanel } from "./HermesSidePanel";
 import { ReplayPanel } from "./ReplayPanel";
 import { EditDialog, type EditRequest } from "./EditDialog";
-import { isEmbedded } from "@/lib/embed";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -37,6 +40,19 @@ export function HermesView() {
   const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
   const { snapshot, error, loading, lastFetched, connection, refresh } = useHermesSnapshot(board, sample, false, homeId);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const theme = useHermesTheme();
+  const embedded = useEmbedded();
+  const [narrow, setNarrow] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+
+  // Below ~620px the map's text gets too small, so show the roster instead.
+  useEffect(() => {
+    const el = mapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 620));
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
 
   // Re-render every second so "updated Ns ago" stays honest.
   useEffect(() => {
@@ -53,15 +69,15 @@ export function HermesView() {
 
   if (!snapshot) {
     return (
-      <Shell>
-        <div className="mx-auto mt-24 max-w-lg rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+      <Shell theme={theme} embedded={embedded}>
+        <div className="mx-auto mt-24 max-w-lg rounded-xl border border-(--h-border) bg-(--h-surface) p-6 text-center">
           {loading ? (
-            <p className="text-sm text-slate-500">{t("hermes.loading")}</p>
+            <p className="text-sm text-(--h-muted)">{t("hermes.loading")}</p>
           ) : (
             <>
-              <h2 className="mb-2 text-base font-semibold text-slate-800">{t("hermes.error.title")}</h2>
-              <p className="text-sm text-slate-600 break-words">{error}</p>
-              <button type="button" onClick={refresh} className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-gray-50">
+              <h2 className="mb-2 text-base font-semibold text-(--h-text)">{t("hermes.error.title")}</h2>
+              <p className="text-sm text-(--h-muted) break-words">{error}</p>
+              <button type="button" onClick={refresh} className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-(--h-border) px-3 py-1.5 text-sm text-(--h-text-2) hover:bg-(--h-sunk)">
                 <RefreshCw className="h-3.5 w-3.5" />{t("hermes.retry")}
               </button>
             </>
@@ -71,84 +87,91 @@ export function HermesView() {
     );
   }
 
-  const empty = !snapshot.sample && snapshot.tasks.length === 0 && snapshot.events.length === 0;
+  const chatting = (snapshot.activity ?? []).some(a => a.chats24h > 0);
+  const empty = !snapshot.sample && snapshot.tasks.length === 0 && snapshot.events.length === 0 && !chatting;
   // Inside the Hermes window edits are refused (src/proxy.ts), so don't offer them there.
-  const embedded = isEmbedded();
   const editable = snapshot.editable && !embedded;
   const ago = lastFetched ? Math.max(0, Math.round((nowMs - lastFetched) / 1000)) : null;
   const stale = !!error;
 
   return (
-    <Shell
+    <Shell theme={theme} embedded={embedded}
       toolbar={
         <>
-          <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label={t("hermes.mode.aria")}>
+          <div className="inline-flex rounded-lg bg-(--h-sunk) p-0.5" role="group" aria-label={t("hermes.mode.aria")}>
             {MODES.map(m => (
               <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}
-                className={`rounded-md px-3 py-1 text-[13px] font-medium transition-colors ${mode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                className={`rounded-md px-2.5 py-1 text-[12.5px] font-medium transition-colors ${mode === m ? "bg-(--h-surface) text-(--h-text) shadow-sm" : "text-(--h-muted) hover:text-(--h-text)"}`}>
                 {t(`hermes.mode.${m}` as const)}
               </button>
             ))}
           </div>
+          {(snapshot.homes.length > 1 || snapshot.boards.length > 1) && (
+            <div className="inline-flex items-center rounded-lg border border-(--h-border) bg-(--h-surface) text-[12.5px]" title={snapshot.home}>
+              {snapshot.homes.length > 1 ? (
+                <select aria-label={t("hermes.install")} value={snapshot.homeId}
+                  onChange={e => { setHomeId(e.target.value); setBoard(null); setSelectedId(null); setReplayTask(null); }}
+                  className="bg-transparent py-1 pl-2 pr-1 font-medium text-(--h-text) outline-none">
+                  {snapshot.homes.map(h => <option key={h.id} value={h.id}>{h.label}</option>)}
+                </select>
+              ) : <span className="px-2 font-medium text-(--h-text)">{snapshot.homes[0]?.label}</span>}
+              <ChevronRight className="h-3.5 w-3.5 text-(--h-faint)" aria-hidden="true" />
+              {snapshot.boards.length > 1 ? (
+                <select aria-label={t("hermes.board")} value={snapshot.board?.slug ?? ""} onChange={e => setBoard(e.target.value)}
+                  className="bg-transparent py-1 pl-1 pr-1 text-(--h-muted) outline-none">
+                  {snapshot.boards.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
+                </select>
+              ) : <span className="py-1 pl-1 pr-2 text-(--h-muted)">{snapshot.board?.name ?? "—"}</span>}
+            </div>
+          )}
           {editable && (
             <button type="button" onClick={() => setEditRequest({ op: "add-agent" })}
-              className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[13px] font-medium text-indigo-700 hover:bg-indigo-100">
+              className="inline-flex items-center gap-1 rounded-lg bg-(--h-accent-soft) px-2.5 py-1 text-[12.5px] font-medium text-(--h-accent) hover:opacity-90">
               <Plus className="h-3.5 w-3.5" />{t("hermes.edit.addAgent")}
             </button>
           )}
-          {snapshot.homes.length > 1 && (
-            <select aria-label={t("hermes.install")} value={snapshot.homeId}
-              onChange={e => { setHomeId(e.target.value); setBoard(null); setSelectedId(null); setReplayTask(null); }}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-slate-700" title={snapshot.home}>
-              {snapshot.homes.map(h => <option key={h.id} value={h.id}>{h.label}</option>)}
-            </select>
-          )}
-          {snapshot.boards.length > 1 && (
-            <select aria-label={t("hermes.board")} value={snapshot.board?.slug ?? ""} onChange={e => setBoard(e.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-slate-700">
-              {snapshot.boards.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
-            </select>
-          )}
           {snapshot.sample && (
             <button type="button" onClick={() => setSample(false)}
-              className="rounded-md border border-dashed border-amber-400 px-2 py-0.5 font-mono text-[11px] font-medium text-amber-700 hover:bg-amber-50">
+              className="rounded-md border border-dashed border-(--h-warn) px-2 py-0.5 font-mono text-[11px] font-medium text-(--h-warn)">
               {t("hermes.sample.badge")} · {t("hermes.sample.hide")}
             </button>
           )}
-          <span className={`inline-flex items-center gap-1.5 font-mono text-[11.5px] ${stale ? "text-red-600" : "text-emerald-600"}`}
+          <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: stale ? "var(--h-bad)" : "var(--h-ok)" }}
             title={stale ? error ?? "" : snapshot.home}>
-            <i className={`inline-block h-1.5 w-1.5 rounded-full ${stale ? "bg-red-500" : "bg-emerald-500 animate-pulse"}`} />
+            <i className={`inline-block h-1.5 w-1.5 rounded-full ${stale ? "" : "animate-pulse"}`} style={{ background: stale ? "var(--h-bad)" : "var(--h-ok)" }} />
             {stale ? t("hermes.status.stale") : connection === "live" ? t("hermes.conn.live")
               : ago == null ? "" : `${t("hermes.conn.polling")} · ${t("hermes.status.updated").replace("{n}", String(ago))}`}
           </span>
         </>
       }>
 
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-4">
+      <div className={`mx-auto flex w-full max-w-7xl flex-col gap-3 ${embedded ? "px-2 py-2" : "px-4 py-4"}`}>
         {snapshot.warnings.map(w => (
-          <div key={w} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">{w}</div>
+          <div key={w} className="rounded-lg bg-(--h-warn-soft) px-3 py-2 text-[13px] text-(--h-warn)">{w}</div>
         ))}
         {empty && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-600">
-            <Info className="h-4 w-4 shrink-0 text-indigo-500" />
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-(--h-border) bg-(--h-surface) px-3 py-2 text-[13px] text-(--h-muted)">
+            <Info className="h-4 w-4 shrink-0 text-(--h-accent)" />
             <span className="min-w-0 flex-1">{t("hermes.empty").replace("{board}", snapshot.board?.slug ?? "—")}</span>
             <button type="button" onClick={() => setSample(true)}
-              className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[12.5px] font-medium text-indigo-700 hover:bg-indigo-100">
+              className="rounded-md bg-(--h-accent-soft) px-2.5 py-1 text-[12.5px] font-medium text-(--h-accent)">
               {t("hermes.sample.show")}
             </button>
           </div>
         )}
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-(--h-border) bg-(--h-surface)">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="blueprint-bg overflow-x-auto bg-slate-50">
-              {snapshot.profiles.length ? (
-                <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={setSelectedId} replayFocus={replayFocus} />
+            <div ref={mapRef} className="hermes-dots overflow-x-auto bg-(--h-bg)">
+              {!snapshot.profiles.length ? (
+                <p className="p-8 text-sm text-(--h-muted)">{t("hermes.noProfiles").replace("{home}", snapshot.home)}</p>
+              ) : narrow && (mode === "team" || mode === "live") ? (
+                <TeamRoster snapshot={snapshot} selectedId={selectedId} onSelect={setSelectedId} />
               ) : (
-                <p className="p-8 text-sm text-slate-500">{t("hermes.noProfiles").replace("{home}", snapshot.home)}</p>
+                <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={setSelectedId} replayFocus={replayFocus} />
               )}
             </div>
-            <aside className="border-t border-gray-200 p-4 lg:border-l lg:border-t-0" aria-live="polite">
+            <aside className="border-t border-(--h-border) p-4 lg:border-l lg:border-t-0" aria-live="polite">
               {mode === "projects" ? (
                 <ProjectsPanel snapshot={snapshot} onAddProject={editable ? () => setEditRequest({ op: "add-project" }) : undefined} />
               ) : (
@@ -160,13 +183,12 @@ export function HermesView() {
 
           {mode === "live" && (
             <>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-200 px-4 py-2 text-[12px] text-slate-500">
-                {(["todo", "in-progress", "review", "blocked", "done"] as const).map(s => (
-                  <span key={s} className="inline-flex items-center gap-1.5">
-                    <i className="inline-block h-2 w-2 rounded-full" style={{ background: DOT_COLORS[s] }} />{t(`hermes.dot.${s}` as const)}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-(--h-border) px-4 py-2 text-[12px] text-(--h-muted)">
+                {([["working", "hermes.legend.working"], ["ok", "hermes.legend.replied"], ["bad", "hermes.legend.failed"], ["warn", "hermes.legend.attention"]] as const).map(([tone, key]) => (
+                  <span key={tone} className="inline-flex items-center gap-1.5">
+                    <i className="inline-block h-2 w-2 rounded-full" style={{ background: `var(--h-${tone === "working" ? "accent" : tone})` }} />{t(key)}
                   </span>
                 ))}
-                <span className="inline-flex items-center gap-1.5"><i className="inline-block h-2 w-2 rounded-full bg-amber-400" />{t("hermes.legend.bottleneck")}</span>
               </div>
               <EventTicker snapshot={snapshot} onOpenReplay={openReplay} />
             </>
@@ -176,9 +198,9 @@ export function HermesView() {
           )}
         </div>
 
-        <p className="text-[12px] text-slate-400">
+        {!embedded && <p className="text-[12px] text-(--h-faint)">
           {(editable ? t("hermes.footer.editable") : embedded && snapshot.editable ? t("hermes.footer.embedded") : t("hermes.footer")).replace("{home}", snapshot.home)}
-        </p>
+        </p>}
       </div>
       {editRequest && (
         <EditDialog request={editRequest} snapshot={snapshot} onClose={() => setEditRequest(null)} onApplied={refresh} />
@@ -187,23 +209,32 @@ export function HermesView() {
   );
 }
 
-function Shell({ children, toolbar }: { children: React.ReactNode; toolbar?: React.ReactNode }) {
+function Shell({ children, toolbar, theme, embedded }: {
+  children: React.ReactNode; toolbar?: React.ReactNode; theme: { mode: ThemeMode; style: CSSProperties }; embedded: boolean;
+}) {
   const { t } = useLanguage();
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      <header className="sticky top-0 z-40 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-gray-200 bg-white px-4 py-2.5 shadow-sm">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-          <ArrowLeft className="h-4 w-4" />{t("hermes.back")}
-        </Link>
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <span className="h-4 w-4 rounded bg-indigo-600" aria-hidden="true" />
-          Workable <span className="font-normal text-slate-400">/ Hermes</span>
-        </div>
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+    <div className="hermes-root min-h-screen" data-mode={theme.mode} style={theme.style}>
+      {embedded ? (
+        // Inside the Hermes window: the pane's own title bar is the header, so only the controls remain.
+        <header className="sticky top-0 z-40 flex flex-wrap items-center gap-2 border-b border-(--h-border) bg-(--h-surface) px-2 py-1.5">
           {toolbar}
-          <LanguageToggle />
-        </div>
-      </header>
+        </header>
+      ) : (
+        <header className="sticky top-0 z-40 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-(--h-border) bg-(--h-surface) px-4 py-2.5">
+          <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-(--h-muted) hover:text-(--h-text)">
+            <ArrowLeft className="h-4 w-4" />{t("hermes.back")}
+          </Link>
+          <div className="flex items-center gap-2 text-sm font-semibold text-(--h-text)">
+            <span className="h-4 w-4 rounded bg-(--h-accent)" aria-hidden="true" />
+            Workable <span className="font-normal text-(--h-faint)">/ Hermes</span>
+          </div>
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+            {toolbar}
+            <LanguageToggle />
+          </div>
+        </header>
+      )}
       <main>{children}</main>
     </div>
   );
@@ -218,18 +249,18 @@ function EventTicker({ snapshot, onOpenReplay }: { snapshot: HermesSnapshot; onO
   };
   const line = (e: HermesEvent) => e.from && e.to ? `${name(e.from)} → ${name(e.to)}` : name(e.at);
   if (!snapshot.events.length) {
-    return <p className="border-t border-gray-200 px-4 py-2.5 font-mono text-[12px] text-slate-400">{t("hermes.ticker.empty")}</p>;
+    return <p className="border-t border-(--h-border) px-4 py-2.5 font-mono text-[12px] text-(--h-faint)">{t("hermes.ticker.empty")}</p>;
   }
   return (
-    <ol className="max-h-36 overflow-auto border-t border-gray-200 px-4 py-2 font-mono text-[12px] leading-[1.8] text-slate-500" aria-label={t("hermes.ticker.aria")}>
+    <ol className="max-h-36 overflow-auto border-t border-(--h-border) px-4 py-2 font-mono text-[12px] leading-[1.8] text-(--h-muted)" aria-label={t("hermes.ticker.aria")}>
       {snapshot.events.slice(0, 30).map(e => (
         <li key={e.id} className="truncate">
-          <span className="text-slate-400">{clock(e.createdAt)}</span>{" "}
-          <b className="font-medium text-slate-700">{line(e)}</b>{" "}
+          <span className="text-(--h-faint)">{clock(e.createdAt)}</span>{" "}
+          <b className="font-medium text-(--h-text-2)">{line(e)}</b>{" "}
           {e.kind === "chat_message" ? t("hermes.ticker.asked") : e.kind === "chat_reply" ? t("hermes.ticker.replied")
-            : e.kind === "chat_failed" ? <span className="text-red-600">{t("hermes.ticker.failed")}</span> : e.kind}{" "}
+            : e.kind === "chat_failed" ? <span className="text-(--h-bad)">{t("hermes.ticker.failed")}</span> : e.kind}{" "}
           {e.kind.startsWith("chat_") ? null : (
-            <button type="button" onClick={() => onOpenReplay(e.taskId)} className="text-indigo-600 hover:underline">{e.taskId}</button>
+            <button type="button" onClick={() => onOpenReplay(e.taskId)} className="text-(--h-accent) hover:underline">{e.taskId}</button>
           )}
           {` "${e.taskTitle}"`}{e.summary ? ` · ${e.summary}` : ""}
         </li>
@@ -244,26 +275,26 @@ function ProjectsPanel({ snapshot, onAddProject }: { snapshot: HermesSnapshot; o
   return (
     <div className="flex flex-col gap-4 text-[13px]">
       <div>
-        <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{t("hermes.projects.boards")}</div>
+        <div className="text-[11px] font-medium uppercase tracking-wider text-(--h-muted)">{t("hermes.projects.boards")}</div>
         <ul className="mt-1.5 flex flex-col gap-1.5">
           {snapshot.boards.map(b => (
-            <li key={b.slug} className={`rounded-lg px-2.5 py-2 ${b.slug === snapshot.board?.slug ? "bg-indigo-50 text-indigo-800" : "bg-slate-50 text-slate-700"}`}>
+            <li key={b.slug} className={`rounded-lg px-2.5 py-2 ${b.slug === snapshot.board?.slug ? "bg-(--h-accent-soft) text-(--h-accent)" : "bg-(--h-sunk) text-(--h-text-2)"}`}>
               <div className="font-mono text-xs font-medium">{b.slug}</div>
-              {b.description && <div className="text-[12px] text-slate-500">{b.description}</div>}
+              {b.description && <div className="text-[12px] text-(--h-muted)">{b.description}</div>}
             </li>
           ))}
         </ul>
       </div>
       <div>
-        <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{t("hermes.projects.title")}</div>
-        {snapshot.projects.length === 0 && <p className="mt-1.5 text-slate-500">{t("hermes.projects.none")}</p>}
+        <div className="text-[11px] font-medium uppercase tracking-wider text-(--h-muted)">{t("hermes.projects.title")}</div>
+        {snapshot.projects.length === 0 && <p className="mt-1.5 text-(--h-muted)">{t("hermes.projects.none")}</p>}
         <ul className="mt-1.5 flex flex-col gap-1.5">
           {snapshot.projects.map(p => (
-            <li key={p.id} className="rounded-lg bg-slate-50 px-2.5 py-2 text-slate-700">
+            <li key={p.id} className="rounded-lg bg-(--h-sunk) px-2.5 py-2 text-(--h-text-2)">
               <div className="flex items-center gap-1.5 font-medium">
                 <i className="inline-block h-2 w-2 rounded-full" style={{ background: p.color || "#94A3B8" }} />{p.name}
               </div>
-              <div className="font-mono text-[11.5px] text-slate-500">
+              <div className="font-mono text-[11.5px] text-(--h-muted)">
                 {p.boardSlug ? `${t("hermes.board")}: ${boardOf(p.boardSlug)?.slug ?? p.boardSlug}` : t("hermes.projects.unbound")}
               </div>
             </li>
@@ -272,11 +303,11 @@ function ProjectsPanel({ snapshot, onAddProject }: { snapshot: HermesSnapshot; o
       </div>
       {onAddProject && (
         <button type="button" onClick={onAddProject}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[13px] font-medium text-indigo-700 hover:bg-indigo-100">
+          className="inline-flex items-center justify-center gap-1 rounded-md bg-(--h-accent-soft) px-2.5 py-1.5 text-[13px] font-medium text-(--h-accent)">
           <Plus className="h-3.5 w-3.5" />{t("hermes.edit.addProject")}
         </button>
       )}
-      <p className="rounded-lg border border-slate-200 px-2.5 py-2 text-[12px] leading-relaxed text-slate-500">{t("hermes.projects.note")}</p>
+      <p className="rounded-lg border border-(--h-border) px-2.5 py-2 text-[12px] leading-relaxed text-(--h-muted)">{t("hermes.projects.note")}</p>
     </div>
   );
 }

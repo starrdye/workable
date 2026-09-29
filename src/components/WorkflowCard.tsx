@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toCanvasImport, type WorkflowGraph } from "@/lib/workflowGraph";
+import { useHermesTheme } from "@/lib/hermes/useHermesTheme";
 
 const ROLE_COLORS: Record<string, string> = {
   person: "#6366F1",
@@ -25,6 +26,8 @@ export function WorkflowCard({ id }: { id: string }) {
   const [graph, setGraph] = useState<WorkflowGraph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pushed, setPushed] = useState<"idle" | "busy" | "done" | "failed">("idle");
+  // Match the Hermes chat it's embedded in (colours come in the URL), else the OS setting.
+  const theme = useHermesTheme();
 
   useEffect(() => {
     fetch(`/api/graphs/${encodeURIComponent(id)}`, { cache: "no-store" })
@@ -73,31 +76,31 @@ export function WorkflowCard({ id }: { id: string }) {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">
-      <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-[12px] dark:border-slate-700">
-        <span className="h-3 w-3 rounded-[3px] bg-indigo-600" aria-hidden="true" />
-        <span className="font-semibold">Workable</span>
+    <div className="hermes-root flex h-screen flex-col bg-(--h-surface)" data-mode={theme.mode} style={theme.style}>
+      <div className="flex items-center gap-2 border-b border-(--h-border) px-3 py-2 text-[12px]">
+        <span className="h-3 w-3 rounded-[3px] bg-(--h-accent)" aria-hidden="true" />
+        <span className="font-semibold text-(--h-text)">Workable</span>
         {view && (
-          <span className="text-slate-500 dark:text-slate-400">
+          <span className="text-(--h-muted)">
             {view.stats.steps} steps · {view.stats.handoffs} hand-offs{view.stats.phases ? ` · ${view.stats.phases} phases` : ""}
           </span>
         )}
         <span className="flex-1" />
         {graph && (
           <button type="button" onClick={showOnCanvas} disabled={pushed === "busy"}
-            className="rounded-md border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[12px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-500/50 dark:bg-indigo-500/10 dark:text-indigo-300">
+            className="rounded-md bg-(--h-accent-soft) px-2 py-0.5 text-[12px] font-medium text-(--h-accent) hover:opacity-90 disabled:opacity-60">
             {pushed === "done" ? "On the canvas ✓" : pushed === "failed" ? "Couldn't reach Workable" : "Show on canvas"}
           </button>
         )}
       </div>
       <div className="min-h-0 flex-1">
-        {error && <p className="p-4 text-[13px] text-red-600">{error}</p>}
-        {!error && !view && <p className="p-4 text-[13px] text-slate-500">Loading workflow…</p>}
+        {error && <p className="p-4 text-[13px] text-(--h-bad)">{error}</p>}
+        {!error && !view && <p className="p-4 text-[13px] text-(--h-muted)">Loading workflow…</p>}
         {view && (
           <svg viewBox={view.box} preserveAspectRatio="xMidYMid meet" className="h-full w-full" role="img" aria-label={`Workflow with ${view.stats.steps} steps`}>
             <defs>
               <marker id="wc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M0,0 L10,5 L0,10 z" className="fill-slate-400" />
+                <path d="M0,0 L10,5 L0,10 z" style={{ fill: "var(--h-faint)" }} />
               </marker>
             </defs>
             {view.groups.map(g => (
@@ -107,14 +110,14 @@ export function WorkflowCard({ id }: { id: string }) {
               </g>
             ))}
             {view.edges.map(e => (
-              <line key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} className="stroke-slate-400" strokeWidth={1.4} markerEnd="url(#wc-arrow)" />
+              <line key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} style={{ stroke: "var(--h-faint)" }} strokeWidth={1.4} markerEnd="url(#wc-arrow)" />
             ))}
             {view.nodes.map(n => (
               <g key={n.id}>
                 <title>{n.name}</title>
-                <circle cx={n.x} cy={n.y} r={R} className="fill-white dark:fill-slate-900" stroke={ROLE_COLORS[n.role] ?? "#64748B"} strokeWidth={2} />
+                <circle cx={n.x} cy={n.y} r={R} style={{ fill: "var(--h-surface)" }} stroke={ROLE_COLORS[n.role] ?? "#64748B"} strokeWidth={2} />
                 <text x={n.x} y={n.y + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill={ROLE_COLORS[n.role] ?? "#64748B"}>{n.initials}</text>
-                <text x={n.x} y={n.y + R + 14} textAnchor="middle" fontSize={11} className="fill-slate-700 dark:fill-slate-200">{truncate(n.name, 22)}</text>
+                <text x={n.x} y={n.y + R + 14} textAnchor="middle" fontSize={11} style={{ fill: "var(--h-text-2)" }}>{truncate(n.name, 22)}</text>
               </g>
             ))}
           </svg>

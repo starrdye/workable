@@ -101,3 +101,53 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .hermes-working-border { animation: none; }
 }
+
+/* ================= HERMES THEME TOKENS ================= */
+/* Scoped to the /hermes view and the chat card. Inside the Hermes desktop app
+   the plugin overrides the surface/text/border tokens with Hermes's own colours
+   (see src/lib/hermes/theme.ts); semantic colours stay fixed so they keep meaning. */
+.hermes-root {
+  --h-bg: #F8FAFC;
+  --h-surface: #FFFFFF;
+  --h-sunk: #F1F5F9;
+  --h-border: #E2E8F0;
+  --h-text: #1E293B;
+  --h-text-2: #334155;
+  --h-muted: #64748B;
+  --h-faint: #94A3B8;
+  --h-dot: #CBD5E1;
+  --h-accent: #4F46E5;
+  --h-accent-soft: #EEF2FF;
+  --h-ok: #059669;
+  --h-ok-soft: #ECFDF5;
+  --h-warn: #B45309;
+  --h-warn-soft: #FFFBEB;
+  --h-bad: #DC2626;
+  --h-bad-soft: #FEF2F2;
+  background: var(--h-bg);
+  color: var(--h-text);
+}
+.hermes-root[data-mode="dark"] {
+  color-scheme: dark;
+  --h-bg: #0F1422;
+  --h-surface: #161D2E;
+  --h-sunk: #1C2438;
+  --h-border: #2A3550;
+  --h-text: #E5E9F2;
+  --h-text-2: #CBD3E1;
+  --h-muted: #94A0B8;
+  --h-faint: #6B7690;
+  --h-dot: #243049;
+  --h-accent: #818CF8;
+  --h-accent-soft: rgba(129, 140, 248, 0.16);
+  --h-ok: #34D399;
+  --h-ok-soft: rgba(52, 211, 153, 0.13);
+  --h-warn: #FBBF24;
+  --h-warn-soft: rgba(251, 191, 36, 0.13);
+  --h-bad: #F87171;
+  --h-bad-soft: rgba(248, 113, 113, 0.14);
+}
+.hermes-dots {
+  background-image: radial-gradient(var(--h-dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+}

@@ -1,8 +1,9 @@
 /**
  * Workable window for the Hermes desktop app.
  *
- * Shows Workable (http://localhost:3000) in a pane beside the chat, plus a full
- * page in the sidebar. When the agent writes ::workable-graph{id="g_…"} on its
+ * Shows Workable's live team view (http://localhost:3000/hermes) in a pane
+ * beside the chat, plus a full page in the sidebar, painted with Hermes's own
+ * theme colours. When the agent writes ::workable-graph{id="g_…"} on its
  * own line (the MCP tools hand it that line as chatCard), the message shows a
  * live card of that workflow. Workable runs in the SDK's sandboxed frame; the embed
  * token lets it call its own API from there (see src/proxy.ts in the workable
@@ -20,9 +21,9 @@ import {
   PANES_AREA,
   ROUTES_AREA,
   SandboxedFrame,
-  SegmentedControl,
   SIDEBAR_NAV_AREA,
-  TRANSCRIPT_DIRECTIVE_AREA
+  TRANSCRIPT_DIRECTIVE_AREA,
+  useTheme
 } from '@hermes/plugin-sdk'
 import { useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
@@ -30,21 +31,30 @@ import { jsx, jsxs } from 'react/jsx-runtime'
 const WORKABLE_URL = 'http://localhost:3000'
 const EMBED_TOKEN = '__WORKABLE_EMBED_TOKEN__' // filled in by hermes-plugin/install.sh
 
-const VIEWS = [
-  { id: 'team', label: 'Team map' },
-  { id: 'canvas', label: 'Canvas' }
-]
-const PATHS = { team: '/hermes', canvas: '/?open=canvas' }
-
-function frameUrl(view) {
-  const path = PATHS[view]
-  return WORKABLE_URL + path + (path.includes('?') ? '&' : '?') + 'embed=' + encodeURIComponent(EMBED_TOKEN)
+/**
+ * Hermes's current theme as URL parameters, so the framed page paints with the
+ * same surfaces, text and borders (see src/lib/hermes/theme.ts in workable).
+ */
+function useThemeParams() {
+  const { theme, renderedMode } = useTheme()
+  const c = (theme && theme.colors) || {}
+  const params = new URLSearchParams({ mode: renderedMode === 'dark' ? 'dark' : 'light' })
+  const add = (key, value) => { if (typeof value === 'string' && value) params.set(key, value) }
+  add('bg', c.background)
+  add('surface', c.card)
+  add('sunk', c.muted)
+  add('fg', c.foreground)
+  add('muted', c.mutedForeground)
+  add('border', c.border)
+  params.set('embed', EMBED_TOKEN)
+  return params.toString()
 }
 
 const GRAPH_ID = /^g_[a-z0-9]{10}$/
 
 /** Inline card for ::workable-graph{id="g_…"}. Attributes are untrusted model output. */
 function WorkflowChatCard({ attrs, streaming }) {
+  const themeParams = useThemeParams()
   const id = typeof attrs.id === 'string' ? attrs.id : ''
   if (!GRAPH_ID.test(id)) return null
   if (streaming) {
@@ -58,7 +68,7 @@ function WorkflowChatCard({ attrs, streaming }) {
     style: { maxWidth: '680px' },
     children: [
       jsx(SandboxedFrame, {
-        src: WORKABLE_URL + '/embed/graph/' + id + '?embed=' + encodeURIComponent(EMBED_TOKEN),
+        src: WORKABLE_URL + '/embed/graph/' + id + '?' + themeParams,
         title: 'Workable workflow ' + id,
         sandbox: 'allow-scripts',
         className: 'block w-full border-0',
@@ -82,31 +92,31 @@ function WorkflowChatCard({ attrs, streaming }) {
 }
 
 function WorkableWindow({ os }) {
-  const [view, setView] = useState('team')
+  const themeParams = useThemeParams()
   const [reloadKey, setReloadKey] = useState(0)
 
   return jsxs('div', {
     className: 'flex h-full min-h-0 flex-col',
     children: [
       jsxs('div', {
-        className: 'flex items-center gap-2 border-b border-(--ui-border) px-2 py-1.5',
+        className: 'flex items-center gap-1 border-b border-(--ui-border) px-2 py-1',
         children: [
-          jsx(SegmentedControl, { options: VIEWS, value: view, onChange: setView }),
+          jsx('span', { className: 'px-1 text-xs font-medium text-(--ui-text-secondary)', children: 'Team' }),
           jsx('div', { className: 'flex-1' }),
           jsx(Button, {
             variant: 'ghost',
             size: 'icon-xs',
             title: 'Reload',
-            'aria-label': 'Reload Workable',
+            'aria-label': 'Reload the team view',
             onClick: () => setReloadKey(k => k + 1),
             children: jsx(Codicon, { name: 'refresh' })
           }),
           jsx(Button, {
             variant: 'ghost',
             size: 'icon-xs',
-            title: 'Open in browser (to add or edit agents)',
+            title: 'Open Workable in the browser (canvas, adding and editing agents)',
             'aria-label': 'Open Workable in the browser',
-            onClick: () => os.openExternal(WORKABLE_URL + PATHS[view]),
+            onClick: () => os.openExternal(WORKABLE_URL + '/hermes'),
             children: jsx(Codicon, { name: 'link-external' })
           })
         ]
@@ -114,16 +124,13 @@ function WorkableWindow({ os }) {
       jsx('div', {
         className: 'relative min-h-0 flex-1',
         children: jsx(SandboxedFrame, {
-          key: view + '-' + reloadKey,
-          src: frameUrl(view),
-          title: 'Workable',
+          // A theme change produces a new URL, which repaints the frame.
+          key: String(reloadKey),
+          src: WORKABLE_URL + '/hermes?' + themeParams,
+          title: 'Workable team view',
           sandbox: 'allow-scripts allow-forms',
           className: 'absolute inset-0 h-full w-full border-0'
         })
-      }),
-      jsx('div', {
-        className: 'border-t border-(--ui-border) px-2 py-1 text-[0.6875rem] text-(--ui-text-tertiary)',
-        children: 'Blank? Start Workable with npm run dev in the workable repo, then reload.'
       })
     ]
   })
@@ -138,7 +145,7 @@ export default {
         id: 'pane',
         area: PANES_AREA,
         title: 'Workable',
-        data: { placement: 'right', width: '560px' },
+        data: { placement: 'right', width: '480px' },
         render: () => jsx(WorkableWindow, { os: ctx.os })
       },
       {

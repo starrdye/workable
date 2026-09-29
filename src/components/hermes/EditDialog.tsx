@@ -26,8 +26,8 @@ interface Props {
 }
 
 const COLORS = ["#6366F1", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
-const input = "w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
-const label = "text-[12px] font-medium text-slate-600";
+const input = "w-full rounded-md border border-(--h-border) bg-(--h-surface) px-2.5 py-1.5 text-sm text-(--h-text) focus:border-(--h-accent) focus:outline-none focus:ring-1 focus:ring-(--h-accent)";
+const label = "text-[12px] font-medium text-(--h-muted)";
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -93,16 +93,16 @@ export function EditDialog({ request, snapshot, onClose, onApplied }: Props) {
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 px-4 py-10" role="presentation"
       onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="hermes-edit-title"
-        className="w-full max-w-2xl rounded-xl border border-gray-200 bg-white shadow-xl"
+        className="w-full max-w-2xl rounded-xl border border-(--h-border) bg-(--h-surface) shadow-xl"
         onKeyDown={e => { if (e.key === "Escape" && !busy) onClose(); }}>
-        <div className="flex items-center gap-3 border-b border-gray-200 px-5 py-3">
-          <h2 id="hermes-edit-title" className="flex-1 text-[15px] font-semibold text-slate-800">{title}</h2>
-          <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600" title={t("hermes.edit.target")}>{snapshot.home}</span>
-          <button type="button" onClick={onClose} disabled={busy} aria-label={t("hermes.edit.close")} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+        <div className="flex items-center gap-3 border-b border-(--h-border) px-5 py-3">
+          <h2 id="hermes-edit-title" className="flex-1 text-[15px] font-semibold text-(--h-text)">{title}</h2>
+          <span className="rounded bg-(--h-sunk) px-2 py-0.5 font-mono text-[11px] text-(--h-muted)" title={t("hermes.edit.target")}>{snapshot.home}</span>
+          <button type="button" onClick={onClose} disabled={busy} aria-label={t("hermes.edit.close")} className="rounded p-1 text-(--h-faint) hover:bg-(--h-sunk) hover:text-(--h-text-2)"><X className="h-4 w-4" /></button>
         </div>
 
         <div className="flex flex-col gap-4 px-5 py-4">
-          {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p>}
+          {error && <p className="rounded-lg border border-(--h-bad) bg-(--h-bad-soft) px-3 py-2 text-[13px] text-(--h-bad)">{error}</p>}
 
           {stage === "form" && (
             <form className="flex flex-col gap-3" onSubmit={e => { e.preventDefault(); preview(); }}>
@@ -132,7 +132,7 @@ export function EditDialog({ request, snapshot, onClose, onApplied }: Props) {
                   <Field id="he-give" label={t("hermes.edit.f.giveIt")} hint={t("hermes.edit.f.giveItHint")}>
                     <input id="he-give" className={input} value={form.giveIt} onChange={set("giveIt")} />
                   </Field>
-                  <p className="rounded-lg bg-slate-50 px-3 py-2 text-[12px] leading-relaxed text-slate-500">{t("hermes.edit.lockedRules")}</p>
+                  <p className="rounded-lg bg-(--h-sunk) px-3 py-2 text-[12px] leading-relaxed text-(--h-muted)">{t("hermes.edit.lockedRules")}</p>
                 </>
               )}
               {request.op === "edit-agent" && (
@@ -164,15 +164,15 @@ export function EditDialog({ request, snapshot, onClose, onApplied }: Props) {
                     <div className="flex gap-2" role="radiogroup" aria-label={t("hermes.edit.f.color")}>
                       {COLORS.map(c => (
                         <button key={c} type="button" role="radio" aria-checked={form.color === c} aria-label={c} onClick={() => setForm(f => ({ ...f, color: c }))}
-                          className={`h-6 w-6 rounded-full border-2 ${form.color === c ? "border-slate-800" : "border-white ring-1 ring-slate-200"}`} style={{ background: c }} />
+                          className={`h-6 w-6 rounded-full border-2 ${form.color === c ? "border-(--h-text)" : "border-white ring-1 ring-(--h-border)"}`} style={{ background: c }} />
                       ))}
                     </div>
                   </div>
                 </>
               )}
               <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-gray-50">{t("hermes.edit.cancel")}</button>
-                <button type="submit" disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                <button type="button" onClick={onClose} className="rounded-md border border-(--h-border) px-3 py-1.5 text-sm text-(--h-text-2) hover:bg-(--h-sunk)">{t("hermes.edit.cancel")}</button>
+                <button type="submit" disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-(--h-accent) px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
                   {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{t("hermes.edit.preview")}
                 </button>
               </div>
@@ -181,27 +181,27 @@ export function EditDialog({ request, snapshot, onClose, onApplied }: Props) {
 
           {stage === "review" && plan && (
             <div className="flex flex-col gap-4">
-              <p className="text-[13px] text-slate-600">{t("hermes.edit.reviewIntro").replace("{home}", plan.home)}</p>
+              <p className="text-[13px] text-(--h-muted)">{t("hermes.edit.reviewIntro").replace("{home}", plan.home)}</p>
               {plan.changes.map(c => <DiffCard key={c.path + c.label} change={c} />)}
               <section className="flex flex-col gap-1.5">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{t("hermes.edit.steps")}</div>
+                <div className="text-[11px] font-medium uppercase tracking-wider text-(--h-muted)">{t("hermes.edit.steps")}</div>
                 <ol className="flex flex-col gap-1">
                   {plan.steps.map((s, i) => (
-                    <li key={i} className="rounded-md bg-slate-50 px-2.5 py-1.5">
-                      <div className="text-[12.5px] text-slate-700">{i + 1}. {s.label}</div>
-                      <code className="block break-all font-mono text-[11.5px] text-slate-500">{s.command}</code>
+                    <li key={i} className="rounded-md bg-(--h-sunk) px-2.5 py-1.5">
+                      <div className="text-[12.5px] text-(--h-text-2)">{i + 1}. {s.label}</div>
+                      <code className="block break-all font-mono text-[11.5px] text-(--h-muted)">{s.command}</code>
                     </li>
                   ))}
                 </ol>
               </section>
               {plan.warnings.map(w => (
-                <p key={w} className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] leading-relaxed text-amber-800">
+                <p key={w} className="flex gap-2 rounded-lg border border-(--h-warn) bg-(--h-warn-soft) px-3 py-2 text-[12.5px] leading-relaxed text-(--h-warn)">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{w}</span>
                 </p>
               ))}
               <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setStage("form")} disabled={busy} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-gray-50">{t("hermes.edit.back")}</button>
-                <button type="button" onClick={apply} disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                <button type="button" onClick={() => setStage("form")} disabled={busy} className="rounded-md border border-(--h-border) px-3 py-1.5 text-sm text-(--h-text-2) hover:bg-(--h-sunk)">{t("hermes.edit.back")}</button>
+                <button type="button" onClick={apply} disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-(--h-accent) px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
                   {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{t("hermes.edit.apply")}
                 </button>
               </div>
@@ -210,21 +210,21 @@ export function EditDialog({ request, snapshot, onClose, onApplied }: Props) {
 
           {stage === "done" && result && (
             <div className="flex flex-col gap-3">
-              <p className={`flex items-center gap-2 text-sm font-medium ${result.ok ? "text-emerald-700" : "text-red-700"}`}>
+              <p className={`flex items-center gap-2 text-sm font-medium ${result.ok ? "text-(--h-ok)" : "text-(--h-bad)"}`}>
                 {result.ok ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                 {result.ok ? t("hermes.edit.applied") : result.error ?? t("hermes.edit.failed")}
               </p>
               <ol className="flex flex-col gap-1">
                 {result.steps.map((s, i) => (
-                  <li key={i} className="rounded-md bg-slate-50 px-2.5 py-1.5">
-                    <div className={`text-[12.5px] ${s.ok ? "text-slate-700" : "text-red-700"}`}>{s.ok ? "✓" : "✗"} {s.label}</div>
-                    {s.output && <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-slate-500">{s.output}</pre>}
+                  <li key={i} className="rounded-md bg-(--h-sunk) px-2.5 py-1.5">
+                    <div className={`text-[12.5px] ${s.ok ? "text-(--h-text-2)" : "text-(--h-bad)"}`}>{s.ok ? "✓" : "✗"} {s.label}</div>
+                    {s.output && <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-(--h-muted)">{s.output}</pre>}
                   </li>
                 ))}
               </ol>
-              {result.backupDir && <p className="text-[12px] text-slate-500">{t("hermes.edit.backup")} <code className="font-mono">{result.backupDir}</code></p>}
+              {result.backupDir && <p className="text-[12px] text-(--h-muted)">{t("hermes.edit.backup")} <code className="font-mono">{result.backupDir}</code></p>}
               <div className="flex justify-end">
-                <button type="button" onClick={onClose} className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-900">{t("hermes.edit.close")}</button>
+                <button type="button" onClick={onClose} className="rounded-md bg-(--h-text) px-3 py-1.5 text-sm font-medium text-white hover:opacity-90">{t("hermes.edit.close")}</button>
               </div>
             </div>
           )}
@@ -237,7 +237,7 @@ export function EditDialog({ request, snapshot, onClose, onApplied }: Props) {
 function Field({ id, label: text, hint, children }: { id: string; label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className={label}>{text}{hint && <span className="ml-1.5 font-normal text-slate-400">{hint}</span>}</label>
+      <label htmlFor={id} className={label}>{text}{hint && <span className="ml-1.5 font-normal text-(--h-faint)">{hint}</span>}</label>
       {children}
     </div>
   );
@@ -246,15 +246,15 @@ function Field({ id, label: text, hint, children }: { id: string; label: string;
 function DiffCard({ change }: { change: EditPlanView["changes"][number] }) {
   const rows = useMemo(() => withContext(lineDiff(change.before, change.after), 3), [change.before, change.after]);
   return (
-    <section className="overflow-hidden rounded-lg border border-gray-200">
-      <div className="flex flex-wrap items-baseline gap-x-2 border-b border-gray-200 bg-slate-50 px-3 py-1.5">
-        <span className="text-[12.5px] font-medium text-slate-700">{change.label}</span>
-        <span className="break-all font-mono text-[11px] text-slate-400">{change.path}</span>
+    <section className="overflow-hidden rounded-lg border border-(--h-border)">
+      <div className="flex flex-wrap items-baseline gap-x-2 border-b border-(--h-border) bg-(--h-sunk) px-3 py-1.5">
+        <span className="text-[12.5px] font-medium text-(--h-text-2)">{change.label}</span>
+        <span className="break-all font-mono text-[11px] text-(--h-faint)">{change.path}</span>
       </div>
       <pre className="max-h-72 overflow-auto font-mono text-[11.5px] leading-[1.55]">
         {rows.map((r, i) => r.kind === "gap"
-          ? <div key={i} className="bg-slate-50 px-3 text-slate-400">⋯ {r.count}</div>
-          : <div key={i} className={`whitespace-pre-wrap break-words px-3 ${r.kind === "add" ? "bg-emerald-50 text-emerald-800" : r.kind === "del" ? "bg-red-50 text-red-700" : "text-slate-500"}`}>
+          ? <div key={i} className="bg-(--h-sunk) px-3 text-(--h-faint)">⋯ {r.count}</div>
+          : <div key={i} className={`whitespace-pre-wrap break-words px-3 ${r.kind === "add" ? "bg-(--h-ok-soft) text-(--h-ok)" : r.kind === "del" ? "bg-(--h-bad-soft) text-(--h-bad)" : "text-(--h-muted)"}`}>
               {r.kind === "add" ? "+ " : r.kind === "del" ? "− " : "  "}{r.text || " "}
             </div>)}
       </pre>
