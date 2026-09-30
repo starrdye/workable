@@ -7,7 +7,7 @@
  *   Waiting (blue) · Working (orange) · Done (green) · Failed (red) · Review (purple) · Idle (grey)
  */
 
-import type { HermesProfile, HermesSnapshot, HermesTask, TurnOutcome } from './types';
+import type { HermesJob, HermesProfile, HermesSnapshot, HermesTask, TurnOutcome } from './types';
 import { HUMAN_ID, formatDuration } from './metrics';
 import { humanError } from './errors';
 
@@ -82,12 +82,14 @@ function baseStatus(snapshot: HermesSnapshot, profileId: string): Omit<AgentStat
   const ago = (at: number) => formatDuration(Math.max(0, now - at));
 
   if (act?.working) return { tone: 'working', key: 'hermes.st.working', step: act.step, detail: act.current?.title ?? null, working: true };
+  const job = snapshot.jobs?.find(j => j.profileId === profileId && j.state === 'running');
+  if (job) return { tone: 'working', key: 'hermes.st.working', step: 'scheduled job', detail: job.name, at: job.runs[0]?.at, working: true };
   if (running.length) return { tone: 'working', key: 'hermes.st.working', step: null, detail: running[0].title, at: running[0].startedAt ?? undefined, working: true };
   if (queued.length) return { tone: 'waiting', key: 'hermes.st.waiting', detail: queued[0].title, at: queued[0].createdAt, working: false };
 
   // Latest request: newest card (by when it last changed) vs newest chat with you (worker runs excluded).
   const card = [...tasks].sort((x, y) => cardTime(y) - cardTime(x))[0] ?? null;
-  const chat = act?.recent.find(c => c.source !== 'kanban' && c.outcome !== 'none' && c.outcome !== 'working') ?? null;
+  const chat = act?.recent.find(c => c.source !== 'kanban' && c.source !== 'cron' && c.outcome !== 'none' && c.outcome !== 'working') ?? null;
   const cardAt = card ? cardTime(card) : -1;
   const chatAt = chat ? chat.outcomeAt ?? chat.lastAt : -1;
   const useCard = !!card && cardAt >= chatAt;
@@ -189,7 +191,7 @@ export function requestRows(snapshot: HermesSnapshot, windowS = 24 * 3600, limit
   }
   for (const a of snapshot.activity ?? []) {
     for (const c of a.recent) {
-      if (c.source === 'kanban') continue; // the card row already covers a worker's run
+      if (c.source === 'kanban' || c.source === 'cron') continue; // the card row / Scheduled list covers these runs
       if (c.outcome === 'none') continue; // opened but never asked anything
       if (snapshot.generatedAt - c.lastAt > windowS && !c.working) continue;
       rows.push({
@@ -229,6 +231,22 @@ export interface TeamSummaryAgent {
   alert: string | null;
 }
 
+/** Scheduled-job tone and word, shared by the list, side panel and plugin. */
+export function jobTone(job: HermesJob): { tone: StatusTone; key: string } {
+  switch (job.state) {
+    case 'running': return { tone: 'working', key: 'hermes.sched.running' };
+    case 'error': return { tone: 'bad', key: 'hermes.sched.failed' };
+    case 'paused': return { tone: 'idle', key: 'hermes.sched.paused' };
+    case 'completed': return { tone: 'ok', key: 'hermes.sched.done' };
+    default: return { tone: 'waiting', key: 'hermes.sched.scheduled' };
+  }
+}
+
+/** The next scheduled job to run (soonest next run among active jobs). */
+export function nextJob(snapshot: HermesSnapshot): HermesJob | null {
+  return (snapshot.jobs ?? []).filter(j => j.nextRunAt && j.state !== 'paused').sort((a, b) => a.nextRunAt! - b.nextRunAt!)[0] ?? null;
+}
+
 /** The orchestrator's latest batch of cards (sent within two minutes of each other). */
 export interface TeamRound {
   by: string;
@@ -253,6 +271,8 @@ export interface TeamSummary {
   round: TeamRound | null;
   /** The most recent thing that happened, in one line. */
   latest: { tone: StatusTone; text: string; at: number } | null;
+  /** Scheduled jobs: the next one to run, how many there are, how many are failing. */
+  schedule: { next: { agent: string; name: string; at: number } | null; total: number; failing: number; running: number } | null;
 }
 
 const ROUND_GAP_S = 120;
@@ -302,7 +322,8 @@ export function teamSummary(snapshot: HermesSnapshot, label: (key: string) => st
     return {
       id: p.id, name: shortName(p), tone: st.tone, label: statusText(st, label(st.key)), sub,
       detail: st.detail ?? null, at: st.at ?? null, step: st.working ? st.step ?? null : null,
-      alert: st.tone !== 'bad' && st.blockedCards ? `${st.blockedCards} blocked` : null,
+      alert: st.tone !== 'bad' && st.blockedCards ? `${st.blockedCards} blocked`
+        : snapshot.jobs?.some(j => j.profileId === p.id && j.state === 'error') ? 'job failed' : null,
     };
   });
   const count = (tone: StatusTone) => agents.filter(a => a.tone === tone).length;
@@ -319,6 +340,17 @@ export function teamSummary(snapshot: HermesSnapshot, label: (key: string) => st
   const install = snapshot.homes.find(h => h.id === snapshot.homeId)?.label ?? snapshot.homeId;
   return {
     generatedAt: snapshot.generatedAt, install, board: snapshot.board?.slug ?? null, counts, headline, agents,
-    round: latestRound(snapshot), latest: latestLine(snapshot),
+    round: latestRound(snapshot), latest: latestLine(snapshot), schedule: scheduleSummary(snapshot),
+  };
+}
+
+function scheduleSummary(snapshot: HermesSnapshot): TeamSummary['schedule'] {
+  const jobs = snapshot.jobs ?? [];
+  if (!jobs.length) return null;
+  const next = nextJob(snapshot);
+  const p = next && snapshot.profiles.find(x => x.id === next.profileId);
+  return {
+    next: next ? { agent: p ? shortName(p) : next.profileId, name: next.name, at: next.nextRunAt! } : null,
+    total: jobs.length, failing: jobs.filter(j => j.state === 'error').length, running: jobs.filter(j => j.state === 'running').length,
   };
 }

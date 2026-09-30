@@ -34,6 +34,8 @@ export function watchDirs(home: string): string[] {
       for (const d of fs.readdirSync(parent, { withFileTypes: true })) if (d.isDirectory()) dirs.push(path.join(parent, d.name));
     } catch { /* folder not there yet */ }
   }
+  // Scheduled jobs: each profile's cron folder (jobs.json, executions.db-wal).
+  for (const d of [...dirs]) if (d === home || path.dirname(d) === path.join(home, 'profiles')) dirs.push(path.join(d, 'cron'));
   return dirs.filter(d => fs.existsSync(d));
 }
 

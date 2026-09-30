@@ -13,6 +13,7 @@ import type { HermesSnapshot } from "@/lib/hermes/types";
 import { TeamCanvas, type HermesMode, type ReplayFocus } from "./TeamCanvas";
 import { TeamRoster } from "./TeamRoster";
 import { RequestsTable } from "./RequestsTable";
+import { ScheduledList } from "./ScheduledList";
 import { type HermesMode as ThemeMode } from "@/lib/hermes/theme";
 import { useEmbedded, useHermesTheme } from "@/lib/hermes/useHermesTheme";
 import type { CSSProperties } from "react";
@@ -189,6 +190,12 @@ export function HermesView() {
             </div>
             {mode === "live" && (
               <div className="min-w-0 border-t border-(--h-border)" style={{ gridArea: "req" }}>
+                {/* Scheduled first: it's short and says what happens next; Requests can run long. */}
+                {(snapshot.jobs?.length ?? 0) > 0 && (
+                  <div className="border-b border-(--h-border)">
+                    <ScheduledList snapshot={snapshot} nowMs={nowMs} onSelect={selectAgent} />
+                  </div>
+                )}
                 <RequestsTable snapshot={snapshot} onOpenCard={openReplay} onSelect={selectAgent} nowMs={nowMs} />
               </div>
             )}
@@ -196,7 +203,7 @@ export function HermesView() {
               {mode === "projects" ? (
                 <ProjectsPanel snapshot={snapshot} onAddProject={editable ? () => setEditRequest({ op: "add-project" }) : undefined} />
               ) : (
-                <HermesSidePanel snapshot={snapshot} selectedId={selectedId} onOpenReplay={openReplay}
+                <HermesSidePanel snapshot={snapshot} selectedId={selectedId} onOpenReplay={openReplay} nowMs={nowMs}
                   onEdit={editable ? profile => setEditRequest({ op: "edit-agent", profile }) : undefined} />
               )}
             </aside>

@@ -59,6 +59,17 @@ export function TeamRoster({ snapshot, selectedId, onSelect }: Props) {
                       <span className="min-w-0 flex-1 truncate">
                         <span className="text-[13.5px] font-semibold text-(--h-text)">{shortName(p)}</span>
                         <span className="ml-2 text-[12px] text-(--h-muted)">{roleOf(p)}</span>
+                        {(() => {
+                          const jobs = (snapshot.jobs ?? []).filter(j => j.profileId === p.id);
+                          const run = jobs.find(j => j.state === "running");
+                          const next = jobs.filter(j => j.nextRunAt && j.state !== "paused").sort((a, b) => a.nextRunAt! - b.nextRunAt!)[0];
+                          if (!run && !next) return null;
+                          return (
+                            <span className="ml-2 text-[11.5px]" style={{ color: run ? TONE_VARS.working.bg : "var(--h-faint)" }} title={(run ?? next)!.name}>
+                              ⏱ {run ? t("hermes.sched.running").toLowerCase() : new Date(next!.nextRunAt! * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          );
+                        })()}
                       </span>
                       {st.tone !== "bad" && st.blockedCards > 0 && (
                         <span className="shrink-0 rounded border px-1.5 py-px text-[10.5px] font-semibold"

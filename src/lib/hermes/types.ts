@@ -145,6 +145,26 @@ export interface ChatSession {
 
 export type TurnOutcome = 'working' | 'completed' | 'failed' | 'cut-off' | 'interrupted' | 'none';
 
+/** One Hermes scheduled job (`hermes cron`), read from a profile's cron/jobs.json. */
+export interface HermesJob {
+  id: string;
+  profileId: string;
+  name: string;
+  /** Plain words: "Every 30 min", "Weekdays at 09:00". */
+  scheduleText: string;
+  /** scheduled · running · paused · error · completed */
+  state: 'scheduled' | 'running' | 'paused' | 'error' | 'completed';
+  nextRunAt: number | null;
+  lastRunAt: number | null;
+  lastStatus: 'ok' | 'error' | null;
+  lastError: string | null;
+  pausedReason: string | null;
+  /** First line of the latest run's response, when saved. */
+  lastReply: string | null;
+  /** Newest first, at most 8: one dot per run. */
+  runs: Array<{ at: number; status: 'completed' | 'failed' | 'running' | 'other' }>;
+}
+
 export interface ProfileActivity {
   profileId: string;
   working: boolean;
@@ -171,6 +191,8 @@ export interface HermesSnapshot {
   homes: HermesHomeOption[];
   /** Live chat activity per profile. */
   activity: ProfileActivity[];
+  /** Scheduled jobs across all profiles (`hermes cron`). */
+  jobs?: HermesJob[];
   board: HermesBoard | null;
   boards: HermesBoard[];
   projects: HermesProject[];

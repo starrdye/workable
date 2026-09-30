@@ -9,7 +9,9 @@
 import { AlertTriangle, History, Pencil } from "lucide-react";
 import type { ChatSession, HermesProfile, HermesSnapshot, TurnOutcome } from "@/lib/hermes/types";
 import { HUMAN_ID, formatDuration } from "@/lib/hermes/metrics";
-import { agentStatus, cardState, humanError, REQUEST_TONE, roleOf, shortName, TONE_VARS, type StatusTone } from "@/lib/hermes/status";
+import { agentStatus, cardState, humanError, jobTone, REQUEST_TONE, roleOf, shortName, TONE_VARS, type StatusTone } from "@/lib/hermes/status";
+import { RunDots, useJobWhen } from "./ScheduledList";
+import type { TranslationKey } from "@/lib/i18n";
 import { agentColor, initials, useStatusLabel, useStatusSub } from "./TeamCanvas";
 import { StatusBlock } from "./RequestsTable";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -20,6 +22,8 @@ interface Props {
   onOpenReplay: (taskId: string) => void;
   /** Present when editing is on. */
   onEdit?: (profile: HermesProfile) => void;
+  /** Current time (ms), for "in 28m" on scheduled jobs. */
+  nowMs?: number;
 }
 
 const OUTCOME_TONE: Record<TurnOutcome, StatusTone> = {
@@ -44,10 +48,11 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: Sta
   );
 }
 
-export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: Props) {
+export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit, nowMs }: Props) {
   const { t } = useLanguage();
   const label = useStatusLabel();
   const sub = useStatusSub();
+  const when = useJobWhen();
   const id = selectedId ?? snapshot.profiles.find(p => agentStatus(snapshot, p.id).working)?.id
     ?? snapshot.bottleneck?.profileId ?? snapshot.profiles.find(p => p.isDefault)?.id ?? null;
   const bottleneck = snapshot.bottleneck;
@@ -73,7 +78,8 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
   const hasBoardActivity = !!m && (m.queued + m.running + m.blocked + m.reviewQueue + m.runs > 0);
   const current: ChatSession | null = act?.current ?? null;
   // A worker running a card is a session too; the Cards section covers those.
-  const chats = (act?.recent ?? []).filter(c => c.source !== "kanban");
+  const chats = (act?.recent ?? []).filter(c => c.source !== "kanban" && c.source !== "cron");
+  const jobs = (snapshot.jobs ?? []).filter(j => j.profileId === profile.id);
 
   return (
     <div className="flex flex-col gap-5">
@@ -132,6 +138,32 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
                 {c.error && <div className="mt-1 break-words text-[11.5px] text-(--h-st-stuck)">{humanError(c.error)}</div>}
               </li>
             ))}
+          </ul>
+        </Section>
+      )}
+
+      {/* Scheduled jobs */}
+      {jobs.length > 0 && (
+        <Section title={`${t("hermes.sched.title")} · ${jobs.length}`}>
+          <ul className="flex flex-col gap-1.5">
+            {jobs.map(job => {
+              const jt = jobTone(job);
+              return (
+                <li key={job.id} className="rounded-lg bg-(--h-sunk) px-2.5 py-2 text-[12.5px]">
+                  <div className="flex items-start gap-2">
+                    <span className="min-w-0 flex-1 font-medium text-(--h-text-2)">{job.name}</span>
+                    <StatusBlock small tone={jt.tone} text={t(jt.key as TranslationKey)} />
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-(--h-faint)">
+                    <span>{job.scheduleText}</span>
+                    <span>{when(job, nowMs ? nowMs / 1000 : snapshot.generatedAt)}</span>
+                    <RunDots runs={job.runs} />
+                  </div>
+                  {job.state === "error" && job.lastError && <div className="mt-1 break-words text-[11.5px]" style={{ color: TONE_VARS.bad.bg }}>{job.lastError}</div>}
+                  {job.state !== "error" && job.lastReply && <div className="mt-1 truncate text-[11.5px] text-(--h-muted)" title={job.lastReply}>“{job.lastReply}”</div>}
+                </li>
+              );
+            })}
           </ul>
         </Section>
       )}

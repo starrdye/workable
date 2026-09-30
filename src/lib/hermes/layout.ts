@@ -13,6 +13,8 @@ export const NODE_H = 92;
 const GAP_X = 44;
 const TOP_Y = 36;
 const WORKER_Y = 214;
+/** Extra room below the bus when arrows carry labels (Projects / Replay), so they sit above the board box. */
+const WORKER_Y_LABELLED = 252;
 const ROW_GAP = 150;
 const PER_ROW = 4;
 
@@ -24,9 +26,16 @@ export interface TeamLayout {
   nodes: Map<string, NodeBox>;
   /** Bounding box of the worker rows, for the board / project boundary. */
   workerBounds: { x: number; y: number; w: number; h: number } | null;
+  /** Top of the first worker row (connectors route to it). */
+  firstRowY: number;
 }
 
-export function layoutTeam(profiles: HermesProfile[]): TeamLayout {
+/**
+ * `labels`: the connectors carry "N cards" labels (Projects / Replay). The
+ * worker row then moves down so the labels sit under the bus and the board
+ * box (with its own title) starts below them — never on the same line.
+ */
+export function layoutTeam(profiles: HermesProfile[], opts: { labels?: boolean } = {}): TeamLayout {
   const hub = profiles.find(p => p.isDefault) ?? null;
   const workers = profiles.filter(p => p !== hub);
   const cols = PER_ROW; // fixed width leaves room for the You → orchestrator label
@@ -38,7 +47,7 @@ export function layoutTeam(profiles: HermesProfile[]): TeamLayout {
     nodes.set(hub.id, { id: hub.id, x: (width - NODE_W) / 2, y: TOP_Y });
   }
 
-  const firstRowY = hub ? WORKER_Y : TOP_Y;
+  const firstRowY = hub ? (opts.labels ? WORKER_Y_LABELLED : WORKER_Y) : TOP_Y;
   const rows = Math.ceil(workers.length / PER_ROW);
   for (let r = 0; r < rows; r++) {
     const row = workers.slice(r * PER_ROW, (r + 1) * PER_ROW);
@@ -47,11 +56,12 @@ export function layoutTeam(profiles: HermesProfile[]): TeamLayout {
     row.forEach((p, i) => nodes.set(p.id, { id: p.id, x: startX + i * (NODE_W + GAP_X), y: firstRowY + r * ROW_GAP }));
   }
 
+  // 14px above the cards (the connectors enter here), a 30px title strip below them.
   const workerBounds = rows
-    ? { x: GAP_X / 2, y: firstRowY - 34, w: width - GAP_X, h: (rows - 1) * ROW_GAP + NODE_H + 58 }
+    ? { x: GAP_X / 2, y: firstRowY - 14, w: width - GAP_X, h: (rows - 1) * ROW_GAP + NODE_H + 44 }
     : null;
-  const height = rows ? firstRowY + (rows - 1) * ROW_GAP + NODE_H + 48 : TOP_Y + NODE_H + 48;
-  return { width, height, nodes, workerBounds };
+  const height = rows ? firstRowY + (rows - 1) * ROW_GAP + NODE_H + 56 : TOP_Y + NODE_H + 48;
+  return { width, height, nodes, workerBounds, firstRowY };
 }
 
 /** SVG path from one node to another: bottom→top when stacked, side→side when level. */
@@ -104,9 +114,8 @@ export interface TreeBranch {
  * shared bus, across, and down into the worker. Workers on later rows are
  * reached through the gap to their left so lines never cross a card.
  */
-export function treeBranch(hub: NodeBox, w: NodeBox): TreeBranch {
+export function treeBranch(hub: NodeBox, w: NodeBox, firstRowY = WORKER_Y): TreeBranch {
   const hx = hub.x + NODE_W / 2, hy = hub.y + NODE_H;
-  const firstRowY = WORKER_Y;
   const bus = hy + (firstRowY - hy) / 2;
   const wx = w.x + NODE_W / 2;
   const trunk = `M${hx},${hy} L${hx},${bus}`;
@@ -118,11 +127,15 @@ export function treeBranch(hub: NodeBox, w: NodeBox): TreeBranch {
     const gx = w.x - GAP_X / 2, lane = w.y - 22;
     pts = [[hx, bus], [gx, bus], [gx, lane], [wx, lane], [wx, w.y]];
   }
-  const [cx, cy] = pts[pts.length - 2];
-  const dir = Math.sign(wx - cx);
-  // Include the last corner in the coloured drop so the colour starts on the turn.
-  const drop = dir === 0 ? `M${wx},${cy} L${wx},${w.y}` : roundedPath([[wx - dir * CORNER * 1.5, cy], [wx, cy], [wx, w.y]]);
-  return { trunk, branch: roundedPath(pts), drop, label: { x: wx + 8, y: cy + (w.y - cy) / 2 + 4 } };
+  const [, cy] = pts[pts.length - 2];
+  // The coloured drop is only the straight part below the last corner, drawn exactly
+  // over the grey branch, so the colour change sits on a straight line and lines up.
+  // Both stop just short of the card so the arrowhead doesn't sit on its border.
+  const end = w.y - 2;
+  const branch = roundedPath([...pts.slice(0, -1), [wx, end]]);
+  const drop = `M${wx},${cy + CORNER} L${wx},${end}`;
+  // Label just under the bus, beside the drop — above the board box on the first row.
+  return { trunk, branch, drop, label: { x: wx + 8, y: cy + 15 } };
 }
 
 /** Find the drawn edge for a hand-off, and whether the pulse runs against the arrow. */

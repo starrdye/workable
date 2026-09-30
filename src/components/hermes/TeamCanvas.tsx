@@ -82,7 +82,9 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
   const { t } = useLanguage();
   const label = useStatusLabel();
   const sub = useStatusSub();
-  const layout = useMemo(() => layoutTeam(snapshot.profiles), [snapshot.profiles]);
+  // Projects / Replay label the connectors, which needs a little more room above the workers.
+  const labelled = mode === "projects" || mode === "replay";
+  const layout = useMemo(() => layoutTeam(snapshot.profiles, { labels: labelled }), [snapshot.profiles, labelled]);
   const profileIds = useMemo(() => new Set(snapshot.profiles.map(p => p.id)), [snapshot.profiles]);
   const tasksByNode = useMemo(() => {
     const map = new Map<string, HermesTask[]>();
@@ -131,8 +133,8 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
       <defs>
         {/* Small arrowheads that match their line: neutral, replay accent, and one per status colour */}
         {([["n", "var(--h-faint)"], ["a", "var(--h-accent)"], ...(Object.keys(TONE_VARS) as StatusTone[]).map(k => [k, TONE_VARS[k].bar])] as const).map(([id, fill]) => (
-          <marker key={id} id={`h-arr-${id}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-            <path d="M1,1.5 L8.5,5 L1,8.5 z" style={{ fill }} />
+          <marker key={id} id={`h-arr-${id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+            <path d="M1,1 L9,5 L1,9 z" style={{ fill }} />
           </marker>
         ))}
       </defs>
@@ -140,13 +142,13 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
       {/* Board / project boundary around the workers */}
       {layout.workerBounds && (
         <g>
-          <rect x={layout.workerBounds.x} y={layout.workerBounds.y} width={layout.workerBounds.w} height={layout.workerBounds.h} rx={16}
-            style={{
-              fill: mode === "projects" ? "var(--h-accent-soft)" : "none",
-              stroke: mode === "projects" ? "var(--h-accent)" : "var(--h-border)",
-            }}
-            strokeWidth={mode === "projects" ? 1.6 : 1.2} strokeDasharray={mode === "projects" ? undefined : "5 5"} />
-          <text x={layout.workerBounds.x + 16} y={layout.workerBounds.y + 20} fontSize={11} fontFamily={labelFont}
+          {/* The board outline only matters in Projects mode; elsewhere it would cut across the connectors. */}
+          {mode === "projects" && (
+            <rect x={layout.workerBounds.x} y={layout.workerBounds.y} width={layout.workerBounds.w} height={layout.workerBounds.h} rx={16}
+              style={{ fill: "var(--h-accent-soft)", stroke: "var(--h-accent)" }} strokeWidth={1.6} />
+          )}
+          {/* Title in the box's bottom strip: no connector passes there, so it never crosses an arrow. */}
+          <text x={layout.workerBounds.x + 16} y={mode === "projects" ? layout.workerBounds.y + layout.workerBounds.h - 9 : layout.firstRowY - 10} fontSize={11} fontFamily={labelFont}
             style={{ fill: mode === "projects" ? "var(--h-accent)" : "var(--h-muted)" }}>
             {`${t("hermes.board")}: ${snapshot.board?.slug ?? "—"}`}
             {mode === "projects" && ` · ${boardProject ? `${t("hermes.project")} ${boardProject.name}` : t("hermes.projects.noProject")} · ${t("hermes.projects.shared")}`}
@@ -161,7 +163,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
       {hub && layout.nodes.get(hub.id) && (() => {
         const hb = layout.nodes.get(hub.id)!;
         const first = snapshot.edges.find(e => e.source === hub.id && layout.nodes.get(e.target));
-        return first ? <path d={treeBranch(hb, layout.nodes.get(first.target)!).trunk} fill="none" style={{ stroke: "var(--h-faint)" }} strokeWidth={1.5} /> : null;
+        return first ? <path d={treeBranch(hb, layout.nodes.get(first.target)!, layout.firstRowY).trunk} fill="none" style={{ stroke: "var(--h-faint)" }} strokeWidth={1.75} /> : null;
       })()}
       {snapshot.edges.map(e => {
         const a = layout.nodes.get(e.source), b = layout.nodes.get(e.target);
@@ -174,11 +176,11 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         const count = e.count > 0 && (mode === "projects" || mode === "replay") ? `${e.count} ${t("hermes.edge.cards")}` : null;
 
         if (hub && e.source === hub.id) {
-          const tb = treeBranch(a, b);
+          const tb = treeBranch(a, b, layout.firstRowY);
           return (
             <g key={e.id} opacity={dim ? 0.3 : 1}>
-              <path d={tb.branch} fill="none" style={{ stroke: "var(--h-faint)" }} strokeWidth={1.5} markerEnd={color ? undefined : marker} />
-              {color && <path d={tb.drop} fill="none" style={{ stroke: color }} strokeWidth={2.5} strokeLinecap="round" markerEnd={marker} />}
+              <path d={tb.branch} fill="none" style={{ stroke: "var(--h-faint)" }} strokeWidth={1.75} markerEnd={color ? undefined : marker} />
+              {color && <path d={tb.drop} fill="none" style={{ stroke: color }} strokeWidth={1.75} strokeLinecap="butt" markerEnd={marker} />}
               {count && <text x={tb.label.x} y={tb.label.y} fontSize={10.5} fontFamily={labelFont} style={{ fill: "var(--h-muted)" }}>{count}</text>}
             </g>
           );
@@ -227,6 +229,12 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         // Blocked cards the status word doesn't show (e.g. an older card, while the latest replied).
         const alert = showStatus && st && st.tone !== "bad" && st.blockedCards ? `${st.blockedCards} ${t("hermes.st.blocked").toLowerCase()}` : "";
         const alertW = alert ? Math.round(alert.length * 6.2) + 14 : 0;
+        // Scheduled work: "⏱ 11:42" (next run) or "⏱ running", where the alert badge would go.
+        const agentJobs = showStatus && !isHuman ? (snapshot.jobs ?? []).filter(j => j.profileId === box.id) : [];
+        const runningJob = agentJobs.find(j => j.state === "running");
+        const soonest = agentJobs.filter(j => j.nextRunAt && j.state !== "paused").sort((a, b) => a.nextRunAt! - b.nextRunAt!)[0];
+        const clock = alert ? "" : runningJob ? `⏱ ${t("hermes.sched.running").toLowerCase()}`
+          : soonest ? `⏱ ${new Date(soonest.nextRunAt! * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
         const subText = showStatus && st ? truncate(sub(st), Math.max(0, Math.floor((NODE_W - 36 - pillW) / 6))) : "";
         const tasks = tasksByNode.get(box.id) ?? [];
         const dots = mode === "replay" ? tasks.slice(0, 5) : [];
@@ -242,17 +250,20 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
             )}
             <rect x={box.x} y={box.y} width={NODE_W} height={NODE_H} rx={12} style={{ fill: "var(--h-surface)", stroke }}
               strokeWidth={strokeWidth} />
-            {/* Status strip on the left edge, like a monday.com row colour */}
-            {showStatus && st && st.tone !== "idle" && (
-              <rect x={box.x + 4} y={box.y + 12} width={4} height={NODE_H - 24} rx={2} style={{ fill: tone.bar }} />
-            )}
 
             <circle cx={box.x + 27} cy={box.y + 29} r={14} style={{ fill: isHuman ? YOU_COLOR : agentColor(snapshot, box.id) }} />
             <text x={box.x + 27} y={box.y + 33} textAnchor="middle" fontSize={isHuman ? 9 : 11} fontWeight={700} fill="#FFFFFF">
               {isHuman ? "YOU" : initials(profile?.isDefault ? profile.name : box.id)}
             </text>
             <text x={box.x + 50} y={box.y + 26} fontSize={13.5} fontWeight={650} style={{ fill: "var(--h-text)" }}>{truncate(name, 18)}</text>
-            <text x={box.x + 50} y={box.y + 42} fontSize={11.5} style={{ fill: "var(--h-muted)" }}>{truncate(role, alert ? 11 : 24)}</text>
+            <text x={box.x + 50} y={box.y + 42} fontSize={11.5} style={{ fill: "var(--h-muted)" }}>{truncate(role, alert || clock ? 11 : 24)}</text>
+            {clock && (
+              <text x={box.x + NODE_W - 12} y={box.y + 42} textAnchor="end" fontSize={11} fontWeight={runningJob ? 600 : 400}
+                style={{ fill: runningJob ? TONE_VARS.working.bg : "var(--h-muted)" }}>
+                <title>{runningJob ? runningJob.name : soonest ? `${soonest.name} · ${soonest.scheduleText}` : ""}</title>
+                {clock}
+              </text>
+            )}
 
             {pill && (
               <g>

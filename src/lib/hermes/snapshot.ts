@@ -8,6 +8,7 @@ import { USE_HERMES_EDIT } from '@/lib/featureFlags';
 import type { HermesSnapshot, HermesTaskDetail } from './types';
 import { boardDbPath, readBoards, readCurrentBoardSlug, readProfiles, readProjects, resolveHermesHome, resolveHermesHomes } from './roster';
 import { readActivity } from './sessions';
+import { readJobs } from './cron';
 import { HUMAN_ID } from './metrics';
 import { readBoard, readTaskHistory } from './kanban';
 import { buildEdges, computeMetrics, detectBottleneck } from './metrics';
@@ -58,12 +59,13 @@ export function readSnapshot(opts: SnapshotOptions = {}): HermesSnapshot {
 
   const metrics = computeMetrics(profiles, data.tasks, data.reviewEvents, data.runs, now);
   const { activity, events: chatEvents } = readActivity(home, profiles, now);
+  const jobs = readJobs(home, profiles, now);
 
   // Anyone you chat with directly gets a You → profile edge. Kanban runs are the
   // worker doing a card, not a chat with you, so they don't count.
   const edges = buildEdges(profiles, data.tasks);
   for (const a of activity) {
-    if (!a.recent.some(c => c.source !== 'kanban')) continue;
+    if (!a.recent.some(c => c.source !== 'kanban' && c.source !== 'cron')) continue;
     const exists = edges.some(e => (e.source === HUMAN_ID && e.target === a.profileId) || (e.source === a.profileId && e.target === HUMAN_ID));
     if (!exists) edges.push({ id: `${HUMAN_ID}->${a.profileId}`, source: HUMAN_ID, target: a.profileId, kind: 'chat', count: 0 });
   }
@@ -75,6 +77,7 @@ export function readSnapshot(opts: SnapshotOptions = {}): HermesSnapshot {
     homeId: chosen?.id ?? homes.find(h => h.path === path.resolve(home))?.id ?? 'custom',
     homes,
     activity,
+    jobs,
     board,
     boards,
     projects: readProjects(home),

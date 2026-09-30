@@ -334,6 +334,7 @@ function TeamChip({ controls }) {
             ]
           }),
           offline || !summary ? jsx(OfflineNote, {}) : jsx(AgentList, { summary }),
+          summary && jsx(LiveNextJob, { schedule: summary.schedule }),
           jsx(LiveFreshness, {}),
           jsxs('div', {
             className: 'flex items-center gap-1 border-t border-(--ui-border) px-1.5 py-1',
@@ -472,6 +473,34 @@ function Freshness({ summary, offline, now }) {
   })
 }
 
+/** "⏱ Next: clerk · Time check in 28m" — the next scheduled job, counting down. */
+function NextJob({ schedule, now }) {
+  if (!schedule || (!schedule.next && !schedule.running && !schedule.failing)) return null
+  const wait = schedule.next ? schedule.next.at - now : null
+  const inText = wait == null ? '' : wait <= 30 ? 'due now' : 'in ' + (wait < 3600 ? elapsed(wait).replace(/ \d+s$/, '') : ago(wait))
+  const parts = []
+  if (schedule.running) parts.push({ tone: 'working', text: schedule.running + ' job running' })
+  if (schedule.failing) parts.push({ tone: 'bad', text: schedule.failing + ' job failing' })
+  return jsxs('div', {
+    className: 'flex items-center gap-1.5 border-t border-(--ui-border) px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-secondary)',
+    title: schedule.total + ' scheduled job' + (schedule.total === 1 ? '' : 's'),
+    children: [
+      jsx('span', { 'aria-hidden': 'true', className: 'text-(--ui-text-tertiary)', children: '⏱' }),
+      jsx('span', {
+        className: 'min-w-0 flex-1 truncate',
+        children: schedule.next ? 'Next: ' + schedule.next.agent + ' · ' + schedule.next.name : 'No upcoming runs'
+      }),
+      ...parts.map(p => jsxs('span', { className: 'inline-flex shrink-0 items-center gap-1', children: [jsx(Dot, { tone: p.tone, size: 6 }), p.text] }, p.text)),
+      inText && jsx('span', { className: 'shrink-0 tabular-nums text-(--ui-text-quaternary)', children: inText })
+    ]
+  })
+}
+
+/** Next-job line that ticks on its own (used inside the chip's popover). */
+function LiveNextJob({ schedule }) {
+  return jsx(NextJob, { schedule, now: useNowS() })
+}
+
 /** Freshness line that ticks on its own (used inside the chip's popover). */
 function LiveFreshness() {
   const { summary, offline } = useTeamSummary()
@@ -498,6 +527,7 @@ function TeamCard() {
         className: 'min-h-0 flex-1 overflow-auto border-t border-(--ui-border) py-0.5',
         children: summary.agents.map(a => jsx(AgentRow, { a, now }, a.id))
       }),
+      jsx(NextJob, { schedule: summary.schedule, now }),
       summary.latest && jsxs('div', {
         className: 'flex items-start gap-1.5 border-t border-(--ui-border) px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-secondary)',
         title: summary.latest.text,
@@ -528,7 +558,7 @@ function floatingControls(ctx) {
       area: PANES_AREA,
       title: 'Agents',
       // 'floating' = a fixed, draggable card above the layout; collapse from its header.
-      data: { placement: 'floating', anchor: 'bottom-right', width: '280px', height: '352px' },
+      data: { placement: 'floating', anchor: 'bottom-right', width: '280px', height: '380px' },
       render: () => jsx(TeamCard, {})
     })
   }
