@@ -98,7 +98,7 @@ function baseStatus(snapshot: HermesSnapshot, profileId: string): Omit<AgentStat
 
   if (recent && useCard && card!.status === 'blocked') {
     const failed = blockedByFailure(card!);
-    return { tone: 'bad', key: failed ? 'hermes.st.failed' : 'hermes.st.blocked', ago: ago(at), at, detail: humanError(card!.lastFailureError) ?? card!.title, working: false };
+    return { tone: 'bad', key: failed ? 'hermes.st.failed' : 'hermes.st.blocked', ago: ago(at), at, detail: humanError(card!.lastFailureError) ?? card!.blockReason ?? card!.title, working: false };
   }
   if (recent && !useCard && chat && chat.outcome !== 'completed') {
     return { tone: 'bad', key: chat.outcome === 'failed' ? 'hermes.st.failed' : 'hermes.st.noReply', ago: ago(at), at, detail: humanError(chat.error) ?? chat.title, working: false };
@@ -185,7 +185,7 @@ export function requestRows(snapshot: HermesSnapshot, windowS = 24 * 3600, limit
     if (state === 'done' && snapshot.generatedAt - at > windowS) continue;
     rows.push({
       id: t.id, kind: 'card', from: who(t.createdBy), to: who(t.assignee), title: t.title, state, at,
-      note: state === 'failed' || state === 'blocked' ? humanError(t.lastFailureError)
+      note: state === 'failed' || state === 'blocked' ? humanError(t.lastFailureError) ?? t.blockReason ?? null
         : state === 'done' ? (t.reply ? `“${t.reply.split('\n')[0]}”` : 'Finished without a reply') : null,
     });
   }

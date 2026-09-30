@@ -13,7 +13,7 @@
 import { useMemo } from "react";
 import type { DotStatus, HermesSnapshot, HermesTask } from "@/lib/hermes/types";
 import { HUMAN_ID } from "@/lib/hermes/metrics";
-import { NODE_H, NODE_W, edgePath, findEdgeFor, layoutTeam, treeBranch } from "@/lib/hermes/layout";
+import { NODE_H, NODE_W, edgePath, findEdgeFor, hasChains, layoutFlow, layoutTeam, stepConnector, treeBranch, type LayoutMode } from "@/lib/hermes/layout";
 import { agentStatus, requestRows, REQUEST_TONE, roleOf, shortName, statusText, TONE_VARS, type AgentStatus, type StatusTone } from "@/lib/hermes/status";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { TranslationKey } from "@/lib/i18n";
@@ -42,6 +42,8 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   replayFocus?: ReplayFocus | null;
+  /** auto (org chart, or flow when workers hand cards to each other) · org · flow */
+  layoutMode?: LayoutMode;
 }
 
 export function initials(name: string): string {
@@ -78,13 +80,16 @@ export function useStatusSub() {
   return (s: AgentStatus) => (s.working ? s.step ?? "" : s.ago ? t("hermes.req.ago").replace("{t}", s.ago) : "");
 }
 
-export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }: Props) {
+export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus, layoutMode = "auto" }: Props) {
   const { t } = useLanguage();
   const label = useStatusLabel();
   const sub = useStatusSub();
   // Projects / Replay label the connectors, which needs a little more room above the workers.
   const labelled = mode === "projects" || mode === "replay";
-  const layout = useMemo(() => layoutTeam(snapshot.profiles, { labels: labelled }), [snapshot.profiles, labelled]);
+  const flow = layoutMode === "flow" || (layoutMode === "auto" && hasChains(snapshot.profiles, snapshot.edges));
+  const layout = useMemo(
+    () => (flow ? layoutFlow(snapshot.profiles, snapshot.edges, { labels: labelled }) : layoutTeam(snapshot.profiles, { labels: labelled })),
+    [snapshot.profiles, snapshot.edges, labelled, flow]);
   const profileIds = useMemo(() => new Set(snapshot.profiles.map(p => p.id)), [snapshot.profiles]);
   const tasksByNode = useMemo(() => {
     const map = new Map<string, HermesTask[]>();
@@ -111,6 +116,18 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, snapshot]);
+
+  // Edges with a request in the last hour (old blocked cards don't count here).
+  const recentEdges = useMemo(() => {
+    const out = new Set<string>();
+    for (const r of requestRows(snapshot, EDGE_WINDOW_S, Infinity)) {
+      if (snapshot.generatedAt - r.at > EDGE_WINDOW_S) continue;
+      const hit = findEdgeFor(snapshot.edges, node(r.from), node(r.to));
+      if (hit) out.add(hit.edge.id);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot]);
 
   const replayEdge = useMemo(() => {
     if (mode !== "replay" || !replayFocus?.from || !replayFocus?.to) return null;
@@ -175,8 +192,14 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         const dim = mode === "replay" && replayFocus && !hot;
         const count = e.count > 0 && (mode === "projects" || mode === "replay") ? `${e.count} ${t("hermes.edge.cards")}` : null;
 
-        if (hub && e.source === hub.id) {
-          const tb = treeBranch(a, b, layout.firstRowY);
+        // In the flow layout the orchestrator's link to a later-step worker is only drawn
+        // when it actually handed it cards; otherwise the chain above explains it.
+        // Older hand-offs are left out too (outside Projects / Replay) so the chain stays readable.
+        if (flow && hub && e.source === hub.id && b.y > layout.firstRowY + 1 && (e.count === 0 || (!labelled && !recentEdges.has(e.id)))) return null;
+        const step = hub && e.source === hub.id ? treeBranch(a, b, layout.firstRowY)
+          : e.source !== HUMAN_ID ? stepConnector(a, b) : null;
+        if (step) {
+          const tb = step;
           return (
             <g key={e.id} opacity={dim ? 0.3 : 1}>
               <path d={tb.branch} fill="none" style={{ stroke: "var(--h-faint)" }} strokeWidth={1.75} markerEnd={color ? undefined : marker} />

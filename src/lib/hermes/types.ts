@@ -52,6 +52,8 @@ export interface HermesTask {
   projectId: string | null;
   /** What the worker sent back: the card's result, else its latest run summary (first 300 chars). */
   reply?: string | null;
+  /** Why the card is blocked, from its latest "blocked" event (e.g. the worker needs input). */
+  blockReason?: string | null;
 }
 
 export interface HermesEvent {

@@ -14,7 +14,7 @@ interface TaskRow {
   id: string; title: string; assignee: string | null; created_by: string | null; status: string;
   priority: number | null; created_at: number; started_at: number | null; completed_at: number | null;
   consecutive_failures: number | null; last_failure_error: string | null; tenant: string | null; project_id: string | null;
-  result?: string | null; last_summary?: string | null;
+  result?: string | null; last_summary?: string | null; block_payload?: string | null;
 }
 
 interface EventRow {
@@ -44,6 +44,7 @@ function mapTask(r: TaskRow): HermesTask {
     tenant: r.tenant || null,
     projectId: r.project_id || null,
     reply: (r.result?.trim() || r.last_summary?.trim() || null)?.slice(0, 300) ?? null,
+    blockReason: r.status === 'blocked' ? s(parsePayload(r.block_payload ?? null).reason)?.split('\n')[0].slice(0, 200) ?? null : null,
   };
 }
 
@@ -102,7 +103,8 @@ function replyColumns(db: Database.Database): string {
   const summary = has('task_runs', 'summary')
     ? '(SELECT r.summary FROM task_runs r WHERE r.task_id = tasks.id ORDER BY r.id DESC LIMIT 1)'
     : 'NULL';
-  return `${result} AS result, ${summary} AS last_summary`;
+  const block = "(SELECT e.payload FROM task_events e WHERE e.task_id = tasks.id AND e.kind = 'blocked' ORDER BY e.id DESC LIMIT 1)";
+  return `${result} AS result, ${summary} AS last_summary, ${block} AS block_payload`;
 }
 
 const EVENT_SELECT = `

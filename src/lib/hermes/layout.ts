@@ -7,6 +7,7 @@
 
 import type { HermesEdge, HermesProfile } from './types';
 import { HUMAN_ID } from './metrics';
+import { hierarchicalLayout } from '@/lib/layout';
 
 export const NODE_W = 200;
 export const NODE_H = 92;
@@ -144,4 +145,100 @@ export function findEdgeFor(edges: HermesEdge[], from: string, to: string): { ed
   if (fwd) return { edge: fwd, reverse: false };
   const rev = edges.find(e => e.source === to && e.target === from);
   return rev ? { edge: rev, reverse: true } : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hybrid layout: org chart for boss → workers, flow for hand-off chains */
+/* ------------------------------------------------------------------ */
+
+export type LayoutMode = 'auto' | 'org' | 'flow';
+
+/** True when workers hand cards to each other (a chain the org chart can't show). */
+export function hasChains(profiles: HermesProfile[], edges: HermesEdge[]): boolean {
+  const hub = profiles.find(p => p.isDefault)?.id;
+  const workers = new Set(profiles.filter(p => p.id !== hub).map(p => p.id));
+  return edges.some(e => e.kind === 'observed' && workers.has(e.source) && workers.has(e.target));
+}
+
+/**
+ * Flow layout: Workable's smart layout (hierarchicalLayout, the canvas's
+ * layered algorithm) decides each worker's step and its order within the
+ * step; the cards are then placed top-down on the same grid as the org chart
+ * — You and the orchestrator on top, one row per step below. Built from the
+ * roster plus the board's hand-offs (7-day window), so it only changes when
+ * the team's shape does, not on every live event.
+ */
+export function layoutFlow(profiles: HermesProfile[], edges: HermesEdge[], opts: { labels?: boolean } = {}): TeamLayout {
+  const hub = profiles.find(p => p.isDefault) ?? null;
+  if (!hub) return layoutTeam(profiles, opts);
+  const workers = profiles.filter(p => p !== hub);
+  const ids = new Set(profiles.map(p => p.id));
+
+  const layoutEdges = [
+    { source: HUMAN_ID, target: hub.id },
+    ...workers.map(w => ({ source: hub.id, target: w.id })),
+    ...edges.filter(e => e.kind === 'observed' && ids.has(e.source) && ids.has(e.target) && e.source !== e.target)
+      .map(e => ({ source: e.source, target: e.target })),
+  ];
+  const pos = hierarchicalLayout([{ id: HUMAN_ID }, ...profiles.map(p => ({ id: p.id }))], layoutEdges, 1600, 900);
+
+  // Columns in the smart layout (x) become steps here; dense columns are split
+  // into sub-columns about 55px apart, so cluster x values within 100px.
+  const xs = [...new Set(workers.map(w => Math.round(pos[w.id]?.x ?? 0)))].sort((a, b) => a - b);
+  const steps: number[] = [];
+  for (const x of xs) if (!steps.length || x - steps[steps.length - 1] > 100) steps.push(x);
+  const stepOf = (id: string) => {
+    const x = pos[id]?.x ?? 0;
+    let best = 0;
+    steps.forEach((s, i) => { if (Math.abs(s - x) < Math.abs(steps[best] - x)) best = i; });
+    return best;
+  };
+  const rows: HermesProfile[][] = steps.map(() => []);
+  for (const w of workers) rows[stepOf(w.id)].push(w);
+  rows.forEach(r => r.sort((a, b) => (pos[a.id]?.y ?? 0) - (pos[b.id]?.y ?? 0)));
+
+  const cols = Math.max(PER_ROW, ...rows.map(r => r.length));
+  const width = cols * NODE_W + (cols + 1) * GAP_X;
+  const nodes = new Map<string, NodeBox>();
+  nodes.set(HUMAN_ID, { id: HUMAN_ID, x: GAP_X, y: TOP_Y });
+  nodes.set(hub.id, { id: hub.id, x: (width - NODE_W) / 2, y: TOP_Y });
+  const firstRowY = opts.labels ? WORKER_Y_LABELLED : WORKER_Y;
+  rows.forEach((row, r) => {
+    const rowW = row.length * NODE_W + (row.length - 1) * GAP_X;
+    const startX = (width - rowW) / 2;
+    row.forEach((p, i) => nodes.set(p.id, { id: p.id, x: startX + i * (NODE_W + GAP_X), y: firstRowY + r * ROW_GAP }));
+  });
+  const n = rows.length;
+  const workerBounds = n ? { x: GAP_X / 2, y: firstRowY - 14, w: width - GAP_X, h: (n - 1) * ROW_GAP + NODE_H + 44 } : null;
+  const height = n ? firstRowY + (n - 1) * ROW_GAP + NODE_H + 56 : TOP_Y + NODE_H + 48;
+  return { width, height, nodes, workerBounds, firstRowY };
+}
+
+/**
+ * Connector for a hand-off between two workers on different rows: down from
+ * the source, across in the gap under its row, and down into the target
+ * (through the column gap when it skips rows). Same shape as treeBranch, so
+ * colour and arrowhead work the same way. Returns null for same-row or upward
+ * hand-offs; those fall back to a curve.
+ */
+export function stepConnector(a: NodeBox, b: NodeBox): TreeBranch | null {
+  const ax = a.x + NODE_W / 2, bx = b.x + NODE_W / 2;
+  const top = a.y + NODE_H;
+  if (b.y <= top) return null;
+  const midA = top + (ROW_GAP - NODE_H) / 2;
+  const end = b.y - 2;
+  let pts: Pt[];
+  if (b.y - a.y <= ROW_GAP + 1) {
+    pts = [[ax, top], [ax, midA], [bx, midA], [bx, end]];
+  } else {
+    const gx = b.x - GAP_X / 2, lane = b.y - 22;
+    pts = [[ax, top], [ax, midA], [gx, midA], [gx, lane], [bx, lane], [bx, end]];
+  }
+  const [, cy] = pts[pts.length - 2];
+  return {
+    trunk: '',
+    branch: roundedPath(pts),
+    drop: `M${bx},${cy + CORNER} L${bx},${end}`,
+    label: { x: bx + 8, y: cy + 15 },
+  };
 }

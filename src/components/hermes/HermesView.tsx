@@ -14,6 +14,7 @@ import { TeamCanvas, type HermesMode, type ReplayFocus } from "./TeamCanvas";
 import { TeamRoster } from "./TeamRoster";
 import { RequestsTable } from "./RequestsTable";
 import { ScheduledList } from "./ScheduledList";
+import { hasChains, type LayoutMode } from "@/lib/hermes/layout";
 import { type HermesMode as ThemeMode } from "@/lib/hermes/theme";
 import { useEmbedded, useHermesTheme } from "@/lib/hermes/useHermesTheme";
 import type { CSSProperties } from "react";
@@ -24,6 +25,25 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 const MODES: HermesMode[] = ["team", "live", "projects", "replay"];
+const LAYOUT_KEY = "workable.hermes.layout";
+
+/** "Auto · Org chart · Flow" in the map's corner; Auto shows which one it picked. */
+function LayoutSwitch({ value, onChange, autoPick }: { value: LayoutMode; onChange: (m: LayoutMode) => void; autoPick: "org" | "flow" }) {
+  const { t } = useLanguage();
+  const opts: LayoutMode[] = ["auto", "org", "flow"];
+  return (
+    <div className="absolute right-2 top-2 z-10 inline-flex items-center rounded-md border border-(--h-border) bg-(--h-surface) p-0.5 text-[11.5px] shadow-sm"
+      role="group" aria-label={t("hermes.layout.aria")} title={t("hermes.layout.help")}>
+      {opts.map(m => (
+        <button key={m} type="button" aria-pressed={value === m} onClick={() => onChange(m)}
+          className={`rounded px-2 py-0.5 font-medium transition-colors ${value === m ? "bg-(--h-sunk) text-(--h-text)" : "text-(--h-muted) hover:text-(--h-text)"}`}>
+          {t(`hermes.layout.${m}` as const)}
+          {m === "auto" && value === "auto" && <span className="ml-1 font-normal text-(--h-faint)">· {t(`hermes.layout.${autoPick}` as const)}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function HermesView() {
   const { t } = useLanguage();
@@ -43,6 +63,17 @@ export function HermesView() {
   const theme = useHermesTheme();
   const embedded = useEmbedded();
   const [narrow, setNarrow] = useState(false);
+  // Map layout, remembered per browser (a viewer preference, not shared state).
+  const [layoutMode, setLayoutModeState] = useState<LayoutMode>(() => {
+    try {
+      const v = typeof window === "undefined" ? null : window.localStorage.getItem(LAYOUT_KEY);
+      return v === "org" || v === "flow" ? v : "auto";
+    } catch { return "auto"; }
+  });
+  const setLayoutMode = useCallback((m: LayoutMode) => {
+    setLayoutModeState(m);
+    try { window.localStorage.setItem(LAYOUT_KEY, m); } catch { /* private mode */ }
+  }, []);
   const mapRef = useRef<HTMLDivElement>(null);
 
   // Below ~620px the map's text gets too small, so show the roster instead.
@@ -184,7 +215,11 @@ export function HermesView() {
                 ) : narrow && (mode === "team" || mode === "live") ? (
                   <TeamRoster snapshot={snapshot} selectedId={selectedId} onSelect={selectAgent} />
                 ) : (
-                  <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={selectAgent} replayFocus={replayFocus} />
+                  <div className="relative">
+                    <LayoutSwitch value={layoutMode} onChange={setLayoutMode}
+                      autoPick={hasChains(snapshot.profiles, snapshot.edges) ? "flow" : "org"} />
+                    <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={selectAgent} replayFocus={replayFocus} layoutMode={layoutMode} />
+                  </div>
                 )}
               </div>
             </div>
