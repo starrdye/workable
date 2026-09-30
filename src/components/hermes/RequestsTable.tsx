@@ -6,36 +6,41 @@
  * Waiting · Working · Replied · Failed · Review.
  */
 
-import { ArrowRight } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, X } from "lucide-react";
 import type { HermesSnapshot } from "@/lib/hermes/types";
 import { HUMAN_ID, formatDuration } from "@/lib/hermes/metrics";
 import { REQUEST_TONE, TONE_VARS, requestRows, requestSummary, shortName, type RequestState, type StatusTone } from "@/lib/hermes/status";
 import { YOU_COLOR, agentColor, initials } from "./TeamCanvas";
 import { useLanguage } from "@/contexts/LanguageContext";
 
-/** Solid status block with one word. */
-export function StatusBlock({ tone, text, className = "" }: { tone: StatusTone; text: string; className?: string }) {
+/** Solid status block with one word — the one status style used across the view. */
+export function StatusBlock({ tone, text, className = "", small = false }: { tone: StatusTone; text: string; className?: string; small?: boolean }) {
   const v = TONE_VARS[tone];
   return (
-    <span className={`inline-flex h-[22px] shrink-0 items-center justify-center rounded px-2 text-[11.5px] font-semibold leading-none ${className}`}
+    <span className={`inline-flex shrink-0 items-center justify-center rounded px-2 font-semibold leading-none ${small ? "h-[18px] text-[10.5px]" : "h-[22px] text-[11.5px]"} ${className}`}
       style={{ color: v.fg, background: v.bg }}>
       <span className="truncate">{text}</span>
     </span>
   );
 }
 
-const ORDER: RequestState[] = ["done", "failed", "blocked", "working", "waiting", "review"];
+const ORDER: RequestState[] = ["failed", "blocked", "working", "waiting", "review", "done"];
 
-export function RequestsTable({ snapshot, onOpenCard, onSelect }: {
+export function RequestsTable({ snapshot, onOpenCard, onSelect, nowMs }: {
   snapshot: HermesSnapshot;
   onOpenCard?: (taskId: string) => void;
   onSelect?: (profileId: string) => void;
+  /** Current time (ms) from the view's 1 s ticker, for "Updated 12s ago". */
+  nowMs?: number;
 }) {
   const { t } = useLanguage();
+  const [filter, setFilter] = useState<RequestState | null>(null);
   // The summary counts every request in the window; the list shows the newest 20.
   const all = requestRows(snapshot, undefined, Infinity);
   const sum = requestSummary(all);
-  const rows = all.slice(0, 20);
+  const rows = (filter ? all.filter(r => r.state === filter) : all).slice(0, 20);
+  const age = nowMs ? Math.max(0, Math.round(nowMs / 1000 - snapshot.generatedAt)) : null;
 
   const Who = ({ id }: { id: string }) => {
     const p = snapshot.profiles.find(x => x.id === id);
@@ -58,9 +63,24 @@ export function RequestsTable({ snapshot, onOpenCard, onSelect }: {
         <h3 className="text-[13px] font-semibold text-(--h-text)">{t("hermes.req.title")}</h3>
         <div className="flex flex-wrap gap-1.5">
           {ORDER.filter(s => sum[s] > 0).map(s => (
-            <StatusBlock key={s} tone={REQUEST_TONE[s]} text={`${sum[s]} ${t(`hermes.req.${s}` as const)}`} />
+            // Each count is a filter: click to show only those requests, again to clear.
+            <button key={s} type="button" aria-pressed={filter === s} onClick={() => setFilter(f => (f === s ? null : s))}
+              title={filter === s ? t("hermes.req.showAll") : t("hermes.req.onlyThese")}
+              className={`rounded transition-opacity ${filter && filter !== s ? "opacity-40 hover:opacity-80" : ""} ${filter === s ? "ring-2 ring-offset-1 ring-(--h-text-2) ring-offset-(--h-surface)" : ""}`}>
+              <StatusBlock tone={REQUEST_TONE[s]} text={`${sum[s]} ${t(`hermes.req.${s}` as const)}`} />
+            </button>
           ))}
+          {filter && (
+            <button type="button" onClick={() => setFilter(null)} className="inline-flex items-center gap-0.5 rounded px-1.5 text-[11.5px] text-(--h-muted) hover:text-(--h-text)">
+              <X className="h-3 w-3" />{t("hermes.req.showAll")}
+            </button>
+          )}
         </div>
+        {age != null && (
+          <span className="ml-auto text-[11.5px] tabular-nums" style={{ color: age > 60 ? "var(--h-st-working-solid)" : "var(--h-faint)" }}>
+            {t("hermes.req.updated").replace("{t}", age < 5 ? t("hermes.req.now") : formatDuration(age))}
+          </span>
+        )}
       </div>
       {rows.length === 0 ? (
         <p className="px-3 pb-3 text-[12.5px] text-(--h-faint)">{t("hermes.req.empty")}</p>
@@ -71,9 +91,7 @@ export function RequestsTable({ snapshot, onOpenCard, onSelect }: {
             const ago = t("hermes.req.ago").replace("{t}", formatDuration(Math.max(0, snapshot.generatedAt - r.at)));
             return (
               <li key={r.id} className="flex items-stretch gap-2 pr-3">
-                {/* Row colour bar */}
-                <span className="w-1 shrink-0" style={{ background: TONE_VARS[tone].bg }} aria-hidden="true" />
-                <div className="min-w-0 flex-1 py-2">
+                <div className="min-w-0 flex-1 py-2 pl-3">
                   <div className="flex items-center gap-1.5">
                     <Who id={r.from} />
                     <ArrowRight className="h-3.5 w-3.5 shrink-0 text-(--h-faint)" aria-label="to" />

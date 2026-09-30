@@ -96,6 +96,12 @@ body {
   --h-st-stuck: #E2445C;
   --h-st-review: #A25DDC;
   --h-st-idle: #E6E9EF;
+  /* Deeper shades for blocks that carry white text (WCAG AA, ≥ 4.5:1) */
+  --h-st-waiting-solid: #1F6FD6;
+  --h-st-working-solid: #B85C00;
+  --h-st-done-solid: #00804A;
+  --h-st-stuck-solid: #D12A45;
+  --h-st-review-solid: #8B46C8;
   --h-st-waiting-soft: #EAF2FF;
   --h-st-working-soft: #FFF4E3;
   --h-st-done-soft: #E5F9F0;
@@ -129,6 +135,19 @@ body {
   --h-st-done-soft: rgba(0, 200, 117, 0.13);
   --h-st-stuck-soft: rgba(226, 68, 92, 0.15);
   --h-st-review-soft: rgba(162, 93, 220, 0.15);
+}
+/* Team view layout: map + requests left, details right; one column below lg. */
+.hermes-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "map" "side" "req";
+}
+@media (min-width: 1024px) {
+  .hermes-layout {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "map side" "req side";
+  }
 }
 .hermes-dots {
   background-image: radial-gradient(var(--h-dot) 1px, transparent 1px);

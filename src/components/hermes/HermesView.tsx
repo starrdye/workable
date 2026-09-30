@@ -30,7 +30,10 @@ export function HermesView() {
   const [board, setBoard] = useState<string | null>(null);
   const [homeId, setHomeId] = useState<string | null>(null);
   const [sample, setSample] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ?agent=<id> preselects an agent (the Hermes status-bar chip and floating card link here).
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("agent"));
+  const detailsRef = useRef<HTMLElement>(null);
   const [replayTask, setReplayTask] = useState<string | null>(null);
   const [replayFocus, setReplayFocus] = useState<ReplayFocus | null>(null);
   const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
@@ -42,13 +45,18 @@ export function HermesView() {
   const mapRef = useRef<HTMLDivElement>(null);
 
   // Below ~620px the map's text gets too small, so show the roster instead.
+  const hasData = !!snapshot;
   useEffect(() => {
     const el = mapRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
+    // Measure now too: the observer's first callback can arrive late (or not at all in
+    // some embedded/headless frames), which left the 560px-wide map clipped at 480px.
+    setNarrow(el.clientWidth < 620);
     const ro = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 620));
     ro.observe(el);
     return () => ro.disconnect();
-  });
+    // The map container only exists once the first snapshot has arrived.
+  }, [hasData]);
 
   // Re-render every second so "updated Ns ago" stays honest.
   useEffect(() => {
@@ -59,6 +67,14 @@ export function HermesView() {
   const openReplay = useCallback((taskId: string) => {
     setReplayTask(taskId);
     setMode("replay");
+  }, []);
+
+  // Select an agent; in the single-column layout, bring its details into view.
+  const selectAgent = useCallback((id: string) => {
+    setSelectedId(id);
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+      requestAnimationFrame(() => detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
   }, []);
 
   const handleFocus = useCallback((f: ReplayFocus | null) => setReplayFocus(f), []);
@@ -157,24 +173,26 @@ export function HermesView() {
         )}
 
         <div className="overflow-hidden rounded-xl border border-(--h-border) bg-(--h-surface)">
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="min-w-0">
+          {/* Wide: map + requests on the left, details on the right. Single column:
+              map → details → requests, so a click's details show right under the map. */}
+          <div className="hermes-layout">
+            <div className="min-w-0" style={{ gridArea: "map" }}>
               <div ref={mapRef} className="hermes-dots overflow-x-auto bg-(--h-bg)">
                 {!snapshot.profiles.length ? (
                   <p className="p-8 text-sm text-(--h-muted)">{t("hermes.noProfiles").replace("{home}", snapshot.home)}</p>
                 ) : narrow && (mode === "team" || mode === "live") ? (
-                  <TeamRoster snapshot={snapshot} selectedId={selectedId} onSelect={setSelectedId} />
+                  <TeamRoster snapshot={snapshot} selectedId={selectedId} onSelect={selectAgent} />
                 ) : (
-                  <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={setSelectedId} replayFocus={replayFocus} />
+                  <TeamCanvas snapshot={snapshot} mode={mode} selectedId={selectedId} onSelect={selectAgent} replayFocus={replayFocus} />
                 )}
               </div>
-              {mode === "live" && (
-                <div className="border-t border-(--h-border)">
-                  <RequestsTable snapshot={snapshot} onOpenCard={openReplay} onSelect={setSelectedId} />
-                </div>
-              )}
             </div>
-            <aside className="border-t border-(--h-border) p-4 lg:border-l lg:border-t-0" aria-live="polite">
+            {mode === "live" && (
+              <div className="min-w-0 border-t border-(--h-border)" style={{ gridArea: "req" }}>
+                <RequestsTable snapshot={snapshot} onOpenCard={openReplay} onSelect={selectAgent} nowMs={nowMs} />
+              </div>
+            )}
+            <aside ref={detailsRef} className="scroll-mt-28 border-t border-(--h-border) p-4 lg:border-l lg:border-t-0" style={{ gridArea: "side" }} aria-live="polite">
               {mode === "projects" ? (
                 <ProjectsPanel snapshot={snapshot} onAddProject={editable ? () => setEditRequest({ op: "add-project" }) : undefined} />
               ) : (

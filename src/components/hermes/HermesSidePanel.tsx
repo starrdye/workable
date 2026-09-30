@@ -9,8 +9,8 @@
 import { AlertTriangle, History, Pencil } from "lucide-react";
 import type { ChatSession, HermesProfile, HermesSnapshot, TurnOutcome } from "@/lib/hermes/types";
 import { HUMAN_ID, formatDuration } from "@/lib/hermes/metrics";
-import { agentStatus, humanError, roleOf, shortName, TONE_VARS, type StatusTone } from "@/lib/hermes/status";
-import { DOT_COLORS, agentColor, initials, useStatusLabel, useStatusSub } from "./TeamCanvas";
+import { agentStatus, cardState, humanError, REQUEST_TONE, roleOf, shortName, TONE_VARS, type StatusTone } from "@/lib/hermes/status";
+import { agentColor, initials, useStatusLabel, useStatusSub } from "./TeamCanvas";
 import { StatusBlock } from "./RequestsTable";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -122,9 +122,9 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
               <li key={c.id} className="rounded-lg bg-(--h-sunk) px-2.5 py-2 text-[12.5px]">
                 <div className="flex items-start gap-2">
                   <span className="min-w-0 flex-1 text-(--h-text-2)">{c.title}</span>
-                  {c.outcome !== "none" && <StatusBlock tone={OUTCOME_TONE[c.outcome]} text={t(`hermes.outcome.${c.outcome}` as const)} />}
+                  {c.outcome !== "none" && <StatusBlock small tone={OUTCOME_TONE[c.outcome]} text={t(`hermes.outcome.${c.outcome}` as const)} />}
                 </div>
-                <div className="mt-0.5 flex flex-wrap gap-x-2 font-mono text-[10.5px] text-(--h-faint)">
+                <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-(--h-faint)">
                   <span>{c.source}</span>
                   <span>{c.working ? (c.step ?? "") : `${formatDuration(snapshot.generatedAt - c.lastAt)} ${t("hermes.side.ago")}`}</span>
                   <span>{c.messages} {t("hermes.side.msgs")}</span>
@@ -143,12 +143,10 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
             {cards.slice(0, 12).map(card => (
               <li key={card.id}>
                 <button type="button" onClick={() => onOpenReplay(card.id)} title={t("hermes.side.openReplay")}
-                  className="group grid w-full grid-cols-[10px_1fr_auto] items-start gap-2 rounded-lg bg-(--h-sunk) px-2 py-1.5 text-left text-[12.5px] hover:bg-(--h-accent-soft) focus-visible:outline-2 focus-visible:outline-(--h-accent)">
-                  <span className="mt-1.5 h-2 w-2 rounded-full" style={{ background: DOT_COLORS[card.dot] }} />
-                  <span className="text-(--h-text-2)">{card.title}</span>
-                  <span className="flex items-center gap-1 font-mono text-[10.5px] uppercase text-(--h-faint) group-hover:text-(--h-accent)">
-                    {card.status}<History className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-                  </span>
+                  className="group flex w-full items-start gap-2 rounded-lg bg-(--h-sunk) px-2.5 py-1.5 text-left text-[12.5px] hover:bg-(--h-accent-soft) focus-visible:outline-2 focus-visible:outline-(--h-accent)">
+                  <span className="min-w-0 flex-1 text-(--h-text-2)">{card.title}</span>
+                  <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-(--h-faint) opacity-0 group-hover:opacity-100" aria-hidden="true" />
+                  <StatusBlock small tone={REQUEST_TONE[cardState(card)]} text={t(`hermes.req.${cardState(card)}` as const)} />
                 </button>
               </li>
             ))}
@@ -158,16 +156,24 @@ export function HermesSidePanel({ snapshot, selectedId, onOpenReplay, onEdit }: 
 
       {hasBoardActivity && m ? (
         <Section title={t("hermes.side.last7")}>
-          <div className="grid grid-cols-2 gap-2">
-            <Stat label={t("hermes.side.queued")} value={String(m.queued)} />
-            <Stat label={t("hermes.side.running")} value={String(m.running)} tone={m.running ? "working" : undefined} />
-            <Stat label={t("hermes.side.blocked")} value={String(m.blocked)} tone={m.blocked ? "bad" : undefined} />
-            <Stat label={t("hermes.side.reviewQueue")} value={String(m.reviewQueue)} tone={m.reviewQueue > 2 ? "warn" : undefined} />
-            <Stat label={t("hermes.side.successRate")} value={m.successRate == null ? "—" : `${Math.round(m.successRate * 100)}% · ${m.runs}`}
-              tone={m.successRate != null && m.successRate < 0.7 ? "bad" : undefined} />
-            <Stat label={t("hermes.side.medianRun")} value={formatDuration(m.medianRunSeconds)} />
-          </div>
-          {m.lastError && <p className="rounded-lg bg-(--h-bad-soft) px-2.5 py-2 font-mono text-[11.5px] leading-snug text-(--h-bad) break-words">{humanError(m.lastError)}</p>}
+          {/* One line; zero counts are left out, problems are coloured. */}
+          <p className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[12.5px] tabular-nums text-(--h-text-2)">
+            {([
+              m.runs ? { text: t("hermes.side.runs").replace("{n}", String(m.runs)) } : null,
+              m.successRate != null ? { text: t("hermes.side.success").replace("{p}", String(Math.round(m.successRate * 100))), tone: m.successRate < 0.7 ? "bad" as const : undefined } : null,
+              m.medianRunSeconds != null ? { text: t("hermes.side.median").replace("{t}", formatDuration(m.medianRunSeconds)) } : null,
+              m.running ? { text: t("hermes.side.runningN").replace("{n}", String(m.running)), tone: "working" as const } : null,
+              m.queued ? { text: t("hermes.side.queuedN").replace("{n}", String(m.queued)) } : null,
+              m.blocked ? { text: t("hermes.side.blockedN").replace("{n}", String(m.blocked)), tone: "bad" as const } : null,
+              m.reviewQueue ? { text: t("hermes.side.reviewN").replace("{n}", String(m.reviewQueue)), tone: m.reviewQueue > 2 ? "warn" as const : undefined } : null,
+            ] as Array<{ text: string; tone?: StatusTone } | null>).filter((x): x is { text: string; tone?: StatusTone } => !!x).map((x, i) => (
+              <span key={x.text}>
+                {i > 0 && <span className="mr-1.5 text-(--h-faint)">·</span>}
+                <span style={x.tone ? { color: TONE_VARS[x.tone].bg, fontWeight: 600 } : undefined}>{x.text}</span>
+              </span>
+            ))}
+          </p>
+          {m.lastError && <p className="rounded-lg bg-(--h-st-stuck-soft) px-2.5 py-2 text-[12px] leading-snug text-(--h-st-stuck-solid) break-words">{humanError(m.lastError)}</p>}
         </Section>
       ) : (
         <p className="text-[12px] text-(--h-faint)">{t("hermes.side.noBoard")}</p>

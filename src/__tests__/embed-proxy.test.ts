@@ -32,6 +32,16 @@ describe('embed proxy', () => {
     expect(proxy(req('/api/hermes/snapshot?embed=wrong', { origin: 'null' })).status).toBe(403);
   });
 
+  it('lets the Hermes window read the summary with the token, from its own origin', () => {
+    const ok = proxy(req(`/api/hermes/summary?embed=${TOKEN}`, { origin: 'app://hermes' }));
+    expect(ok.headers.get('x-middleware-next')).toBe('1');
+    expect(ok.headers.get('access-control-allow-origin')).toBe('*');
+    expect(proxy(req('/api/hermes/summary?embed=wrong', { origin: 'https://evil.example' })).status).toBe(403);
+    expect(proxy(req(`/api/hermes/apply?embed=${TOKEN}`, { method: 'POST', origin: 'app://hermes' })).status).toBe(403);
+    // No token: no CORS header, so another site's page can't read the response.
+    expect(proxy(req('/api/hermes/summary', { origin: 'https://evil.example' })).headers.get('access-control-allow-origin')).toBeNull();
+  });
+
   it('lets framed requests with the token through, with CORS', () => {
     const res = proxy(req(`/api/hermes/snapshot?embed=${TOKEN}`, { origin: 'null' }));
     expect(res.headers.get('x-middleware-next')).toBe('1');

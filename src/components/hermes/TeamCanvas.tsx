@@ -123,14 +123,14 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
 
   const hub = snapshot.profiles.find(p => p.isDefault);
   const boardProject = snapshot.board?.projectId ? snapshot.projects.find(p => p.id === snapshot.board?.projectId) : null;
-  const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
+  const labelFont = "inherit";
 
   return (
     <svg viewBox={`0 0 ${layout.width} ${layout.height}`} className="block h-auto w-full" style={{ minWidth: 560 }}
       role="img" aria-label={t("hermes.canvas.aria")}>
       <defs>
         {/* Small arrowheads that match their line: neutral, replay accent, and one per status colour */}
-        {([["n", "var(--h-faint)"], ["a", "var(--h-accent)"], ...(Object.keys(TONE_VARS) as StatusTone[]).map(k => [k, TONE_VARS[k].bg])] as const).map(([id, fill]) => (
+        {([["n", "var(--h-faint)"], ["a", "var(--h-accent)"], ...(Object.keys(TONE_VARS) as StatusTone[]).map(k => [k, TONE_VARS[k].bar])] as const).map(([id, fill]) => (
           <marker key={id} id={`h-arr-${id}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
             <path d="M1,1.5 L8.5,5 L1,8.5 z" style={{ fill }} />
           </marker>
@@ -146,7 +146,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
               stroke: mode === "projects" ? "var(--h-accent)" : "var(--h-border)",
             }}
             strokeWidth={mode === "projects" ? 1.6 : 1.2} strokeDasharray={mode === "projects" ? undefined : "5 5"} />
-          <text x={layout.workerBounds.x + 16} y={layout.workerBounds.y + 20} fontSize={11} fontFamily={mono}
+          <text x={layout.workerBounds.x + 16} y={layout.workerBounds.y + 20} fontSize={11} fontFamily={labelFont}
             style={{ fill: mode === "projects" ? "var(--h-accent)" : "var(--h-muted)" }}>
             {`${t("hermes.board")}: ${snapshot.board?.slug ?? "—"}`}
             {mode === "projects" && ` · ${boardProject ? `${t("hermes.project")} ${boardProject.name}` : t("hermes.projects.noProject")} · ${t("hermes.projects.shared")}`}
@@ -168,7 +168,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         if (!a || !b || e.kind === "chat") return null;
         const hot = replayEdge?.edge.id === e.id;
         const tone = edgeTone.get(e.id);
-        const color = hot ? "var(--h-accent)" : tone ? TONE_VARS[tone].bg : null;
+        const color = hot ? "var(--h-accent)" : tone ? TONE_VARS[tone].bar : null;
         const marker = `url(#h-arr-${hot ? "a" : tone ?? "n"})`;
         const dim = mode === "replay" && replayFocus && !hot;
         const count = e.count > 0 && (mode === "projects" || mode === "replay") ? `${e.count} ${t("hermes.edge.cards")}` : null;
@@ -179,7 +179,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
             <g key={e.id} opacity={dim ? 0.3 : 1}>
               <path d={tb.branch} fill="none" style={{ stroke: "var(--h-faint)" }} strokeWidth={1.5} markerEnd={color ? undefined : marker} />
               {color && <path d={tb.drop} fill="none" style={{ stroke: color }} strokeWidth={2.5} strokeLinecap="round" markerEnd={marker} />}
-              {count && <text x={tb.label.x} y={tb.label.y} fontSize={10.5} fontFamily={mono} style={{ fill: "var(--h-muted)" }}>{count}</text>}
+              {count && <text x={tb.label.x} y={tb.label.y} fontSize={10.5} fontFamily={labelFont} style={{ fill: "var(--h-muted)" }}>{count}</text>}
             </g>
           );
         }
@@ -187,17 +187,17 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
           <g key={e.id} opacity={dim ? 0.3 : 1}>
             <path d={edgePath(a, b)} fill="none" style={{ stroke: color ?? "var(--h-faint)" }} strokeWidth={color ? 2.5 : 1.5}
               strokeDasharray={!color && e.kind === "observed" ? "4 4" : undefined} markerEnd={marker} />
-            {count && <text x={(a.x + b.x) / 2 + NODE_W / 2 + 6} y={(a.y + NODE_H + b.y) / 2 + 14} fontSize={10.5} fontFamily={mono} style={{ fill: "var(--h-muted)" }}>{count}</text>}
+            {count && <text x={(a.x + b.x) / 2 + NODE_W / 2 + 6} y={(a.y + NODE_H + b.y) / 2 + 14} fontSize={10.5} fontFamily={labelFont} style={{ fill: "var(--h-muted)" }}>{count}</text>}
           </g>
         );
       })}
       {hub && layout.nodes.get(HUMAN_ID) && (
         <text x={layout.nodes.get(HUMAN_ID)!.x + NODE_W + 12} y={layout.nodes.get(HUMAN_ID)!.y + NODE_H / 2 - 8}
-          fontSize={10.5} fontFamily={mono} style={{ fill: "var(--h-muted)" }}>{t("hermes.edge.requests")}</text>
+          fontSize={10.5} fontFamily={labelFont} style={{ fill: "var(--h-muted)" }}>{t("hermes.edge.requests")}</text>
       )}
       {mode === "team" && hub && layout.nodes.get(hub.id) && (
         <text x={layout.nodes.get(hub.id)!.x + NODE_W / 2 + 8} y={layout.nodes.get(hub.id)!.y + NODE_H + 28}
-          fontSize={10.5} fontFamily={mono} style={{ fill: "var(--h-muted)" }}>{t("hermes.edge.delegates")}</text>
+          fontSize={10.5} fontFamily={labelFont} style={{ fill: "var(--h-muted)" }}>{t("hermes.edge.delegates")}</text>
       )}
 
       {/* Nodes */}
@@ -213,7 +213,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
         const strong = showStatus && working; // only "working right now" gets a coloured border
         // The bottleneck is explained in the side panel; a border colour here would
         // clash with the status colours (orange = working).
-        const stroke = strong ? tone.bg : "var(--h-border)";
+        const stroke = strong ? tone.bar : "var(--h-border)";
         const strokeWidth = strong ? 2 : 1.2;
 
         const name = isHuman ? t("hermes.you") : profile ? shortName(profile) : box.id;
@@ -224,6 +224,9 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
           : st ? { text: label(st), fg: tone.fg, bg: tone.bg, icon: "" } : null;
         const pillText = pill ? truncate(pill.text, 26) : "";
         const pillW = pillWidth(pillText);
+        // Blocked cards the status word doesn't show (e.g. an older card, while the latest replied).
+        const alert = showStatus && st && st.tone !== "bad" && st.blockedCards ? `${st.blockedCards} ${t("hermes.st.blocked").toLowerCase()}` : "";
+        const alertW = alert ? Math.round(alert.length * 6.2) + 14 : 0;
         const subText = showStatus && st ? truncate(sub(st), Math.max(0, Math.floor((NODE_W - 36 - pillW) / 6))) : "";
         const tasks = tasksByNode.get(box.id) ?? [];
         const dots = mode === "replay" ? tasks.slice(0, 5) : [];
@@ -241,7 +244,7 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
               strokeWidth={strokeWidth} />
             {/* Status strip on the left edge, like a monday.com row colour */}
             {showStatus && st && st.tone !== "idle" && (
-              <rect x={box.x + 4} y={box.y + 12} width={4} height={NODE_H - 24} rx={2} style={{ fill: tone.bg }} />
+              <rect x={box.x + 4} y={box.y + 12} width={4} height={NODE_H - 24} rx={2} style={{ fill: tone.bar }} />
             )}
 
             <circle cx={box.x + 27} cy={box.y + 29} r={14} style={{ fill: isHuman ? YOU_COLOR : agentColor(snapshot, box.id) }} />
@@ -249,13 +252,22 @@ export function TeamCanvas({ snapshot, mode, selectedId, onSelect, replayFocus }
               {isHuman ? "YOU" : initials(profile?.isDefault ? profile.name : box.id)}
             </text>
             <text x={box.x + 50} y={box.y + 26} fontSize={13.5} fontWeight={650} style={{ fill: "var(--h-text)" }}>{truncate(name, 18)}</text>
-            <text x={box.x + 50} y={box.y + 42} fontSize={11.5} style={{ fill: "var(--h-muted)" }}>{truncate(role, 24)}</text>
+            <text x={box.x + 50} y={box.y + 42} fontSize={11.5} style={{ fill: "var(--h-muted)" }}>{truncate(role, alert ? 11 : 24)}</text>
 
             {pill && (
               <g>
                 <rect x={box.x + 14} y={box.y + 57} width={pillW} height={22} rx={4} style={{ fill: pill.bg }} />
                 <text x={box.x + 14 + pillW / 2} y={box.y + 72} textAnchor="middle" fontSize={11.5} fontWeight={600} style={{ fill: pill.fg }}>{pillText}</text>
                 {subText && <text x={box.x + 22 + pillW} y={box.y + 72} fontSize={11} style={{ fill: "var(--h-muted)" }}>{subText}</text>}
+              </g>
+            )}
+            {alert && (
+              <g>
+                <title>{alert}</title>
+                <rect x={box.x + NODE_W - 10 - alertW} y={box.y + 31} width={alertW} height={17} rx={4}
+                  style={{ fill: TONE_VARS.bad.soft, stroke: TONE_VARS.bad.bar }} strokeWidth={1} />
+                <text x={box.x + NODE_W - 10 - alertW / 2} y={box.y + 43} textAnchor="middle" fontSize={10.5} fontWeight={600}
+                  style={{ fill: TONE_VARS.bad.bg }}>{alert}</text>
               </g>
             )}
             {dots.map((task, i) => (

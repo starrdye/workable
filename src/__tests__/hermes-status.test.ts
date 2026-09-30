@@ -2,7 +2,7 @@
 // One status per agent, and the "who asked whom / did they reply" rows.
 
 import { describe, expect, it } from 'vitest';
-import { agentStatus, humanError, requestRows, requestSummary } from '@/lib/hermes/status';
+import { agentStatus, humanError, latestRound, requestRows, requestSummary, teamSummary } from '@/lib/hermes/status';
 import { HUMAN_ID, toDotStatus } from '@/lib/hermes/metrics';
 import type { ChatSession, HermesProfile, HermesSnapshot, HermesTask, HermesTaskStatus } from '@/lib/hermes/types';
 
@@ -143,5 +143,71 @@ describe('requestRows', () => {
       task('open', 'clerk', 'ready', { createdAt: NOW - 3 * 86400 }),
     ]);
     expect(requestRows(s).map(r => r.id)).toEqual(['open']);
+  });
+});
+
+describe('teamSummary (Hermes status-bar chip)', () => {
+  const label = (key: string) => ({ 'hermes.st.working': 'Working', 'hermes.st.failed': 'Failed', 'hermes.st.idle': 'Idle', 'hermes.st.waiting': 'Waiting', 'hermes.req.ago': '{t} ago' } as Record<string, string>)[key] ?? key;
+  const withHomes = (s: HermesSnapshot) => ({ ...s, homes: [{ id: 'test', label: 'test', path: '/x' }], homeId: 'test', board: { slug: 'test' } }) as unknown as HermesSnapshot;
+
+  it('leads with who is working, and words each agent', () => {
+    const s = withHomes(snap([task('t1', 'clerk', 'running'), task('t2', 'editor', 'blocked', { lastFailureError: 'elapsed 50s > limit 45s', consecutiveFailures: 2 })]));
+    const sum = teamSummary(s, label);
+    expect(sum.headline).toEqual({ tone: 'working', text: '1 working' });
+    expect(sum.counts).toMatchObject({ working: 1, failed: 1 });
+    expect(sum.agents.find(a => a.id === 'editor')).toMatchObject({ label: 'Failed', detail: 'Timed out after 50s (limit 45s)' });
+    expect(sum.agents[0].id).toBe('default'); // orchestrator first
+  });
+
+  it('falls back to failures, then a calm word', () => {
+    expect(teamSummary(withHomes(snap([task('t', 'editor', 'blocked', { consecutiveFailures: 2 })])), label).headline).toEqual({ tone: 'bad', text: '1 failed' });
+    expect(teamSummary(withHomes(snap([])), label).headline).toEqual({ tone: 'idle', text: 'Team idle' });
+  });
+});
+
+describe('latestRound and the latest event (floating card)', () => {
+  const withHomes = (s: HermesSnapshot) => ({ ...s, homes: [], homeId: 'test', board: null }) as unknown as HermesSnapshot;
+
+  it('groups the newest cards one agent handed out together', () => {
+    const old = task('old', 'clerk', 'done', { createdAt: NOW - 3600 });
+    const round = [
+      task('a', 'researcher', 'done', { createdAt: NOW - 100, completedAt: NOW - 50, reply: '1' }),
+      task('b', 'clerk', 'running', { createdAt: NOW - 95 }),
+      task('c', 'editor', 'blocked', { createdAt: NOW - 90, consecutiveFailures: 2 }),
+      task('d', 'researcher', 'ready', { createdAt: NOW - 90 }),
+    ];
+    expect(latestRound(snap([old, ...round]))).toEqual({ by: 'default', startedAt: NOW - 100, total: 4, done: 1, failed: 1, working: 1, waiting: 1 });
+  });
+
+  it('has no round when nothing was handed out in the last day', () => {
+    expect(latestRound(snap([task('x', 'clerk', 'done', { createdAt: NOW - 2 * 86400, completedAt: NOW - 2 * 86400 })]))).toBeNull();
+  });
+
+  it('words the newest request and gives each agent a start time', () => {
+    const s = withHomes(snap([task('a', 'researcher', 'done', { createdAt: NOW - 100, completedAt: NOW - 10, reply: '1' })]));
+    const sum = teamSummary(s, k => k);
+    expect(sum.latest).toMatchObject({ tone: 'ok', text: 'researcher replied to default “1”', at: NOW - 10 });
+    expect(sum.agents.find(a => a.id === 'researcher')?.at).toBe(NOW - 10);
+  });
+});
+
+describe('failures stay visible (UI review)', () => {
+  const withHomes = (s: HermesSnapshot) => ({ ...s, homes: [], homeId: 'test', board: null }) as unknown as HermesSnapshot;
+  // The editor's latest card replied, but two older cards are still blocked.
+  const tasks = [
+    task('old1', 'editor', 'blocked', { createdAt: NOW - 5000, startedAt: NOW - 4900, consecutiveFailures: 2 }),
+    task('old2', 'editor', 'blocked', { createdAt: NOW - 4000, startedAt: NOW - 3900, consecutiveFailures: 2 }),
+    task('new', 'editor', 'done', { createdAt: NOW - 200, startedAt: NOW - 150, completedAt: NOW - 100, reply: 'ok' }),
+  ];
+
+  it('keeps the latest status but counts the blocked cards', () => {
+    expect(agentStatus(snap(tasks), 'editor')).toMatchObject({ tone: 'ok', blockedCards: 2 });
+  });
+
+  it('never says "All replied" while cards are blocked, and flags the agent', () => {
+    const sum = teamSummary(withHomes(snap(tasks)), k => k);
+    expect(sum.headline).toEqual({ tone: 'bad', text: '2 blocked' });
+    expect(sum.counts.blocked).toBe(2);
+    expect(sum.agents.find(a => a.id === 'editor')?.alert).toBe('2 blocked');
   });
 });

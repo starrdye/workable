@@ -43,12 +43,12 @@ export function TeamRoster({ snapshot, selectedId, onSelect }: Props) {
               <button type="button" onClick={() => onSelect(p.id)} aria-pressed={selected}
                 className="flex w-full items-stretch overflow-hidden rounded-lg border bg-(--h-surface) text-left transition-colors hover:bg-(--h-sunk) focus-visible:outline-2 focus-visible:outline-(--h-accent)"
                 style={{
-                  borderColor: strong ? tone.bg : "var(--h-border)",
+                  borderColor: strong ? tone.bar : "var(--h-border)",
                   outline: selected ? "1.5px dashed var(--h-text-2)" : undefined,
                   outlineOffset: selected ? 2 : undefined,
                 }}>
                 {/* Row colour bar */}
-                <span className="w-1 shrink-0" style={{ background: st.tone === "idle" ? "transparent" : tone.bg }} aria-hidden="true" />
+                <span className="w-1 shrink-0" style={{ background: st.tone === "idle" ? "transparent" : tone.bar }} aria-hidden="true" />
                 <span className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2.5">
                   <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                     style={{ background: agentColor(snapshot, p.id) }}>
@@ -60,6 +60,12 @@ export function TeamRoster({ snapshot, selectedId, onSelect }: Props) {
                         <span className="text-[13.5px] font-semibold text-(--h-text)">{shortName(p)}</span>
                         <span className="ml-2 text-[12px] text-(--h-muted)">{roleOf(p)}</span>
                       </span>
+                      {st.tone !== "bad" && st.blockedCards > 0 && (
+                        <span className="shrink-0 rounded border px-1.5 py-px text-[10.5px] font-semibold"
+                          style={{ borderColor: TONE_VARS.bad.bar, color: TONE_VARS.bad.bg, background: TONE_VARS.bad.soft }}>
+                          {st.blockedCards} {t("hermes.st.blocked").toLowerCase()}
+                        </span>
+                      )}
                       <StatusBlock tone={st.tone} text={label(st)} className="min-w-[72px]" />
                     </span>
                     {(st.detail || sub(st)) && (

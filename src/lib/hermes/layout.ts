@@ -12,7 +12,7 @@ export const NODE_W = 200;
 export const NODE_H = 92;
 const GAP_X = 44;
 const TOP_Y = 36;
-const WORKER_Y = 250;
+const WORKER_Y = 214;
 const ROW_GAP = 150;
 const PER_ROW = 4;
 
